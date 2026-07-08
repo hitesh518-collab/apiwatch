@@ -15,10 +15,15 @@ api.lock          : external APIs
 
 `apiwatch` is in early development. The first milestone is semantic diffing for local OpenAPI 3.x files.
 
-## Planned CLI
+## CLI
 
 ```bash
 apiwatch diff old.openapi.yaml new.openapi.yaml
+```
+
+Planned future commands:
+
+```bash
 apiwatch lock --config apiwatch.yaml
 apiwatch verify
 ```

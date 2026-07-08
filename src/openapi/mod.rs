@@ -24,7 +24,20 @@ pub fn load_contract(path: &Path) -> Result<ApiContract> {
             .with_context(|| format!("failed to parse OpenAPI YAML {}", path.display()))?
     };
 
+    ensure_openapi_3(&document)?;
+
     normalize(document)
+}
+
+fn ensure_openapi_3(document: &OpenAPI) -> Result<()> {
+    if document.openapi.starts_with("3.") {
+        return Ok(());
+    }
+
+    Err(anyhow!(
+        "unsupported OpenAPI version {}; expected OpenAPI 3.x",
+        document.openapi
+    ))
 }
 
 fn normalize(document: OpenAPI) -> Result<ApiContract> {

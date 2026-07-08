@@ -32,3 +32,20 @@ fn diff_exits_zero_for_non_breaking_change() {
         .stdout(predicate::str::contains("Non-breaking changes"))
         .stdout(predicate::str::contains("GET /teams: endpoint added"));
 }
+
+#[test]
+fn diff_exits_two_for_unsupported_openapi_version() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/unsupported_version.yaml",
+            "testdata/openapi/no_breaking_new.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "unsupported OpenAPI version 2.0.0",
+        ));
+}

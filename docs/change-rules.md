@@ -20,7 +20,7 @@
 - Format changed.
 - Response field became optional.
 - New error status code added.
-- Unsupported or ambiguous OpenAPI shape.
+- Ambiguous supported OpenAPI shape.
 
 ## Non-Breaking
 
@@ -31,3 +31,5 @@
 ## Philosophy
 
 Rules should be high-confidence and explainable. False positives reduce trust, so uncertain cases should be warnings before they become breaking changes.
+
+Invalid input, unsupported OpenAPI versions, unsupported `$ref` locations, and parse failures are input errors rather than semantic warnings. The CLI exits with code `2` for those cases.
