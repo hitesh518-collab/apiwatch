@@ -1,5 +1,6 @@
 mod cli;
 mod contract;
+mod openapi;
 
 use anyhow::Result;
 use clap::Parser;
