@@ -685,7 +685,7 @@ pub enum SchemaKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Property {
     pub required: bool,
-    pub schema: Schema,
+    pub schema: Box<Schema>,
 }
 ```
 
@@ -927,7 +927,7 @@ fn normalize_schema(schema: &ReferenceOr<OpenApiSchema>) -> Result<Schema> {
                         name.clone(),
                         Property {
                             required,
-                            schema,
+                            schema: Box::new(schema),
                         },
                     ))
                 })
@@ -940,7 +940,7 @@ fn normalize_schema(schema: &ReferenceOr<OpenApiSchema>) -> Result<Schema> {
                     "items".to_string(),
                     Property {
                         required: true,
-                        schema: normalize_schema(items)?,
+                        schema: Box::new(normalize_schema(items)?),
                     },
                 );
             }
