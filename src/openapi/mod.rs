@@ -36,8 +36,18 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         insert_operation(&mut contract, &path, HttpMethod::Post, item.post.as_ref())?;
         insert_operation(&mut contract, &path, HttpMethod::Put, item.put.as_ref())?;
         insert_operation(&mut contract, &path, HttpMethod::Patch, item.patch.as_ref())?;
-        insert_operation(&mut contract, &path, HttpMethod::Delete, item.delete.as_ref())?;
-        insert_operation(&mut contract, &path, HttpMethod::Options, item.options.as_ref())?;
+        insert_operation(
+            &mut contract,
+            &path,
+            HttpMethod::Delete,
+            item.delete.as_ref(),
+        )?;
+        insert_operation(
+            &mut contract,
+            &path,
+            HttpMethod::Options,
+            item.options.as_ref(),
+        )?;
         insert_operation(&mut contract, &path, HttpMethod::Head, item.head.as_ref())?;
         insert_operation(&mut contract, &path, HttpMethod::Trace, item.trace.as_ref())?;
     }
@@ -92,7 +102,9 @@ fn normalize_response(response: &ReferenceOr<OpenApiResponse>) -> Result<Respons
     let response = match response {
         ReferenceOr::Item(response) => response,
         ReferenceOr::Reference { reference } => {
-            return Err(anyhow!("response references are not supported yet: {reference}"));
+            return Err(anyhow!(
+                "response references are not supported yet: {reference}"
+            ));
         }
     };
 
@@ -115,7 +127,9 @@ fn normalize_schema_ref(schema: &ReferenceOr<OpenApiSchema>) -> Result<Schema> {
     let schema = match schema {
         ReferenceOr::Item(schema) => schema,
         ReferenceOr::Reference { reference } => {
-            return Err(anyhow!("schema references are not supported yet: {reference}"));
+            return Err(anyhow!(
+                "schema references are not supported yet: {reference}"
+            ));
         }
     };
 
@@ -126,7 +140,9 @@ fn normalize_boxed_schema_ref(schema: &ReferenceOr<Box<OpenApiSchema>>) -> Resul
     let schema = match schema {
         ReferenceOr::Item(schema) => schema.as_ref(),
         ReferenceOr::Reference { reference } => {
-            return Err(anyhow!("schema references are not supported yet: {reference}"));
+            return Err(anyhow!(
+                "schema references are not supported yet: {reference}"
+            ));
         }
     };
 
@@ -263,7 +279,10 @@ mod tests {
             .find(|key| key.path == "/users" && key.method == HttpMethod::Get)
             .expect("GET /users should be normalized");
 
-        let operation = contract.operations.get(key).expect("operation should exist");
+        let operation = contract
+            .operations
+            .get(key)
+            .expect("operation should exist");
         assert!(operation.responses.contains_key("200"));
     }
 }
