@@ -1,0 +1,17 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+paths:
+  /users:
+    get:
+      security:
+        - basicAuth: []
+      responses:
+        "200":
+          description: OK

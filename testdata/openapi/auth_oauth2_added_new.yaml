@@ -1,0 +1,22 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+components:
+  securitySchemes:
+    oauthAuth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://example.com/token
+          scopes:
+            users:read: Read users
+paths:
+  /users:
+    get:
+      security:
+        - oauthAuth:
+            - users:read
+      responses:
+        "200":
+          description: OK

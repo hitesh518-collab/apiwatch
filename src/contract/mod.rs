@@ -48,9 +48,42 @@ impl HttpMethod {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Operation {
+    pub auth: BTreeMap<String, AuthRequirement>,
     pub parameters: BTreeMap<ParameterKey, Parameter>,
     pub request_body: Option<RequestBody>,
     pub responses: BTreeMap<String, Response>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthRequirement {
+    pub name: String,
+    pub kind: AuthSchemeKind,
+    pub scopes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthSchemeKind {
+    ApiKey,
+    Basic,
+    Bearer,
+    OAuth2,
+    OpenIdConnect,
+    Http,
+    Unknown,
+}
+
+impl AuthSchemeKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ApiKey => "apiKey",
+            Self::Basic => "basic",
+            Self::Bearer => "bearer",
+            Self::OAuth2 => "oauth2",
+            Self::OpenIdConnect => "openIdConnect",
+            Self::Http => "http",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

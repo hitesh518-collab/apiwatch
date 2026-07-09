@@ -1,0 +1,18 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+components:
+  securitySchemes:
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+security:
+  - apiKeyAuth: []
+paths:
+  /users:
+    get:
+      responses:
+        "200":
+          description: OK

@@ -1,5 +1,6 @@
 use crate::contract::{
-    ApiContract, OperationKey, Parameter, ParameterKey, RequestBody, Response, Schema, SchemaKind,
+    ApiContract, AuthRequirement, OperationKey, Parameter, ParameterKey, RequestBody, Response,
+    Schema, SchemaKind,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +42,7 @@ pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
 
     for (key, old_operation) in &old.operations {
         if let Some(new_operation) = new.operations.get(key) {
+            diff_auth_requirements(&mut changes, key, &old_operation.auth, &new_operation.auth);
             diff_parameters(
                 &mut changes,
                 key,
@@ -63,6 +65,84 @@ pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
     }
 
     changes
+}
+
+fn diff_auth_requirements(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    old: &std::collections::BTreeMap<String, AuthRequirement>,
+    new: &std::collections::BTreeMap<String, AuthRequirement>,
+) {
+    for (name, old_requirement) in old {
+        let Some(new_requirement) = new.get(name) else {
+            changes.push(Change {
+                severity: Severity::NonBreaking,
+                operation: operation.clone(),
+                message: format!(
+                    "authentication {} ({}) removed",
+                    old_requirement.name,
+                    old_requirement.kind.as_str()
+                ),
+            });
+            continue;
+        };
+
+        if old_requirement.kind != new_requirement.kind {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: format!(
+                    "authentication {} changed from {} to {}",
+                    new_requirement.name,
+                    old_requirement.kind.as_str(),
+                    new_requirement.kind.as_str()
+                ),
+            });
+        }
+
+        diff_auth_scopes(changes, operation, old_requirement, new_requirement);
+    }
+
+    for (name, new_requirement) in new {
+        if !old.contains_key(name) {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: format!(
+                    "authentication {} ({}) added",
+                    new_requirement.name,
+                    new_requirement.kind.as_str()
+                ),
+            });
+        }
+    }
+}
+
+fn diff_auth_scopes(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    old: &AuthRequirement,
+    new: &AuthRequirement,
+) {
+    for scope in &new.scopes {
+        if !old.scopes.contains(scope) {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: format!("authentication {} scope {scope} added", new.name),
+            });
+        }
+    }
+
+    for scope in &old.scopes {
+        if !new.scopes.contains(scope) {
+            changes.push(Change {
+                severity: Severity::NonBreaking,
+                operation: operation.clone(),
+                message: format!("authentication {} scope {scope} removed", old.name),
+            });
+        }
+    }
 }
 
 fn diff_parameters(

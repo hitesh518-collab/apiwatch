@@ -6,6 +6,9 @@
 
 - Endpoint removed.
 - HTTP method removed.
+- Authentication requirement added.
+- Authentication scheme type changed.
+- Authentication scope added.
 - Required parameter added.
 - Parameter removed.
 - Parameter type changed.
@@ -34,6 +37,8 @@
 ## Non-Breaking
 
 - Endpoint added.
+- Authentication requirement removed.
+- Authentication scope removed.
 - Optional parameter added.
 - Parameter became optional.
 - Optional request field added.

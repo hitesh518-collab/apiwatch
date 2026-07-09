@@ -427,3 +427,93 @@ fn diff_exits_one_when_query_parameter_becomes_required() {
             "GET /users: query parameter cursor changed from optional to required",
         ));
 }
+
+#[test]
+fn diff_exits_one_for_added_bearer_authentication() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/auth_bearer_added_old.yaml",
+            "testdata/openapi/auth_bearer_added_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: authentication bearerAuth (bearer) added",
+        ));
+}
+
+#[test]
+fn diff_exits_one_for_added_api_key_authentication_from_global_security() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/auth_api_key_added_old.yaml",
+            "testdata/openapi/auth_api_key_added_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: authentication apiKeyAuth (apiKey) added",
+        ));
+}
+
+#[test]
+fn diff_exits_one_for_added_basic_authentication() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/auth_basic_added_old.yaml",
+            "testdata/openapi/auth_basic_added_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: authentication basicAuth (basic) added",
+        ));
+}
+
+#[test]
+fn diff_exits_one_for_added_oauth2_authentication() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/auth_oauth2_added_old.yaml",
+            "testdata/openapi/auth_oauth2_added_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: authentication oauthAuth (oauth2) added",
+        ));
+}
+
+#[test]
+fn diff_exits_zero_for_removed_authentication() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/auth_bearer_added_new.yaml",
+            "testdata/openapi/auth_bearer_added_old.yaml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Non-breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: authentication bearerAuth (bearer) removed",
+        ));
+}

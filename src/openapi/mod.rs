@@ -4,15 +4,16 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use openapiv3::{
-    IntegerFormat, MediaType, NumberFormat, OpenAPI, Operation as OpenApiOperation,
+    Components, IntegerFormat, MediaType, NumberFormat, OpenAPI, Operation as OpenApiOperation,
     Parameter as OpenApiParameter, ParameterData, ParameterSchemaOrContent, PathItem, ReferenceOr,
     RequestBody as OpenApiRequestBody, Response as OpenApiResponse, Schema as OpenApiSchema,
-    SchemaKind as OpenApiSchemaKind, StatusCode, StringFormat, Type, VariantOrUnknownOrEmpty,
+    SchemaKind as OpenApiSchemaKind, SecurityRequirement, SecurityScheme as OpenApiSecurityScheme,
+    StatusCode, StringFormat, Type, VariantOrUnknownOrEmpty,
 };
 
 use crate::contract::{
-    ApiContract, HttpMethod, Operation, OperationKey, Parameter, ParameterKey, ParameterLocation,
-    Property, RequestBody, Response, Schema, SchemaKind,
+    ApiContract, AuthRequirement, AuthSchemeKind, HttpMethod, Operation, OperationKey, Parameter,
+    ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema, SchemaKind,
 };
 
 pub fn load_contract(path: &Path) -> Result<ApiContract> {
@@ -44,6 +45,8 @@ fn ensure_openapi_3(document: &OpenAPI) -> Result<()> {
 
 fn normalize(document: OpenAPI) -> Result<ApiContract> {
     let mut contract = ApiContract::new();
+    let security_schemes = normalize_security_schemes(document.components.as_ref())?;
+    let global_security = document.security.clone().unwrap_or_default();
 
     for (path, item) in document.paths.paths {
         let item = resolve_path_item(item)?;
@@ -51,6 +54,8 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Get,
+            &security_schemes,
+            &global_security,
             &item.parameters,
             item.get.as_ref(),
         )?;
@@ -58,6 +63,8 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Post,
+            &security_schemes,
+            &global_security,
             &item.parameters,
             item.post.as_ref(),
         )?;
@@ -65,6 +72,8 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Put,
+            &security_schemes,
+            &global_security,
             &item.parameters,
             item.put.as_ref(),
         )?;
@@ -72,6 +81,8 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Patch,
+            &security_schemes,
+            &global_security,
             &item.parameters,
             item.patch.as_ref(),
         )?;
@@ -79,6 +90,8 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Delete,
+            &security_schemes,
+            &global_security,
             &item.parameters,
             item.delete.as_ref(),
         )?;
@@ -86,6 +99,8 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Options,
+            &security_schemes,
+            &global_security,
             &item.parameters,
             item.options.as_ref(),
         )?;
@@ -93,6 +108,8 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Head,
+            &security_schemes,
+            &global_security,
             &item.parameters,
             item.head.as_ref(),
         )?;
@@ -100,6 +117,8 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Trace,
+            &security_schemes,
+            &global_security,
             &item.parameters,
             item.trace.as_ref(),
         )?;
@@ -121,12 +140,19 @@ fn insert_operation(
     contract: &mut ApiContract,
     path: &str,
     method: HttpMethod,
+    security_schemes: &BTreeMap<String, AuthSchemeKind>,
+    global_security: &[SecurityRequirement],
     path_parameters: &[ReferenceOr<OpenApiParameter>],
     operation: Option<&OpenApiOperation>,
 ) -> Result<()> {
     let Some(operation) = operation else {
         return Ok(());
     };
+
+    let auth = normalize_auth_requirements(
+        operation.security.as_deref().unwrap_or(global_security),
+        security_schemes,
+    );
 
     let parameters = normalize_parameters(path_parameters, &operation.parameters)?;
 
@@ -149,6 +175,7 @@ fn insert_operation(
             path: path.to_string(),
         },
         Operation {
+            auth,
             parameters,
             request_body,
             responses,
@@ -162,6 +189,82 @@ fn normalize_status_code(status: &StatusCode) -> String {
     match status {
         StatusCode::Code(_) | StatusCode::Range(_) => status.to_string(),
     }
+}
+
+fn normalize_security_schemes(
+    components: Option<&Components>,
+) -> Result<BTreeMap<String, AuthSchemeKind>> {
+    let mut schemes = BTreeMap::new();
+
+    let Some(components) = components else {
+        return Ok(schemes);
+    };
+
+    for (name, scheme) in &components.security_schemes {
+        let kind = match scheme {
+            ReferenceOr::Item(scheme) => auth_scheme_kind(scheme),
+            ReferenceOr::Reference { reference } => {
+                return Err(anyhow!(
+                    "security scheme references are not supported yet: {reference}"
+                ));
+            }
+        };
+        schemes.insert(name.clone(), kind);
+    }
+
+    Ok(schemes)
+}
+
+fn auth_scheme_kind(scheme: &OpenApiSecurityScheme) -> AuthSchemeKind {
+    match scheme {
+        OpenApiSecurityScheme::APIKey { .. } => AuthSchemeKind::ApiKey,
+        OpenApiSecurityScheme::HTTP { scheme, .. } => {
+            if scheme.eq_ignore_ascii_case("bearer") {
+                AuthSchemeKind::Bearer
+            } else if scheme.eq_ignore_ascii_case("basic") {
+                AuthSchemeKind::Basic
+            } else {
+                AuthSchemeKind::Http
+            }
+        }
+        OpenApiSecurityScheme::OAuth2 { .. } => AuthSchemeKind::OAuth2,
+        OpenApiSecurityScheme::OpenIDConnect { .. } => AuthSchemeKind::OpenIdConnect,
+    }
+}
+
+fn normalize_auth_requirements(
+    requirements: &[SecurityRequirement],
+    security_schemes: &BTreeMap<String, AuthSchemeKind>,
+) -> BTreeMap<String, AuthRequirement> {
+    let mut auth = BTreeMap::new();
+
+    if requirements
+        .iter()
+        .any(|requirement| requirement.is_empty())
+    {
+        return auth;
+    }
+
+    for requirement in requirements {
+        for (name, scopes) in requirement {
+            let mut scopes = scopes.clone();
+            scopes.sort();
+
+            auth.insert(
+                name.clone(),
+                AuthRequirement {
+                    name: name.clone(),
+                    kind: security_schemes
+                        .get(name)
+                        .copied()
+                        .unwrap_or(AuthSchemeKind::Unknown),
+                    scopes,
+                },
+            );
+        }
+    }
+
+    auth
 }
 
 fn normalize_parameters(
