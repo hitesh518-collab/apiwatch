@@ -571,3 +571,38 @@ fn diff_exits_zero_for_added_success_status_code() {
             "POST /users: response status 200 added",
         ));
 }
+
+#[test]
+fn diff_resolves_component_schema_refs_for_response_diff() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/ref_response_schema_old.yaml",
+            "testdata/openapi/ref_response_schema_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: response 200 application/json field name removed",
+        ));
+}
+
+#[test]
+fn diff_exits_two_for_circular_schema_ref() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/ref_circular_schema.yaml",
+            "testdata/openapi/ref_response_schema_new.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "circular schema reference detected",
+        ));
+}

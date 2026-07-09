@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -45,8 +45,14 @@ fn ensure_openapi_3(document: &OpenAPI) -> Result<()> {
 
 fn normalize(document: OpenAPI) -> Result<ApiContract> {
     let mut contract = ApiContract::new();
+    let schema_resolver = SchemaResolver::from_components(document.components.as_ref());
     let security_schemes = normalize_security_schemes(document.components.as_ref())?;
     let global_security = document.security.clone().unwrap_or_default();
+    let context = OperationNormalizeContext {
+        security_schemes: &security_schemes,
+        schema_resolver: &schema_resolver,
+        global_security: &global_security,
+    };
 
     for (path, item) in document.paths.paths {
         let item = resolve_path_item(item)?;
@@ -54,8 +60,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Get,
-            &security_schemes,
-            &global_security,
+            &context,
             &item.parameters,
             item.get.as_ref(),
         )?;
@@ -63,8 +68,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Post,
-            &security_schemes,
-            &global_security,
+            &context,
             &item.parameters,
             item.post.as_ref(),
         )?;
@@ -72,8 +76,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Put,
-            &security_schemes,
-            &global_security,
+            &context,
             &item.parameters,
             item.put.as_ref(),
         )?;
@@ -81,8 +84,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Patch,
-            &security_schemes,
-            &global_security,
+            &context,
             &item.parameters,
             item.patch.as_ref(),
         )?;
@@ -90,8 +92,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Delete,
-            &security_schemes,
-            &global_security,
+            &context,
             &item.parameters,
             item.delete.as_ref(),
         )?;
@@ -99,8 +100,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Options,
-            &security_schemes,
-            &global_security,
+            &context,
             &item.parameters,
             item.options.as_ref(),
         )?;
@@ -108,8 +108,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Head,
-            &security_schemes,
-            &global_security,
+            &context,
             &item.parameters,
             item.head.as_ref(),
         )?;
@@ -117,14 +116,19 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             &mut contract,
             &path,
             HttpMethod::Trace,
-            &security_schemes,
-            &global_security,
+            &context,
             &item.parameters,
             item.trace.as_ref(),
         )?;
     }
 
     Ok(contract)
+}
+
+struct OperationNormalizeContext<'a> {
+    security_schemes: &'a BTreeMap<String, AuthSchemeKind>,
+    schema_resolver: &'a SchemaResolver,
+    global_security: &'a [SecurityRequirement],
 }
 
 fn resolve_path_item(item: ReferenceOr<PathItem>) -> Result<PathItem> {
@@ -140,8 +144,7 @@ fn insert_operation(
     contract: &mut ApiContract,
     path: &str,
     method: HttpMethod,
-    security_schemes: &BTreeMap<String, AuthSchemeKind>,
-    global_security: &[SecurityRequirement],
+    context: &OperationNormalizeContext<'_>,
     path_parameters: &[ReferenceOr<OpenApiParameter>],
     operation: Option<&OpenApiOperation>,
 ) -> Result<()> {
@@ -150,22 +153,29 @@ fn insert_operation(
     };
 
     let auth = normalize_auth_requirements(
-        operation.security.as_deref().unwrap_or(global_security),
-        security_schemes,
+        operation
+            .security
+            .as_deref()
+            .unwrap_or(context.global_security),
+        context.security_schemes,
     );
 
-    let parameters = normalize_parameters(path_parameters, &operation.parameters)?;
+    let parameters = normalize_parameters(
+        context.schema_resolver,
+        path_parameters,
+        &operation.parameters,
+    )?;
 
     let request_body = operation
         .request_body
         .as_ref()
-        .map(normalize_request_body)
+        .map(|request_body| normalize_request_body(request_body, context.schema_resolver))
         .transpose()?;
 
     let mut responses = BTreeMap::new();
     for (status, response) in &operation.responses.responses {
         let status = normalize_status_code(status);
-        let response = normalize_response(response)?;
+        let response = normalize_response(response, context.schema_resolver)?;
         responses.insert(status, response);
     }
 
@@ -267,19 +277,67 @@ fn normalize_auth_requirements(
     auth
 }
 
+struct SchemaResolver {
+    schemas: BTreeMap<String, ReferenceOr<OpenApiSchema>>,
+}
+
+impl SchemaResolver {
+    fn from_components(components: Option<&Components>) -> Self {
+        let schemas = components
+            .map(|components| {
+                components
+                    .schemas
+                    .iter()
+                    .map(|(name, schema)| (name.clone(), schema.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Self { schemas }
+    }
+
+    fn resolve(&self, reference: &str, visiting: &mut BTreeSet<String>) -> Result<Schema> {
+        let name = schema_component_name(reference)?;
+        if !visiting.insert(name.clone()) {
+            return Err(anyhow!("circular schema reference detected: {reference}"));
+        }
+
+        let schema = self
+            .schemas
+            .get(&name)
+            .ok_or_else(|| anyhow!("schema reference not found: {reference}"))?;
+        let normalized = normalize_schema_ref(schema, self, visiting);
+        visiting.remove(&name);
+        normalized
+    }
+}
+
+fn schema_component_name(reference: &str) -> Result<String> {
+    let name = reference
+        .strip_prefix("#/components/schemas/")
+        .ok_or_else(|| anyhow!("unsupported schema reference: {reference}"))?;
+
+    Ok(decode_json_pointer_token(name))
+}
+
+fn decode_json_pointer_token(token: &str) -> String {
+    token.replace("~1", "/").replace("~0", "~")
+}
+
 fn normalize_parameters(
+    schema_resolver: &SchemaResolver,
     path_parameters: &[ReferenceOr<OpenApiParameter>],
     operation_parameters: &[ReferenceOr<OpenApiParameter>],
 ) -> Result<BTreeMap<ParameterKey, Parameter>> {
     let mut parameters = BTreeMap::new();
 
     for parameter in path_parameters {
-        let (key, parameter) = normalize_parameter_ref(parameter)?;
+        let (key, parameter) = normalize_parameter_ref(parameter, schema_resolver)?;
         parameters.insert(key, parameter);
     }
 
     for parameter in operation_parameters {
-        let (key, parameter) = normalize_parameter_ref(parameter)?;
+        let (key, parameter) = normalize_parameter_ref(parameter, schema_resolver)?;
         parameters.insert(key, parameter);
     }
 
@@ -288,6 +346,7 @@ fn normalize_parameters(
 
 fn normalize_parameter_ref(
     parameter: &ReferenceOr<OpenApiParameter>,
+    schema_resolver: &SchemaResolver,
 ) -> Result<(ParameterKey, Parameter)> {
     let parameter = match parameter {
         ReferenceOr::Item(parameter) => parameter,
@@ -299,7 +358,7 @@ fn normalize_parameter_ref(
     };
 
     let (location, data) = parameter_location_and_data(parameter);
-    let schema = normalize_parameter_schema(data)?;
+    let schema = normalize_parameter_schema(data, schema_resolver)?;
     let key_name = normalize_parameter_key_name(location, &data.name);
 
     Ok((
@@ -340,19 +399,27 @@ fn normalize_parameter_key_name(location: ParameterLocation, name: &str) -> Stri
     }
 }
 
-fn normalize_parameter_schema(data: &ParameterData) -> Result<Schema> {
+fn normalize_parameter_schema(
+    data: &ParameterData,
+    schema_resolver: &SchemaResolver,
+) -> Result<Schema> {
     match &data.format {
-        ParameterSchemaOrContent::Schema(schema) => normalize_schema_ref(schema),
+        ParameterSchemaOrContent::Schema(schema) => {
+            normalize_schema_ref(schema, schema_resolver, &mut BTreeSet::new())
+        }
         ParameterSchemaOrContent::Content(content) => {
             let Some((_, media_type)) = content.first() else {
                 return Ok(unknown_schema());
             };
-            normalize_media_type(media_type)
+            normalize_media_type(media_type, schema_resolver)
         }
     }
 }
 
-fn normalize_request_body(request_body: &ReferenceOr<OpenApiRequestBody>) -> Result<RequestBody> {
+fn normalize_request_body(
+    request_body: &ReferenceOr<OpenApiRequestBody>,
+    schema_resolver: &SchemaResolver,
+) -> Result<RequestBody> {
     let request_body = match request_body {
         ReferenceOr::Item(request_body) => request_body,
         ReferenceOr::Reference { reference } => {
@@ -364,13 +431,19 @@ fn normalize_request_body(request_body: &ReferenceOr<OpenApiRequestBody>) -> Res
 
     let mut content = BTreeMap::new();
     for (content_type, media_type) in &request_body.content {
-        content.insert(content_type.clone(), normalize_media_type(media_type)?);
+        content.insert(
+            content_type.clone(),
+            normalize_media_type(media_type, schema_resolver)?,
+        );
     }
 
     Ok(RequestBody { content })
 }
 
-fn normalize_response(response: &ReferenceOr<OpenApiResponse>) -> Result<Response> {
+fn normalize_response(
+    response: &ReferenceOr<OpenApiResponse>,
+    schema_resolver: &SchemaResolver,
+) -> Result<Response> {
     let response = match response {
         ReferenceOr::Item(response) => response,
         ReferenceOr::Reference { reference } => {
@@ -382,46 +455,52 @@ fn normalize_response(response: &ReferenceOr<OpenApiResponse>) -> Result<Respons
 
     let mut content = BTreeMap::new();
     for (content_type, media_type) in &response.content {
-        content.insert(content_type.clone(), normalize_media_type(media_type)?);
+        content.insert(
+            content_type.clone(),
+            normalize_media_type(media_type, schema_resolver)?,
+        );
     }
 
     Ok(Response { content })
 }
 
-fn normalize_media_type(media_type: &MediaType) -> Result<Schema> {
+fn normalize_media_type(
+    media_type: &MediaType,
+    schema_resolver: &SchemaResolver,
+) -> Result<Schema> {
     match &media_type.schema {
-        Some(schema) => normalize_schema_ref(schema),
+        Some(schema) => normalize_schema_ref(schema, schema_resolver, &mut BTreeSet::new()),
         None => Ok(unknown_schema()),
     }
 }
 
-fn normalize_schema_ref(schema: &ReferenceOr<OpenApiSchema>) -> Result<Schema> {
-    let schema = match schema {
-        ReferenceOr::Item(schema) => schema,
-        ReferenceOr::Reference { reference } => {
-            return Err(anyhow!(
-                "schema references are not supported yet: {reference}"
-            ));
-        }
-    };
-
-    normalize_schema(schema)
+fn normalize_schema_ref(
+    schema: &ReferenceOr<OpenApiSchema>,
+    schema_resolver: &SchemaResolver,
+    visiting: &mut BTreeSet<String>,
+) -> Result<Schema> {
+    match schema {
+        ReferenceOr::Item(schema) => normalize_schema(schema, schema_resolver, visiting),
+        ReferenceOr::Reference { reference } => schema_resolver.resolve(reference, visiting),
+    }
 }
 
-fn normalize_boxed_schema_ref(schema: &ReferenceOr<Box<OpenApiSchema>>) -> Result<Schema> {
-    let schema = match schema {
-        ReferenceOr::Item(schema) => schema.as_ref(),
-        ReferenceOr::Reference { reference } => {
-            return Err(anyhow!(
-                "schema references are not supported yet: {reference}"
-            ));
-        }
-    };
-
-    normalize_schema(schema)
+fn normalize_boxed_schema_ref(
+    schema: &ReferenceOr<Box<OpenApiSchema>>,
+    schema_resolver: &SchemaResolver,
+    visiting: &mut BTreeSet<String>,
+) -> Result<Schema> {
+    match schema {
+        ReferenceOr::Item(schema) => normalize_schema(schema.as_ref(), schema_resolver, visiting),
+        ReferenceOr::Reference { reference } => schema_resolver.resolve(reference, visiting),
+    }
 }
 
-fn normalize_schema(schema: &OpenApiSchema) -> Result<Schema> {
+fn normalize_schema(
+    schema: &OpenApiSchema,
+    schema_resolver: &SchemaResolver,
+    visiting: &mut BTreeSet<String>,
+) -> Result<Schema> {
     let mut normalized = unknown_schema();
     normalized.nullable = schema.schema_data.nullable;
 
@@ -433,7 +512,7 @@ fn normalize_schema(schema: &OpenApiSchema) -> Result<Schema> {
                 .iter()
                 .map(|(name, schema)| {
                     let required = object.required.iter().any(|candidate| candidate == name);
-                    let schema = normalize_boxed_schema_ref(schema)?;
+                    let schema = normalize_boxed_schema_ref(schema, schema_resolver, visiting)?;
                     Ok((
                         name.clone(),
                         Property {
@@ -451,7 +530,11 @@ fn normalize_schema(schema: &OpenApiSchema) -> Result<Schema> {
                     "items".to_string(),
                     Property {
                         required: true,
-                        schema: Box::new(normalize_boxed_schema_ref(items)?),
+                        schema: Box::new(normalize_boxed_schema_ref(
+                            items,
+                            schema_resolver,
+                            visiting,
+                        )?),
                     },
                 );
             }

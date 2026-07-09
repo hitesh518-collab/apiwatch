@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+paths:
+  /users:
+    get:
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
