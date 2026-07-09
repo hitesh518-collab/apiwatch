@@ -1,0 +1,16 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+paths:
+  /users:
+    get:
+      parameters:
+        - name: cursor
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK

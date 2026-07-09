@@ -4,15 +4,15 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use openapiv3::{
-    IntegerFormat, MediaType, NumberFormat, OpenAPI, Operation as OpenApiOperation, PathItem,
-    ReferenceOr, RequestBody as OpenApiRequestBody, Response as OpenApiResponse,
-    Schema as OpenApiSchema, SchemaKind as OpenApiSchemaKind, StatusCode, StringFormat, Type,
-    VariantOrUnknownOrEmpty,
+    IntegerFormat, MediaType, NumberFormat, OpenAPI, Operation as OpenApiOperation,
+    Parameter as OpenApiParameter, ParameterData, ParameterSchemaOrContent, PathItem, ReferenceOr,
+    RequestBody as OpenApiRequestBody, Response as OpenApiResponse, Schema as OpenApiSchema,
+    SchemaKind as OpenApiSchemaKind, StatusCode, StringFormat, Type, VariantOrUnknownOrEmpty,
 };
 
 use crate::contract::{
-    ApiContract, HttpMethod, Operation, OperationKey, Property, RequestBody, Response, Schema,
-    SchemaKind,
+    ApiContract, HttpMethod, Operation, OperationKey, Parameter, ParameterKey, ParameterLocation,
+    Property, RequestBody, Response, Schema, SchemaKind,
 };
 
 pub fn load_contract(path: &Path) -> Result<ApiContract> {
@@ -47,24 +47,62 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
 
     for (path, item) in document.paths.paths {
         let item = resolve_path_item(item)?;
-        insert_operation(&mut contract, &path, HttpMethod::Get, item.get.as_ref())?;
-        insert_operation(&mut contract, &path, HttpMethod::Post, item.post.as_ref())?;
-        insert_operation(&mut contract, &path, HttpMethod::Put, item.put.as_ref())?;
-        insert_operation(&mut contract, &path, HttpMethod::Patch, item.patch.as_ref())?;
+        insert_operation(
+            &mut contract,
+            &path,
+            HttpMethod::Get,
+            &item.parameters,
+            item.get.as_ref(),
+        )?;
+        insert_operation(
+            &mut contract,
+            &path,
+            HttpMethod::Post,
+            &item.parameters,
+            item.post.as_ref(),
+        )?;
+        insert_operation(
+            &mut contract,
+            &path,
+            HttpMethod::Put,
+            &item.parameters,
+            item.put.as_ref(),
+        )?;
+        insert_operation(
+            &mut contract,
+            &path,
+            HttpMethod::Patch,
+            &item.parameters,
+            item.patch.as_ref(),
+        )?;
         insert_operation(
             &mut contract,
             &path,
             HttpMethod::Delete,
+            &item.parameters,
             item.delete.as_ref(),
         )?;
         insert_operation(
             &mut contract,
             &path,
             HttpMethod::Options,
+            &item.parameters,
             item.options.as_ref(),
         )?;
-        insert_operation(&mut contract, &path, HttpMethod::Head, item.head.as_ref())?;
-        insert_operation(&mut contract, &path, HttpMethod::Trace, item.trace.as_ref())?;
+        insert_operation(
+            &mut contract,
+            &path,
+            HttpMethod::Head,
+            &item.parameters,
+            item.head.as_ref(),
+        )?;
+        insert_operation(
+            &mut contract,
+            &path,
+            HttpMethod::Trace,
+            &item.parameters,
+            item.trace.as_ref(),
+        )?;
     }
 
     Ok(contract)
@@ -83,11 +121,14 @@ fn insert_operation(
     contract: &mut ApiContract,
     path: &str,
     method: HttpMethod,
+    path_parameters: &[ReferenceOr<OpenApiParameter>],
     operation: Option<&OpenApiOperation>,
 ) -> Result<()> {
     let Some(operation) = operation else {
         return Ok(());
     };
+
+    let parameters = normalize_parameters(path_parameters, &operation.parameters)?;
 
     let request_body = operation
         .request_body
@@ -108,6 +149,7 @@ fn insert_operation(
             path: path.to_string(),
         },
         Operation {
+            parameters,
             request_body,
             responses,
         },
@@ -119,6 +161,91 @@ fn insert_operation(
 fn normalize_status_code(status: &StatusCode) -> String {
     match status {
         StatusCode::Code(_) | StatusCode::Range(_) => status.to_string(),
+    }
+}
+
+fn normalize_parameters(
+    path_parameters: &[ReferenceOr<OpenApiParameter>],
+    operation_parameters: &[ReferenceOr<OpenApiParameter>],
+) -> Result<BTreeMap<ParameterKey, Parameter>> {
+    let mut parameters = BTreeMap::new();
+
+    for parameter in path_parameters {
+        let (key, parameter) = normalize_parameter_ref(parameter)?;
+        parameters.insert(key, parameter);
+    }
+
+    for parameter in operation_parameters {
+        let (key, parameter) = normalize_parameter_ref(parameter)?;
+        parameters.insert(key, parameter);
+    }
+
+    Ok(parameters)
+}
+
+fn normalize_parameter_ref(
+    parameter: &ReferenceOr<OpenApiParameter>,
+) -> Result<(ParameterKey, Parameter)> {
+    let parameter = match parameter {
+        ReferenceOr::Item(parameter) => parameter,
+        ReferenceOr::Reference { reference } => {
+            return Err(anyhow!(
+                "parameter references are not supported yet: {reference}"
+            ));
+        }
+    };
+
+    let (location, data) = parameter_location_and_data(parameter);
+    let schema = normalize_parameter_schema(data)?;
+    let key_name = normalize_parameter_key_name(location, &data.name);
+
+    Ok((
+        ParameterKey {
+            location,
+            name: key_name,
+        },
+        Parameter {
+            name: data.name.clone(),
+            required: data.required || location == ParameterLocation::Path,
+            schema,
+        },
+    ))
+}
+
+fn parameter_location_and_data(
+    parameter: &OpenApiParameter,
+) -> (ParameterLocation, &ParameterData) {
+    match parameter {
+        OpenApiParameter::Query { parameter_data, .. } => {
+            (ParameterLocation::Query, parameter_data)
+        }
+        OpenApiParameter::Header { parameter_data, .. } => {
+            (ParameterLocation::Header, parameter_data)
+        }
+        OpenApiParameter::Path { parameter_data, .. } => (ParameterLocation::Path, parameter_data),
+        OpenApiParameter::Cookie { parameter_data, .. } => {
+            (ParameterLocation::Cookie, parameter_data)
+        }
+    }
+}
+
+fn normalize_parameter_key_name(location: ParameterLocation, name: &str) -> String {
+    if location == ParameterLocation::Header {
+        name.to_ascii_lowercase()
+    } else {
+        name.to_string()
+    }
+}
+
+fn normalize_parameter_schema(data: &ParameterData) -> Result<Schema> {
+    match &data.format {
+        ParameterSchemaOrContent::Schema(schema) => normalize_schema_ref(schema),
+        ParameterSchemaOrContent::Content(content) => {
+            let Some((_, media_type)) = content.first() else {
+                return Ok(unknown_schema());
+            };
+            normalize_media_type(media_type)
+        }
     }
 }
 

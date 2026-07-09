@@ -48,8 +48,41 @@ impl HttpMethod {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Operation {
+    pub parameters: BTreeMap<ParameterKey, Parameter>,
     pub request_body: Option<RequestBody>,
     pub responses: BTreeMap<String, Response>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ParameterKey {
+    pub location: ParameterLocation,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ParameterLocation {
+    Path,
+    Query,
+    Header,
+    Cookie,
+}
+
+impl ParameterLocation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Path => "path",
+            Self::Query => "query",
+            Self::Header => "header",
+            Self::Cookie => "cookie",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Parameter {
+    pub name: String,
+    pub required: bool,
+    pub schema: Schema,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

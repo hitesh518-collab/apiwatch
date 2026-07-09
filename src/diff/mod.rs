@@ -1,4 +1,6 @@
-use crate::contract::{ApiContract, OperationKey, RequestBody, Response, Schema, SchemaKind};
+use crate::contract::{
+    ApiContract, OperationKey, Parameter, ParameterKey, RequestBody, Response, Schema, SchemaKind,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -39,6 +41,12 @@ pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
 
     for (key, old_operation) in &old.operations {
         if let Some(new_operation) = new.operations.get(key) {
+            diff_parameters(
+                &mut changes,
+                key,
+                &old_operation.parameters,
+                &new_operation.parameters,
+            );
             diff_responses(
                 &mut changes,
                 key,
@@ -55,6 +63,92 @@ pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
     }
 
     changes
+}
+
+fn diff_parameters(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    old: &std::collections::BTreeMap<ParameterKey, Parameter>,
+    new: &std::collections::BTreeMap<ParameterKey, Parameter>,
+) {
+    for (key, old_parameter) in old {
+        let Some(new_parameter) = new.get(key) else {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: format!(
+                    "{} parameter {} removed",
+                    key.location.as_str(),
+                    old_parameter.name
+                ),
+            });
+            continue;
+        };
+
+        diff_parameter_requiredness(changes, operation, key, old_parameter, new_parameter);
+
+        let context = parameter_context(key, new_parameter);
+        diff_schema(
+            changes,
+            operation,
+            SchemaUsage::Request,
+            &context,
+            "",
+            &old_parameter.schema,
+            &new_parameter.schema,
+        );
+    }
+
+    for (key, new_parameter) in new {
+        if !old.contains_key(key) {
+            changes.push(Change {
+                severity: if new_parameter.required {
+                    Severity::Breaking
+                } else {
+                    Severity::NonBreaking
+                },
+                operation: operation.clone(),
+                message: format!(
+                    "{} parameter {} added as {}",
+                    key.location.as_str(),
+                    new_parameter.name,
+                    required_name(new_parameter.required)
+                ),
+            });
+        }
+    }
+}
+
+fn diff_parameter_requiredness(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    key: &ParameterKey,
+    old: &Parameter,
+    new: &Parameter,
+) {
+    if old.required == new.required {
+        return;
+    }
+
+    changes.push(Change {
+        severity: if new.required {
+            Severity::Breaking
+        } else {
+            Severity::NonBreaking
+        },
+        operation: operation.clone(),
+        message: format!(
+            "{} parameter {} changed from {} to {}",
+            key.location.as_str(),
+            new.name,
+            required_name(old.required),
+            required_name(new.required)
+        ),
+    });
+}
+
+fn parameter_context(key: &ParameterKey, parameter: &Parameter) -> String {
+    format!("{} parameter {}", key.location.as_str(), parameter.name)
 }
 
 fn diff_responses(

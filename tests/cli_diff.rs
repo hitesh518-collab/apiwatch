@@ -283,3 +283,147 @@ fn diff_exits_one_when_request_field_becomes_non_nullable() {
             "POST /users: request application/json field email nullable changed from true to false",
         ));
 }
+
+#[test]
+fn diff_exits_one_for_added_required_query_parameter() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/parameter_required_query_added_old.yaml",
+            "testdata/openapi/parameter_required_query_added_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: query parameter limit added as required",
+        ));
+}
+
+#[test]
+fn diff_exits_zero_for_added_optional_query_parameter() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/parameter_optional_query_added_old.yaml",
+            "testdata/openapi/parameter_optional_query_added_new.yaml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Non-breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: query parameter cursor added as optional",
+        ));
+}
+
+#[test]
+fn diff_exits_one_for_removed_query_parameter() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/parameter_query_removed_old.yaml",
+            "testdata/openapi/parameter_query_removed_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: query parameter cursor removed",
+        ));
+}
+
+#[test]
+fn diff_exits_one_for_query_parameter_type_change() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/parameter_query_type_changed_old.yaml",
+            "testdata/openapi/parameter_query_type_changed_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: query parameter limit schema type changed from integer to string",
+        ));
+}
+
+#[test]
+fn diff_exits_one_for_path_parameter_type_change() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/parameter_path_type_changed_old.yaml",
+            "testdata/openapi/parameter_path_type_changed_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users/{userId}: path parameter userId schema type changed from string to integer",
+        ));
+}
+
+#[test]
+fn diff_exits_one_for_added_required_path_level_header_parameter() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/parameter_path_level_header_added_old.yaml",
+            "testdata/openapi/parameter_path_level_header_added_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: header parameter X-Tenant-Id added as required",
+        ));
+}
+
+#[test]
+fn diff_exits_one_for_removed_cookie_parameter() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/parameter_cookie_removed_old.yaml",
+            "testdata/openapi/parameter_cookie_removed_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: cookie parameter session removed",
+        ));
+}
+
+#[test]
+fn diff_exits_one_when_query_parameter_becomes_required() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/parameter_query_became_required_old.yaml",
+            "testdata/openapi/parameter_query_became_required_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: query parameter cursor changed from optional to required",
+        ));
+}

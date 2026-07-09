@@ -6,6 +6,10 @@
 
 - Endpoint removed.
 - HTTP method removed.
+- Required parameter added.
+- Parameter removed.
+- Parameter type changed.
+- Parameter became required.
 - Required request field added.
 - Request field removed.
 - Request field type changed.
@@ -30,6 +34,8 @@
 ## Non-Breaking
 
 - Endpoint added.
+- Optional parameter added.
+- Parameter became optional.
 - Optional request field added.
 - Request field became optional.
 - Request field became nullable.
@@ -37,7 +43,6 @@
 - Optional response field added.
 - Response field became non-nullable.
 - Response enum value removed.
-- Optional request parameter added.
 
 ## Philosophy
 
