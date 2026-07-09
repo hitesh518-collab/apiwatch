@@ -517,3 +517,57 @@ fn diff_exits_zero_for_removed_authentication() {
             "GET /users: authentication bearerAuth (bearer) removed",
         ));
 }
+
+#[test]
+fn diff_exits_one_for_removed_success_status_code() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/status_success_removed_old.yaml",
+            "testdata/openapi/status_success_removed_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: response status 200 removed",
+        ));
+}
+
+#[test]
+fn diff_warns_for_added_error_status_code() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/status_error_added_old.yaml",
+            "testdata/openapi/status_error_added_new.yaml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Warnings"))
+        .stdout(predicate::str::contains(
+            "GET /users: response status 429 added",
+        ));
+}
+
+#[test]
+fn diff_exits_zero_for_added_success_status_code() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/status_success_added_old.yaml",
+            "testdata/openapi/status_success_added_new.yaml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Non-breaking changes"))
+        .stdout(predicate::str::contains(
+            "POST /users: response status 200 added",
+        ));
+}

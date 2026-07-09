@@ -39,6 +39,8 @@
 - Endpoint added.
 - Authentication requirement removed.
 - Authentication scope removed.
+- Successful status code added.
+- Non-success status code removed.
 - Optional parameter added.
 - Parameter became optional.
 - Optional request field added.

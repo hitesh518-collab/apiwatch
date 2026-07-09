@@ -237,6 +237,34 @@ fn diff_responses(
     old: &std::collections::BTreeMap<String, Response>,
     new: &std::collections::BTreeMap<String, Response>,
 ) {
+    for status in old.keys() {
+        if !new.contains_key(status) {
+            changes.push(Change {
+                severity: if is_success_status(status) {
+                    Severity::Breaking
+                } else {
+                    Severity::NonBreaking
+                },
+                operation: operation.clone(),
+                message: format!("response status {status} removed"),
+            });
+        }
+    }
+
+    for status in new.keys() {
+        if !old.contains_key(status) {
+            changes.push(Change {
+                severity: if is_error_status(status) {
+                    Severity::Warning
+                } else {
+                    Severity::NonBreaking
+                },
+                operation: operation.clone(),
+                message: format!("response status {status} added"),
+            });
+        }
+    }
+
     for (status, old_response) in old {
         let Some(new_response) = new.get(status) else {
             continue;
@@ -259,6 +287,14 @@ fn diff_responses(
             );
         }
     }
+}
+
+fn is_success_status(status: &str) -> bool {
+    status.starts_with('2')
+}
+
+fn is_error_status(status: &str) -> bool {
+    status.starts_with('4') || status.starts_with('5') || status == "default"
 }
 
 fn diff_request_bodies(
