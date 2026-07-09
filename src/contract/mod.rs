@@ -48,7 +48,13 @@ impl HttpMethod {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Operation {
+    pub request_body: Option<RequestBody>,
     pub responses: BTreeMap<String, Response>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestBody {
+    pub content: BTreeMap<String, Schema>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

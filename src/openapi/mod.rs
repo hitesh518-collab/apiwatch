@@ -5,12 +5,14 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 use openapiv3::{
     IntegerFormat, MediaType, NumberFormat, OpenAPI, Operation as OpenApiOperation, PathItem,
-    ReferenceOr, Response as OpenApiResponse, Schema as OpenApiSchema,
-    SchemaKind as OpenApiSchemaKind, StatusCode, StringFormat, Type, VariantOrUnknownOrEmpty,
+    ReferenceOr, RequestBody as OpenApiRequestBody, Response as OpenApiResponse,
+    Schema as OpenApiSchema, SchemaKind as OpenApiSchemaKind, StatusCode, StringFormat, Type,
+    VariantOrUnknownOrEmpty,
 };
 
 use crate::contract::{
-    ApiContract, HttpMethod, Operation, OperationKey, Property, Response, Schema, SchemaKind,
+    ApiContract, HttpMethod, Operation, OperationKey, Property, RequestBody, Response, Schema,
+    SchemaKind,
 };
 
 pub fn load_contract(path: &Path) -> Result<ApiContract> {
@@ -87,6 +89,12 @@ fn insert_operation(
         return Ok(());
     };
 
+    let request_body = operation
+        .request_body
+        .as_ref()
+        .map(normalize_request_body)
+        .transpose()?;
+
     let mut responses = BTreeMap::new();
     for (status, response) in &operation.responses.responses {
         let status = normalize_status_code(status);
@@ -99,7 +107,10 @@ fn insert_operation(
             method,
             path: path.to_string(),
         },
-        Operation { responses },
+        Operation {
+            request_body,
+            responses,
+        },
     );
 
     Ok(())
@@ -109,6 +120,24 @@ fn normalize_status_code(status: &StatusCode) -> String {
     match status {
         StatusCode::Code(_) | StatusCode::Range(_) => status.to_string(),
     }
+}
+
+fn normalize_request_body(request_body: &ReferenceOr<OpenApiRequestBody>) -> Result<RequestBody> {
+    let request_body = match request_body {
+        ReferenceOr::Item(request_body) => request_body,
+        ReferenceOr::Reference { reference } => {
+            return Err(anyhow!(
+                "request body references are not supported yet: {reference}"
+            ));
+        }
+    };
+
+    let mut content = BTreeMap::new();
+    for (content_type, media_type) in &request_body.content {
+        content.insert(content_type.clone(), normalize_media_type(media_type)?);
+    }
+
+    Ok(RequestBody { content })
 }
 
 fn normalize_response(response: &ReferenceOr<OpenApiResponse>) -> Result<Response> {

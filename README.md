@@ -13,7 +13,7 @@ api.lock          : external APIs
 
 ## Status
 
-`apiwatch` is in early development. The first milestone is semantic diffing for local OpenAPI 3.x files.
+`apiwatch` is in early development. The first milestone is semantic diffing for local OpenAPI 3.x files, starting with endpoint, request-schema, and response-schema changes.
 
 ## CLI
 
@@ -32,7 +32,7 @@ apiwatch verify
 
 - Parse local OpenAPI 3.x YAML and JSON files.
 - Normalize API operations into an internal contract model.
-- Detect high-confidence breaking changes.
+- Detect high-confidence endpoint, request-schema, and response-schema changes.
 - Print CI-friendly output.
 
 ## Non-Goals For The MVP

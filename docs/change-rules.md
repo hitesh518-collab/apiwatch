@@ -7,15 +7,20 @@
 - Endpoint removed.
 - HTTP method removed.
 - Required request field added.
+- Request field removed.
+- Request field type changed.
+- Request field became required.
+- Request field became non-nullable.
+- Request enum value removed.
 - Response field removed.
 - Response field type changed.
-- Enum value removed.
+- Response field became nullable.
+- Response enum value added.
 - Successful status code removed.
 - Content type changed.
 
 ## Warning
 
-- Nullable changed.
 - Numeric type widened or narrowed.
 - Format changed.
 - Response field became optional.
@@ -25,7 +30,13 @@
 ## Non-Breaking
 
 - Endpoint added.
+- Optional request field added.
+- Request field became optional.
+- Request field became nullable.
+- Request enum value added.
 - Optional response field added.
+- Response field became non-nullable.
+- Response enum value removed.
 - Optional request parameter added.
 
 ## Philosophy
