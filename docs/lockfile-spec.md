@@ -2,7 +2,7 @@
 
 `api.lock` is a repository-level lockfile for external API contracts.
 
-The first lockfile version is intentionally small and stores normalized operation metadata from one or more APIs.
+The first lockfile version is intentionally small and stores normalized operation metadata produced by the single-API `apiwatch lock` command.
 
 ## Version 1
 
