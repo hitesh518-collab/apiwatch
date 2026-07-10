@@ -1,21 +1,32 @@
-# api.lock Draft
+# api.lock
 
-`api.lock` is planned as a repository-level lockfile for external API contracts.
+`api.lock` is a repository-level lockfile for external API contracts.
 
-This format is intentionally unstable during early development.
+The first lockfile version is intentionally small and stores normalized operation metadata from one or more APIs.
 
-Possible shape:
+## Version 1
 
 ```yaml
 version: 1
 apis:
-  github:
+  users:
     source: openapi
-    base_url: https://api.github.com
-    endpoints:
+    operations:
       - method: GET
-        path: /repos/{owner}/{repo}
-        response_schema_hash: sha256:example
+        path: /users
+      - method: POST
+        path: /users
 ```
 
-The lockfile should avoid secrets and sensitive raw payloads. It should store normalized contract metadata and hashes.
+## Fields
+
+- `version`: lockfile format version. The initial format uses `1`.
+- `apis`: map of API names to locked API metadata.
+- `apis.<name>.source`: source kind used to produce the lock. The initial command writes `openapi`.
+- `apis.<name>.operations`: deterministic list of normalized operations.
+- `method`: uppercase HTTP method.
+- `path`: normalized OpenAPI path template.
+
+## Privacy
+
+The lockfile avoids secrets, sensitive raw payloads, examples, headers, and raw OpenAPI fragments. Future versions may add schema metadata or hashes while keeping sensitive input out of the file.

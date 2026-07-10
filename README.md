@@ -19,12 +19,12 @@ api.lock          : external APIs
 
 ```bash
 apiwatch diff old.openapi.yaml new.openapi.yaml
+apiwatch lock openapi.yaml --name users --output api.lock
 ```
 
 Planned future commands:
 
 ```bash
-apiwatch lock --config apiwatch.yaml
 apiwatch verify
 ```
 
