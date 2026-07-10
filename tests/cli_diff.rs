@@ -800,3 +800,38 @@ fn diff_exits_two_for_circular_security_scheme_ref() {
             "circular security scheme reference detected",
         ));
 }
+
+#[test]
+fn diff_resolves_path_item_refs_for_parameter_diff() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/parameter_required_query_added_old.yaml",
+            "testdata/openapi/ref_path_item_parameter_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: query parameter limit added as required",
+        ));
+}
+
+#[test]
+fn diff_exits_two_for_circular_path_item_ref() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/ref_circular_path_item.yaml",
+            "testdata/openapi/ref_path_item_parameter_new.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "circular path item reference detected",
+        ));
+}

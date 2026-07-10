@@ -53,9 +53,15 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         schema_resolver: &schema_resolver,
         global_security: &global_security,
     };
+    let path_items = document
+        .paths
+        .paths
+        .iter()
+        .map(|(path, item)| (path.clone(), item.clone()))
+        .collect::<BTreeMap<_, _>>();
 
     for (path, item) in document.paths.paths {
-        let item = resolve_path_item(item)?;
+        let item = resolve_path_item(&item, &path_items, &mut BTreeSet::new())?;
         insert_operation(
             &mut contract,
             &path,
@@ -131,13 +137,33 @@ struct OperationNormalizeContext<'a> {
     global_security: &'a [SecurityRequirement],
 }
 
-fn resolve_path_item(item: ReferenceOr<PathItem>) -> Result<PathItem> {
+fn resolve_path_item(
+    item: &ReferenceOr<PathItem>,
+    path_items: &BTreeMap<String, ReferenceOr<PathItem>>,
+    visiting: &mut BTreeSet<String>,
+) -> Result<PathItem> {
     match item {
-        ReferenceOr::Item(item) => Ok(item),
-        ReferenceOr::Reference { reference } => Err(anyhow!(
-            "path item references are not supported yet: {reference}"
-        )),
+        ReferenceOr::Item(item) => Ok(item.clone()),
+        ReferenceOr::Reference { reference } => {
+            let path = path_item_reference_path(reference)?;
+            if !visiting.insert(path.clone()) {
+                return Err(anyhow!(
+                    "circular path item reference detected: {reference}"
+                ));
+            }
+
+            let item = path_items
+                .get(&path)
+                .ok_or_else(|| anyhow!("path item reference not found: {reference}"))?;
+            let resolved = resolve_path_item(item, path_items, visiting);
+            visiting.remove(&path);
+            resolved
+        }
     }
+}
+
+fn path_item_reference_path(reference: &str) -> Result<String> {
+    component_name(reference, "#/paths/", "path item")
 }
 
 fn insert_operation(
