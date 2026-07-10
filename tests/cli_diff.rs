@@ -51,6 +51,36 @@ fn diff_exits_two_for_unsupported_openapi_version() {
 }
 
 #[test]
+fn diff_exits_two_for_invalid_yaml_spec() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/invalid_yaml.yaml",
+            "testdata/openapi/no_breaking_new.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("failed to parse OpenAPI YAML"));
+}
+
+#[test]
+fn diff_exits_two_for_invalid_json_spec() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/invalid_json.json",
+            "testdata/openapi/no_breaking_new.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("failed to parse OpenAPI JSON"));
+}
+
+#[test]
 fn diff_exits_one_for_removed_response_field() {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
 
