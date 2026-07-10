@@ -1,10 +1,13 @@
 mod cli;
 mod contract;
 mod diff;
+mod lockfile;
 mod openapi;
 mod output;
 
-use anyhow::Result;
+use std::fs;
+
+use anyhow::{Context, Result};
 use clap::Parser;
 
 use crate::cli::{Cli, Command};
@@ -40,6 +43,19 @@ fn run() -> Result<i32> {
             } else {
                 Ok(0)
             }
+        }
+        Command::Lock {
+            openapi,
+            name,
+            output,
+        } => {
+            let contract = openapi::load_contract(&openapi)?;
+            let lock = lockfile::from_contract(&name, &contract)?;
+            let rendered = lockfile::render(&lock)?;
+            fs::write(&output, rendered)
+                .with_context(|| format!("failed to write lockfile {}", output.display()))?;
+            println!("Wrote {}", output.display());
+            Ok(0)
         }
     }
 }

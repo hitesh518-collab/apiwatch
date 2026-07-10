@@ -19,4 +19,15 @@ pub enum Command {
         /// New OpenAPI YAML or JSON file.
         new: PathBuf,
     },
+    /// Create an api.lock file from one OpenAPI contract.
+    Lock {
+        /// OpenAPI YAML or JSON file to lock.
+        openapi: PathBuf,
+        /// API name to use as the lockfile key.
+        #[arg(long)]
+        name: String,
+        /// Lockfile path to write.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }

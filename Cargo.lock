@@ -76,6 +76,7 @@ dependencies = [
  "clap",
  "openapiv3",
  "predicates",
+ "serde",
  "serde_json",
  "serde_yaml",
 ]

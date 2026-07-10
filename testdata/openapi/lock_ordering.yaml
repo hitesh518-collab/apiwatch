@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+paths:
+  /users:
+    post:
+      responses:
+        "201":
+          description: Created
+    get:
+      responses:
+        "200":
+          description: OK
