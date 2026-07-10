@@ -278,11 +278,22 @@ fn normalize_auth_requirements(
 }
 
 struct SchemaResolver {
+    responses: BTreeMap<String, ReferenceOr<OpenApiResponse>>,
     schemas: BTreeMap<String, ReferenceOr<OpenApiSchema>>,
 }
 
 impl SchemaResolver {
     fn from_components(components: Option<&Components>) -> Self {
+        let responses = components
+            .map(|components| {
+                components
+                    .responses
+                    .iter()
+                    .map(|(name, response)| (name.clone(), response.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let schemas = components
             .map(|components| {
                 components
@@ -293,11 +304,30 @@ impl SchemaResolver {
             })
             .unwrap_or_default();
 
-        Self { schemas }
+        Self { responses, schemas }
+    }
+
+    fn resolve_response(
+        &self,
+        reference: &str,
+        visiting: &mut BTreeSet<String>,
+    ) -> Result<Response> {
+        let name = component_name(reference, "#/components/responses/", "response")?;
+        if !visiting.insert(name.clone()) {
+            return Err(anyhow!("circular response reference detected: {reference}"));
+        }
+
+        let response = self
+            .responses
+            .get(&name)
+            .ok_or_else(|| anyhow!("response reference not found: {reference}"))?;
+        let normalized = normalize_response_ref(response, self, visiting);
+        visiting.remove(&name);
+        normalized
     }
 
     fn resolve(&self, reference: &str, visiting: &mut BTreeSet<String>) -> Result<Schema> {
-        let name = schema_component_name(reference)?;
+        let name = component_name(reference, "#/components/schemas/", "schema")?;
         if !visiting.insert(name.clone()) {
             return Err(anyhow!("circular schema reference detected: {reference}"));
         }
@@ -312,10 +342,10 @@ impl SchemaResolver {
     }
 }
 
-fn schema_component_name(reference: &str) -> Result<String> {
+fn component_name(reference: &str, prefix: &str, kind: &str) -> Result<String> {
     let name = reference
-        .strip_prefix("#/components/schemas/")
-        .ok_or_else(|| anyhow!("unsupported schema reference: {reference}"))?;
+        .strip_prefix(prefix)
+        .ok_or_else(|| anyhow!("unsupported {kind} reference: {reference}"))?;
 
     Ok(decode_json_pointer_token(name))
 }
@@ -444,12 +474,18 @@ fn normalize_response(
     response: &ReferenceOr<OpenApiResponse>,
     schema_resolver: &SchemaResolver,
 ) -> Result<Response> {
+    normalize_response_ref(response, schema_resolver, &mut BTreeSet::new())
+}
+
+fn normalize_response_ref(
+    response: &ReferenceOr<OpenApiResponse>,
+    schema_resolver: &SchemaResolver,
+    visiting_responses: &mut BTreeSet<String>,
+) -> Result<Response> {
     let response = match response {
         ReferenceOr::Item(response) => response,
         ReferenceOr::Reference { reference } => {
-            return Err(anyhow!(
-                "response references are not supported yet: {reference}"
-            ));
+            return schema_resolver.resolve_response(reference, visiting_responses);
         }
     };
 

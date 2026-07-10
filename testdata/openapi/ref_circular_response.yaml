@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+components:
+  responses:
+    UserResponse:
+      $ref: "#/components/responses/UserResponse"
+paths:
+  /users:
+    get:
+      responses:
+        "200":
+          $ref: "#/components/responses/UserResponse"

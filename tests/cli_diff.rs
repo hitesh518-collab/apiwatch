@@ -660,3 +660,38 @@ fn diff_detects_anyof_branch_field_type_change() {
             "GET /search: response 200 application/json field anyOf[0].result type changed from string to integer",
         ));
 }
+
+#[test]
+fn diff_resolves_component_response_refs_for_response_diff() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/ref_component_response_old.yaml",
+            "testdata/openapi/ref_component_response_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: response 200 application/json field name removed",
+        ));
+}
+
+#[test]
+fn diff_exits_two_for_circular_response_ref() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/ref_circular_response.yaml",
+            "testdata/openapi/ref_component_response_new.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "circular response reference detected",
+        ));
+}
