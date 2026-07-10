@@ -63,4 +63,5 @@ Local `#/components/responses/...` references are resolved for normalized respon
 Local `#/components/requestBodies/...` references are resolved for normalized request bodies.
 Local `#/components/securitySchemes/...` references are resolved for normalized authentication schemes.
 Local `#/paths/...` references are resolved for normalized path items.
+Array item schemas are diffed under the synthetic `items` path, for example `items.name`.
 Composed schemas using `oneOf`, `allOf`, and `anyOf` are diffed by branch index paths such as `oneOf[0]`.

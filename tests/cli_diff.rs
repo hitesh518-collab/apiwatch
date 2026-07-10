@@ -159,6 +159,24 @@ fn diff_exits_one_for_removed_nested_response_field() {
 }
 
 #[test]
+fn diff_exits_one_for_removed_response_array_item_field() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/response_array_item_field_removed_old.yaml",
+            "testdata/openapi/response_array_item_field_removed_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: response 200 application/json field items.name removed",
+        ));
+}
+
+#[test]
 fn diff_exits_one_for_added_required_request_field() {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
 
@@ -173,6 +191,24 @@ fn diff_exits_one_for_added_required_request_field() {
         .stdout(predicate::str::contains("Breaking changes"))
         .stdout(predicate::str::contains(
             "POST /users: request application/json field email added as required",
+        ));
+}
+
+#[test]
+fn diff_exits_one_for_added_required_request_array_item_field() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/request_array_required_item_field_added_old.yaml",
+            "testdata/openapi/request_array_required_item_field_added_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "POST /users: request application/json field items.email added as required",
         ));
 }
 
