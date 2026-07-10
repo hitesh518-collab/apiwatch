@@ -1,0 +1,28 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+components:
+  requestBodies:
+    UserRequest:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - name
+              - email
+            properties:
+              name:
+                type: string
+              email:
+                type: string
+paths:
+  /users:
+    post:
+      requestBody:
+        $ref: "#/components/requestBodies/UserRequest"
+      responses:
+        "201":
+          description: Created

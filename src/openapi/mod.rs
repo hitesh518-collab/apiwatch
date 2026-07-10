@@ -278,12 +278,23 @@ fn normalize_auth_requirements(
 }
 
 struct SchemaResolver {
+    request_bodies: BTreeMap<String, ReferenceOr<OpenApiRequestBody>>,
     responses: BTreeMap<String, ReferenceOr<OpenApiResponse>>,
     schemas: BTreeMap<String, ReferenceOr<OpenApiSchema>>,
 }
 
 impl SchemaResolver {
     fn from_components(components: Option<&Components>) -> Self {
+        let request_bodies = components
+            .map(|components| {
+                components
+                    .request_bodies
+                    .iter()
+                    .map(|(name, request_body)| (name.clone(), request_body.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let responses = components
             .map(|components| {
                 components
@@ -304,7 +315,32 @@ impl SchemaResolver {
             })
             .unwrap_or_default();
 
-        Self { responses, schemas }
+        Self {
+            request_bodies,
+            responses,
+            schemas,
+        }
+    }
+
+    fn resolve_request_body(
+        &self,
+        reference: &str,
+        visiting: &mut BTreeSet<String>,
+    ) -> Result<RequestBody> {
+        let name = component_name(reference, "#/components/requestBodies/", "request body")?;
+        if !visiting.insert(name.clone()) {
+            return Err(anyhow!(
+                "circular request body reference detected: {reference}"
+            ));
+        }
+
+        let request_body = self
+            .request_bodies
+            .get(&name)
+            .ok_or_else(|| anyhow!("request body reference not found: {reference}"))?;
+        let normalized = normalize_request_body_ref(request_body, self, visiting);
+        visiting.remove(&name);
+        normalized
     }
 
     fn resolve_response(
@@ -450,12 +486,18 @@ fn normalize_request_body(
     request_body: &ReferenceOr<OpenApiRequestBody>,
     schema_resolver: &SchemaResolver,
 ) -> Result<RequestBody> {
+    normalize_request_body_ref(request_body, schema_resolver, &mut BTreeSet::new())
+}
+
+fn normalize_request_body_ref(
+    request_body: &ReferenceOr<OpenApiRequestBody>,
+    schema_resolver: &SchemaResolver,
+    visiting_request_bodies: &mut BTreeSet<String>,
+) -> Result<RequestBody> {
     let request_body = match request_body {
         ReferenceOr::Item(request_body) => request_body,
         ReferenceOr::Reference { reference } => {
-            return Err(anyhow!(
-                "request body references are not supported yet: {reference}"
-            ));
+            return schema_resolver.resolve_request_body(reference, visiting_request_bodies);
         }
     };
 

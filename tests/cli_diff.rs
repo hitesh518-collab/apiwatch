@@ -695,3 +695,38 @@ fn diff_exits_two_for_circular_response_ref() {
             "circular response reference detected",
         ));
 }
+
+#[test]
+fn diff_resolves_component_request_body_refs_for_request_diff() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/ref_component_request_body_old.yaml",
+            "testdata/openapi/ref_component_request_body_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "POST /users: request application/json field email added as required",
+        ));
+}
+
+#[test]
+fn diff_exits_two_for_circular_request_body_ref() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/ref_circular_request_body.yaml",
+            "testdata/openapi/ref_component_request_body_new.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "circular request body reference detected",
+        ));
+}

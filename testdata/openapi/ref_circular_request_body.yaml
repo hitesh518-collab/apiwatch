@@ -1,0 +1,16 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+components:
+  requestBodies:
+    UserRequest:
+      $ref: "#/components/requestBodies/UserRequest"
+paths:
+  /users:
+    post:
+      requestBody:
+        $ref: "#/components/requestBodies/UserRequest"
+      responses:
+        "201":
+          description: Created
