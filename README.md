@@ -49,3 +49,7 @@ apiwatch verify
 ## License
 
 Apache-2.0
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

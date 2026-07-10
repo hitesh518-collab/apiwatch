@@ -1,0 +1,18 @@
+# Changelog
+
+## v0.1.0
+
+Initial semantic OpenAPI diff milestone.
+
+### Added
+
+- `apiwatch diff <OLD> <NEW>` for local OpenAPI 3.x YAML and JSON files.
+- Endpoint, authentication, parameter, status-code, request-schema, and response-schema diffing.
+- Breaking, warning, and non-breaking change classification with deterministic CLI output.
+- Local `$ref` resolution for schemas, parameters, responses, request bodies, security schemes, and path items.
+- Recursive schema diffing for nested objects, arrays, and `oneOf`/`allOf`/`anyOf` branches.
+- Input-error handling for unsupported OpenAPI versions, malformed YAML/JSON, unsupported references, and circular references.
+
+### Verification
+
+- Rust formatting, Clippy with warnings denied, and the full test suite are part of release verification.
