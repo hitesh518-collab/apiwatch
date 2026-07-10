@@ -33,7 +33,7 @@ apiwatch verify
 - Parse local OpenAPI 3.x YAML and JSON files.
 - Normalize API operations into an internal contract model.
 - Detect high-confidence endpoint, authentication, parameter, status-code, request-schema, and response-schema changes.
-- Resolve local component schema, response, and request body references used by normalized contracts.
+- Resolve local component schema, parameter, response, and request body references used by normalized contracts.
 - Diff composed schemas using `oneOf`, `allOf`, and `anyOf` branch paths.
 - Print CI-friendly output.
 

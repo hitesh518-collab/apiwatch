@@ -278,6 +278,7 @@ fn normalize_auth_requirements(
 }
 
 struct SchemaResolver {
+    parameters: BTreeMap<String, ReferenceOr<OpenApiParameter>>,
     request_bodies: BTreeMap<String, ReferenceOr<OpenApiRequestBody>>,
     responses: BTreeMap<String, ReferenceOr<OpenApiResponse>>,
     schemas: BTreeMap<String, ReferenceOr<OpenApiSchema>>,
@@ -285,6 +286,16 @@ struct SchemaResolver {
 
 impl SchemaResolver {
     fn from_components(components: Option<&Components>) -> Self {
+        let parameters = components
+            .map(|components| {
+                components
+                    .parameters
+                    .iter()
+                    .map(|(name, parameter)| (name.clone(), parameter.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let request_bodies = components
             .map(|components| {
                 components
@@ -316,10 +327,32 @@ impl SchemaResolver {
             .unwrap_or_default();
 
         Self {
+            parameters,
             request_bodies,
             responses,
             schemas,
         }
+    }
+
+    fn resolve_parameter(
+        &self,
+        reference: &str,
+        visiting: &mut BTreeSet<String>,
+    ) -> Result<(ParameterKey, Parameter)> {
+        let name = component_name(reference, "#/components/parameters/", "parameter")?;
+        if !visiting.insert(name.clone()) {
+            return Err(anyhow!(
+                "circular parameter reference detected: {reference}"
+            ));
+        }
+
+        let parameter = self
+            .parameters
+            .get(&name)
+            .ok_or_else(|| anyhow!("parameter reference not found: {reference}"))?;
+        let normalized = normalize_parameter_ref(parameter, self, visiting);
+        visiting.remove(&name);
+        normalized
     }
 
     fn resolve_request_body(
@@ -398,12 +431,14 @@ fn normalize_parameters(
     let mut parameters = BTreeMap::new();
 
     for parameter in path_parameters {
-        let (key, parameter) = normalize_parameter_ref(parameter, schema_resolver)?;
+        let (key, parameter) =
+            normalize_parameter_ref(parameter, schema_resolver, &mut BTreeSet::new())?;
         parameters.insert(key, parameter);
     }
 
     for parameter in operation_parameters {
-        let (key, parameter) = normalize_parameter_ref(parameter, schema_resolver)?;
+        let (key, parameter) =
+            normalize_parameter_ref(parameter, schema_resolver, &mut BTreeSet::new())?;
         parameters.insert(key, parameter);
     }
 
@@ -413,13 +448,12 @@ fn normalize_parameters(
 fn normalize_parameter_ref(
     parameter: &ReferenceOr<OpenApiParameter>,
     schema_resolver: &SchemaResolver,
+    visiting_parameters: &mut BTreeSet<String>,
 ) -> Result<(ParameterKey, Parameter)> {
     let parameter = match parameter {
         ReferenceOr::Item(parameter) => parameter,
         ReferenceOr::Reference { reference } => {
-            return Err(anyhow!(
-                "parameter references are not supported yet: {reference}"
-            ));
+            return schema_resolver.resolve_parameter(reference, visiting_parameters);
         }
     };
 
