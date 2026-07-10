@@ -34,6 +34,7 @@ apiwatch verify
 - Normalize API operations into an internal contract model.
 - Detect high-confidence endpoint, authentication, parameter, status-code, request-schema, and response-schema changes.
 - Resolve local component schema references used by normalized schemas.
+- Diff composed schemas using `oneOf`, `allOf`, and `anyOf` branch paths.
 - Print CI-friendly output.
 
 ## Non-Goals For The MVP

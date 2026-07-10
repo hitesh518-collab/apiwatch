@@ -563,6 +563,9 @@ fn schema_kind_name(kind: &SchemaKind) -> &'static str {
     match kind {
         SchemaKind::Object => "object",
         SchemaKind::Array => "array",
+        SchemaKind::OneOf => "oneOf",
+        SchemaKind::AllOf => "allOf",
+        SchemaKind::AnyOf => "anyOf",
         SchemaKind::String => "string",
         SchemaKind::Integer => "integer",
         SchemaKind::Number => "number",

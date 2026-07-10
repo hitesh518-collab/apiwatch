@@ -141,6 +141,9 @@ pub struct Schema {
 pub enum SchemaKind {
     Object,
     Array,
+    OneOf,
+    AllOf,
+    AnyOf,
     String,
     Integer,
     Number,

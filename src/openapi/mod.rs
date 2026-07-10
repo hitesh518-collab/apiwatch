@@ -539,6 +539,21 @@ fn normalize_schema(
                 );
             }
         }
+        OpenApiSchemaKind::OneOf { one_of } => {
+            normalized.kind = SchemaKind::OneOf;
+            normalized.properties =
+                normalize_composed_schema_refs("oneOf", one_of, schema_resolver, visiting)?;
+        }
+        OpenApiSchemaKind::AllOf { all_of } => {
+            normalized.kind = SchemaKind::AllOf;
+            normalized.properties =
+                normalize_composed_schema_refs("allOf", all_of, schema_resolver, visiting)?;
+        }
+        OpenApiSchemaKind::AnyOf { any_of } => {
+            normalized.kind = SchemaKind::AnyOf;
+            normalized.properties =
+                normalize_composed_schema_refs("anyOf", any_of, schema_resolver, visiting)?;
+        }
         OpenApiSchemaKind::Type(Type::String(string)) => {
             normalized.kind = SchemaKind::String;
             normalized.format = string_format_name(&string.format);
@@ -573,6 +588,28 @@ fn normalize_schema(
     }
 
     Ok(normalized)
+}
+
+fn normalize_composed_schema_refs(
+    prefix: &str,
+    schemas: &[ReferenceOr<OpenApiSchema>],
+    schema_resolver: &SchemaResolver,
+    visiting: &mut BTreeSet<String>,
+) -> Result<BTreeMap<String, Property>> {
+    schemas
+        .iter()
+        .enumerate()
+        .map(|(index, schema)| {
+            let schema = normalize_schema_ref(schema, schema_resolver, visiting)?;
+            Ok((
+                format!("{prefix}[{index}]"),
+                Property {
+                    required: true,
+                    schema: Box::new(schema),
+                },
+            ))
+        })
+        .collect()
 }
 
 fn string_format_name(format: &VariantOrUnknownOrEmpty<StringFormat>) -> Option<String> {

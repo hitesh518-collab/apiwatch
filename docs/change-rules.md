@@ -58,3 +58,4 @@ Rules should be high-confidence and explainable. False positives reduce trust, s
 Invalid input, unsupported OpenAPI versions, unsupported `$ref` locations, circular schema references, and parse failures are input errors rather than semantic warnings. The CLI exits with code `2` for those cases.
 
 Local `#/components/schemas/...` references are resolved for normalized schemas.
+Composed schemas using `oneOf`, `allOf`, and `anyOf` are diffed by branch index paths such as `oneOf[0]`.

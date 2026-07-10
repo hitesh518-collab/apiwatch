@@ -606,3 +606,57 @@ fn diff_exits_two_for_circular_schema_ref() {
             "circular schema reference detected",
         ));
 }
+
+#[test]
+fn diff_detects_oneof_branch_type_change() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/composition_oneof_changed_old.yaml",
+            "testdata/openapi/composition_oneof_changed_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /search: response 200 application/json field oneOf[0] type changed from string to integer",
+        ));
+}
+
+#[test]
+fn diff_detects_allof_branch_field_removed() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/composition_allof_changed_old.yaml",
+            "testdata/openapi/composition_allof_changed_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: response 200 application/json field allOf[0].name removed",
+        ));
+}
+
+#[test]
+fn diff_detects_anyof_branch_field_type_change() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/composition_anyof_changed_old.yaml",
+            "testdata/openapi/composition_anyof_changed_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /search: response 200 application/json field anyOf[0].result type changed from string to integer",
+        ));
+}

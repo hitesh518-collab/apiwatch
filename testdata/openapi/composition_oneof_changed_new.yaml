@@ -1,0 +1,19 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+paths:
+  /search:
+    get:
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: integer
+                  - type: object
+                    properties:
+                      id:
+                        type: string
