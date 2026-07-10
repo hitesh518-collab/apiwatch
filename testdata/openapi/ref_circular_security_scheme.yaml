@@ -1,0 +1,16 @@
+openapi: 3.0.3
+info:
+  title: Example
+  version: 1.0.0
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: "#/components/securitySchemes/bearerAuth"
+security:
+  - bearerAuth: []
+paths:
+  /users:
+    get:
+      responses:
+        "200":
+          description: OK

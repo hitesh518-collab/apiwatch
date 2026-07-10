@@ -210,19 +210,55 @@ fn normalize_security_schemes(
         return Ok(schemes);
     };
 
-    for (name, scheme) in &components.security_schemes {
-        let kind = match scheme {
-            ReferenceOr::Item(scheme) => auth_scheme_kind(scheme),
-            ReferenceOr::Reference { reference } => {
-                return Err(anyhow!(
-                    "security scheme references are not supported yet: {reference}"
-                ));
-            }
-        };
+    let security_schemes = components
+        .security_schemes
+        .iter()
+        .map(|(name, scheme)| (name.clone(), scheme.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    for (name, scheme) in &security_schemes {
+        let kind = normalize_security_scheme_ref(scheme, &security_schemes, &mut BTreeSet::new())?;
         schemes.insert(name.clone(), kind);
     }
 
     Ok(schemes)
+}
+
+fn normalize_security_scheme_ref(
+    scheme: &ReferenceOr<OpenApiSecurityScheme>,
+    security_schemes: &BTreeMap<String, ReferenceOr<OpenApiSecurityScheme>>,
+    visiting: &mut BTreeSet<String>,
+) -> Result<AuthSchemeKind> {
+    match scheme {
+        ReferenceOr::Item(scheme) => Ok(auth_scheme_kind(scheme)),
+        ReferenceOr::Reference { reference } => {
+            resolve_security_scheme(reference, security_schemes, visiting)
+        }
+    }
+}
+
+fn resolve_security_scheme(
+    reference: &str,
+    security_schemes: &BTreeMap<String, ReferenceOr<OpenApiSecurityScheme>>,
+    visiting: &mut BTreeSet<String>,
+) -> Result<AuthSchemeKind> {
+    let name = component_name(
+        reference,
+        "#/components/securitySchemes/",
+        "security scheme",
+    )?;
+    if !visiting.insert(name.clone()) {
+        return Err(anyhow!(
+            "circular security scheme reference detected: {reference}"
+        ));
+    }
+
+    let scheme = security_schemes
+        .get(&name)
+        .ok_or_else(|| anyhow!("security scheme reference not found: {reference}"))?;
+    let kind = normalize_security_scheme_ref(scheme, security_schemes, visiting);
+    visiting.remove(&name);
+    kind
 }
 
 fn auth_scheme_kind(scheme: &OpenApiSecurityScheme) -> AuthSchemeKind {

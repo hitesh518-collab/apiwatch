@@ -765,3 +765,38 @@ fn diff_exits_two_for_circular_parameter_ref() {
             "circular parameter reference detected",
         ));
 }
+
+#[test]
+fn diff_resolves_component_security_scheme_refs_for_auth_diff() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/auth_bearer_added_old.yaml",
+            "testdata/openapi/ref_component_security_scheme_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"))
+        .stdout(predicate::str::contains(
+            "GET /users: authentication bearerAuth (bearer) added",
+        ));
+}
+
+#[test]
+fn diff_exits_two_for_circular_security_scheme_ref() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/ref_circular_security_scheme.yaml",
+            "testdata/openapi/ref_component_security_scheme_new.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "circular security scheme reference detected",
+        ));
+}
