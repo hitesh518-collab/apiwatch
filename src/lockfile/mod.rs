@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 
 use crate::contract::ApiContract;
@@ -24,6 +24,11 @@ struct LockedOperation {
 }
 
 pub fn from_contract(name: &str, contract: &ApiContract) -> Result<ApiLock> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(anyhow!("api name cannot be empty"));
+    }
+
     let operations = contract
         .operations
         .keys()

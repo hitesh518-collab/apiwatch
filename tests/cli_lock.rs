@@ -60,3 +60,57 @@ apis:
 "
     );
 }
+
+#[test]
+fn lock_exits_two_for_empty_api_name() {
+    let output_path = temp_lock_path("empty-name");
+    let output_arg = output_path
+        .to_str()
+        .expect("temp path should be valid UTF-8");
+
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+    command
+        .args([
+            "lock",
+            "testdata/openapi/lock_ordering.yaml",
+            "--name",
+            "",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("api name cannot be empty"));
+
+    assert!(
+        !output_path.exists(),
+        "lockfile should not be written when the api name is invalid"
+    );
+}
+
+#[test]
+fn lock_exits_two_for_invalid_openapi_input() {
+    let output_path = temp_lock_path("invalid-input");
+    let output_arg = output_path
+        .to_str()
+        .expect("temp path should be valid UTF-8");
+
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+    command
+        .args([
+            "lock",
+            "testdata/openapi/invalid_yaml.yaml",
+            "--name",
+            "users",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("failed to parse OpenAPI YAML"));
+
+    assert!(
+        !output_path.exists(),
+        "lockfile should not be written when OpenAPI parsing fails"
+    );
+}
