@@ -1,4 +1,5 @@
 use crate::diff::{Change, Severity};
+use crate::lockfile::VerifyChange;
 
 pub fn render_changes(changes: &[Change]) -> String {
     if changes.is_empty() {
@@ -48,4 +49,19 @@ fn render_group(rendered: &mut String, title: &str, changes: &[Change], severity
         rendered.push_str(&change.message);
         rendered.push('\n');
     }
+}
+
+pub fn render_verify_changes(changes: &[VerifyChange]) -> String {
+    let mut rendered = String::new();
+
+    for change in changes {
+        rendered.push_str(change.kind.as_str());
+        rendered.push(' ');
+        rendered.push_str(&change.method);
+        rendered.push(' ');
+        rendered.push_str(&change.path);
+        rendered.push('\n');
+    }
+
+    rendered
 }

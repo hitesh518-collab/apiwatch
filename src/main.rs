@@ -57,5 +57,23 @@ fn run() -> Result<i32> {
             println!("Wrote {}", output.display());
             Ok(0)
         }
+        Command::Verify {
+            openapi,
+            name,
+            lock,
+        } => {
+            let lock = lockfile::load(&lock)?;
+            let target = lockfile::select_verify_target(&lock, &name)?;
+            let contract = openapi::load_contract(&openapi)?;
+            let changes = lockfile::compare_verify_target(&target, &contract);
+
+            if changes.is_empty() {
+                println!("Verified {}", target.name());
+                Ok(0)
+            } else {
+                print!("{}", output::render_verify_changes(&changes));
+                Ok(1)
+            }
+        }
     }
 }

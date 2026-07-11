@@ -1,0 +1,10 @@
+openapi: 3.0.3
+info:
+  title: Verify removed
+  version: 1.0.0
+paths:
+  /zeta:
+    get:
+      responses:
+        "200":
+          description: OK

@@ -30,4 +30,15 @@ pub enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Verify one OpenAPI contract against a named api.lock entry.
+    Verify {
+        /// Current OpenAPI YAML or JSON file to verify.
+        openapi: PathBuf,
+        /// API name to verify from the lockfile.
+        #[arg(long)]
+        name: String,
+        /// api.lock file to compare against.
+        #[arg(long)]
+        lock: PathBuf,
+    },
 }
