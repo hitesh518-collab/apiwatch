@@ -114,7 +114,14 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
 
     Ok(VerifyTarget {
         name: name.to_string(),
-        operations: api.operations.iter().cloned().collect(),
+        operations: api
+            .operations
+            .iter()
+            .map(|operation| LockedOperation {
+                method: operation.method.to_ascii_uppercase(),
+                path: operation.path.clone(),
+            })
+            .collect(),
     })
 }
 
@@ -216,6 +223,37 @@ mod tests {
                     path: "/zeta".to_string(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn select_verify_target_normalizes_locked_method_case() {
+        let lock = ApiLock {
+            version: 1,
+            apis: BTreeMap::from([(
+                "users".to_string(),
+                LockedApi {
+                    source: "openapi".to_string(),
+                    operations: vec![LockedOperation {
+                        method: "get".to_string(),
+                        path: "/users".to_string(),
+                    }],
+                },
+            )]),
+        };
+        let current =
+            crate::openapi::load_contract(Path::new("testdata/openapi/lock_ordering.yaml"))
+                .expect("fixture should load");
+
+        let target = select_verify_target(&lock, "users").expect("target should select");
+
+        assert_eq!(
+            compare_verify_target(&target, &current),
+            vec![VerifyChange {
+                kind: VerifyChangeKind::Added,
+                method: "POST".to_string(),
+                path: "/users".to_string(),
+            }]
         );
     }
 
