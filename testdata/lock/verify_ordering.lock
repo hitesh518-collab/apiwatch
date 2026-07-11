@@ -1,0 +1,11 @@
+version: 1
+apis:
+  users:
+    source: openapi
+    operations:
+      - method: POST
+        path: /zeta
+      - method: GET
+        path: /zeta
+      - method: GET
+        path: /beta

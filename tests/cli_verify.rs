@@ -63,10 +63,31 @@ ADDED POST /zeta
 }
 
 #[test]
-fn verify_exits_two_for_an_empty_api_name() {
+fn verify_orders_operations_by_method_and_path_within_each_group() {
+    verify_command(
+        "testdata/openapi/verify_ordering.yaml",
+        "users",
+        "testdata/lock/verify_ordering.lock",
+    )
+    .assert()
+    .code(1)
+    .stdout(
+        "\
+REMOVED GET /beta
+REMOVED GET /zeta
+REMOVED POST /zeta
+ADDED GET /alpha
+ADDED GET /omega
+ADDED PUT /zeta
+",
+    );
+}
+
+#[test]
+fn verify_exits_two_for_a_whitespace_only_api_name() {
     verify_command(
         "testdata/openapi/verify_matching.yaml",
-        "",
+        "   ",
         "testdata/lock/verify_users.lock",
     )
     .assert()

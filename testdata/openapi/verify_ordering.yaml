@@ -1,0 +1,20 @@
+openapi: 3.0.3
+info:
+  title: Verify ordering
+  version: 1.0.0
+paths:
+  /zeta:
+    put:
+      responses:
+        "200":
+          description: OK
+  /omega:
+    get:
+      responses:
+        "200":
+          description: OK
+  /alpha:
+    get:
+      responses:
+        "200":
+          description: OK
