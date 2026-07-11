@@ -1,0 +1,5 @@
+version: 2
+apis:
+  users:
+    source: openapi
+    operations: []
