@@ -20,13 +20,10 @@ api.lock          : external APIs
 ```bash
 apiwatch diff old.openapi.yaml new.openapi.yaml
 apiwatch lock openapi.yaml --name users --output api.lock
+apiwatch verify openapi.yaml --name users --lock api.lock
 ```
 
-Planned future commands:
-
-```bash
-apiwatch verify
-```
+`apiwatch verify` compares the normalized operation set in a local OpenAPI file with one named `api.lock` entry. It exits `0` when they match and `1` when operations have drifted.
 
 ## MVP Scope
 
