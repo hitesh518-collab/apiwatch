@@ -125,6 +125,19 @@ fn verify_exits_two_for_invalid_lockfile_yaml() {
 }
 
 #[test]
+fn verify_exits_two_for_invalid_openapi_input() {
+    verify_command(
+        "testdata/openapi/invalid_yaml.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains("failed to parse OpenAPI YAML"));
+}
+
+#[test]
 fn verify_exits_two_for_an_unsupported_lockfile_version() {
     verify_command(
         "testdata/openapi/verify_matching.yaml",
