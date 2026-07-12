@@ -1,5 +1,6 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use serde_json::{json, Value};
 
 fn serve_once(status: &str, content_type: &str, body: &'static str, suffix: &str) -> String {
     use std::io::{Read, Write};
@@ -116,6 +117,85 @@ fn verify_command(openapi: &str, name: &str, lock: &str) -> Command {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
     command.args(["verify", openapi, "--name", name, "--lock", lock]);
     command
+}
+
+#[test]
+fn verify_json_reports_drift_and_exit_one() {
+    let output = verify_command(
+        "testdata/openapi/verify_current.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("Verify command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    assert!(output.stdout.ends_with(b"\n"));
+    let rendered: Value = serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    assert_eq!(
+        rendered,
+        json!({
+            "version": 1,
+            "command": "verify",
+            "name": "users",
+            "summary": { "removed": 2, "added": 2 },
+            "changes": [
+                { "kind": "removed", "method": "GET", "path": "/users" },
+                { "kind": "removed", "method": "GET", "path": "/zeta" },
+                { "kind": "added", "method": "POST", "path": "/users" },
+                { "kind": "added", "method": "POST", "path": "/zeta" }
+            ]
+        })
+    );
+}
+
+#[test]
+fn verify_json_reports_matching_contract_and_exit_zero() {
+    let output = verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("Verify command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let rendered: Value = serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    assert_eq!(rendered["name"], "users");
+    assert_eq!(rendered["summary"], json!({ "removed": 0, "added": 0 }));
+    assert_eq!(rendered["changes"], json!([]));
+}
+
+#[test]
+fn verify_default_format_preserves_text_output() {
+    verify_command(
+        "testdata/openapi/verify_current.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .code(1)
+    .stdout("REMOVED GET /users\nREMOVED GET /zeta\nADDED POST /users\nADDED POST /zeta\n");
+}
+
+#[test]
+fn verify_rejects_invalid_format() {
+    verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .args(["--format", "yaml"])
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains(
+        "invalid value 'yaml' for '--format <FORMAT>'",
+    ));
 }
 
 #[test]

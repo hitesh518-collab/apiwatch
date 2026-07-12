@@ -48,5 +48,7 @@ pub enum Command {
         /// api.lock file to compare against.
         #[arg(long)]
         lock: PathBuf,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
     },
 }

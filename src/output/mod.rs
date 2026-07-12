@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use crate::diff::{Change, Severity};
-use crate::lockfile::VerifyChange;
+use crate::lockfile::{VerifyChange, VerifyChangeKind};
 
 #[derive(Serialize)]
 struct DiffJson<'a> {
@@ -25,6 +25,28 @@ struct DiffJsonChange<'a> {
     method: &'static str,
     path: &'a str,
     message: &'a str,
+}
+
+#[derive(Serialize)]
+struct VerifyJson<'a> {
+    version: u8,
+    command: &'static str,
+    name: &'a str,
+    summary: VerifySummary,
+    changes: Vec<VerifyJsonChange<'a>>,
+}
+
+#[derive(Serialize)]
+struct VerifySummary {
+    removed: usize,
+    added: usize,
+}
+
+#[derive(Serialize)]
+struct VerifyJsonChange<'a> {
+    kind: &'static str,
+    method: &'a str,
+    path: &'a str,
 }
 
 pub fn render_changes_json(changes: &[Change]) -> Result<String> {
@@ -67,6 +89,45 @@ pub fn render_changes_json(changes: &[Change]) -> Result<String> {
         changes: rendered_changes,
     })
     .context("failed to serialize Diff JSON output")?;
+
+    Ok(format!("{rendered}\n"))
+}
+
+pub fn render_verify_changes_json(name: &str, changes: &[VerifyChange]) -> Result<String> {
+    let mut summary = VerifySummary {
+        removed: 0,
+        added: 0,
+    };
+    let rendered_changes = changes
+        .iter()
+        .map(|change| {
+            let kind = match change.kind {
+                VerifyChangeKind::Removed => {
+                    summary.removed += 1;
+                    "removed"
+                }
+                VerifyChangeKind::Added => {
+                    summary.added += 1;
+                    "added"
+                }
+            };
+
+            VerifyJsonChange {
+                kind,
+                method: &change.method,
+                path: &change.path,
+            }
+        })
+        .collect();
+
+    let rendered = serde_json::to_string(&VerifyJson {
+        version: 1,
+        command: "verify",
+        name,
+        summary,
+        changes: rendered_changes,
+    })
+    .context("failed to serialize Verify JSON output")?;
 
     Ok(format!("{rendered}\n"))
 }

@@ -66,6 +66,7 @@ fn run() -> Result<i32> {
             openapi,
             name,
             lock,
+            format,
         } => {
             let lock = lockfile::load(&lock)?;
             let target = lockfile::select_verify_target(&lock, &name)?;
@@ -73,10 +74,22 @@ fn run() -> Result<i32> {
             let changes = lockfile::compare_verify_target(&target, &contract);
 
             if changes.is_empty() {
-                println!("Verified {}", target.name());
+                match format {
+                    OutputFormat::Text => println!("Verified {}", target.name()),
+                    OutputFormat::Json => print!(
+                        "{}",
+                        output::render_verify_changes_json(target.name(), &changes)?
+                    ),
+                }
                 Ok(0)
             } else {
-                print!("{}", output::render_verify_changes(&changes));
+                let rendered = match format {
+                    OutputFormat::Text => output::render_verify_changes(&changes),
+                    OutputFormat::Json => {
+                        output::render_verify_changes_json(target.name(), &changes)?
+                    }
+                };
+                print!("{rendered}");
                 Ok(1)
             }
         }
