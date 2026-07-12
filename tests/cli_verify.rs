@@ -16,15 +16,15 @@ fn serve_once(status: &str, content_type: &str, body: &'static str, suffix: &str
         let (mut stream, _) = listener.accept().expect("test server should accept");
         let mut request = Vec::new();
         while !request.ends_with(b"\r\n\r\n") {
+            assert!(
+                request.len() < 8 * 1024,
+                "test server request headers exceed 8 KiB"
+            );
             let mut byte = [0_u8; 1];
             stream
                 .read_exact(&mut byte)
                 .expect("test server should read request headers");
             request.push(byte[0]);
-            assert!(
-                request.len() <= 8 * 1024,
-                "test server request headers exceed 8 KiB"
-            );
         }
         write!(
             stream,
