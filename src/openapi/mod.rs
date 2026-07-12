@@ -61,10 +61,11 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         .collect::<BTreeMap<_, _>>();
 
     for (path, item) in document.paths.paths {
+        let path = normalized_openapi_path(&path)?;
         let item = resolve_path_item(&item, &path_items, &mut BTreeSet::new())?;
         insert_operation(
             &mut contract,
-            &path,
+            path,
             HttpMethod::Get,
             &context,
             &item.parameters,
@@ -72,7 +73,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         )?;
         insert_operation(
             &mut contract,
-            &path,
+            path,
             HttpMethod::Post,
             &context,
             &item.parameters,
@@ -80,7 +81,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         )?;
         insert_operation(
             &mut contract,
-            &path,
+            path,
             HttpMethod::Put,
             &context,
             &item.parameters,
@@ -88,7 +89,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         )?;
         insert_operation(
             &mut contract,
-            &path,
+            path,
             HttpMethod::Patch,
             &context,
             &item.parameters,
@@ -96,7 +97,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         )?;
         insert_operation(
             &mut contract,
-            &path,
+            path,
             HttpMethod::Delete,
             &context,
             &item.parameters,
@@ -104,7 +105,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         )?;
         insert_operation(
             &mut contract,
-            &path,
+            path,
             HttpMethod::Options,
             &context,
             &item.parameters,
@@ -112,7 +113,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         )?;
         insert_operation(
             &mut contract,
-            &path,
+            path,
             HttpMethod::Head,
             &context,
             &item.parameters,
@@ -120,7 +121,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
         )?;
         insert_operation(
             &mut contract,
-            &path,
+            path,
             HttpMethod::Trace,
             &context,
             &item.parameters,
@@ -129,6 +130,22 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
     }
 
     Ok(contract)
+}
+
+fn normalized_openapi_path(path: &str) -> Result<&str> {
+    if path.is_empty() {
+        return Err(anyhow!("OpenAPI path cannot be empty"));
+    }
+
+    if !path.starts_with('/') {
+        return Err(anyhow!("OpenAPI path must start with /"));
+    }
+
+    if path.chars().any(char::is_control) {
+        return Err(anyhow!("OpenAPI path contains a control character"));
+    }
+
+    Ok(path)
 }
 
 struct OperationNormalizeContext<'a> {

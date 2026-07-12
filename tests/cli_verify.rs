@@ -155,6 +155,36 @@ fn verify_exits_two_for_an_invalid_locked_operation_path() {
 }
 
 #[test]
+fn verify_exits_two_for_an_openapi_path_with_a_control_character() {
+    verify_command(
+        "testdata/openapi/verify_invalid_operation_path.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains(
+        "OpenAPI path contains a control character",
+    ));
+}
+
+#[test]
+fn verify_exits_two_for_a_lockfile_source_with_a_control_character() {
+    verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/verify_invalid_source.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains(
+        "api.lock source contains a control character",
+    ));
+}
+
+#[test]
 fn verify_exits_two_for_invalid_openapi_input() {
     verify_command(
         "testdata/openapi/invalid_yaml.yaml",

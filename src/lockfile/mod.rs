@@ -106,6 +106,10 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
         .get(name)
         .ok_or_else(|| anyhow!("api {name} not found in lockfile"))?;
 
+    if api.source.chars().any(char::is_control) {
+        return Err(anyhow!("api.lock source contains a control character"));
+    }
+
     if api.source != "openapi" {
         return Err(anyhow!("unsupported api.lock source {}", api.source));
     }
