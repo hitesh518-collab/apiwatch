@@ -1,0 +1,17 @@
+openapi: 3.0.3
+info:
+  title: Verify with a path extension
+  version: 1.0.0
+paths:
+  x-internal:
+    audience: private
+  /users:
+    get:
+      responses:
+        "200":
+          description: OK
+  /zeta:
+    get:
+      responses:
+        "200":
+          description: OK

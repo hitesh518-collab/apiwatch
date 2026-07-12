@@ -44,7 +44,7 @@ fn validate_raw_openapi_paths(raw: &str, is_json: bool) -> Result<()> {
         };
 
         for path in paths.keys() {
-            normalized_openapi_path(path)?;
+            validate_raw_openapi_path(path)?;
         }
     } else {
         let document: serde_yaml::Value =
@@ -61,10 +61,19 @@ fn validate_raw_openapi_paths(raw: &str, is_json: bool) -> Result<()> {
             let path = path
                 .as_str()
                 .ok_or_else(|| anyhow!("OpenAPI path must be a string"))?;
-            normalized_openapi_path(path)?;
+            validate_raw_openapi_path(path)?;
         }
     }
 
+    Ok(())
+}
+
+fn validate_raw_openapi_path(path: &str) -> Result<()> {
+    if path.starts_with("x-") {
+        return Ok(());
+    }
+
+    normalized_openapi_path(path)?;
     Ok(())
 }
 

@@ -196,6 +196,31 @@ fn verify_exits_two_for_an_openapi_path_without_a_leading_slash() {
 }
 
 #[test]
+fn verify_accepts_openapi_path_extensions() {
+    verify_command(
+        "testdata/openapi/verify_with_path_extension.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .success()
+    .stdout("Verified users\n");
+}
+
+#[test]
+fn verify_exits_two_for_a_non_slash_json_openapi_path() {
+    verify_command(
+        "testdata/openapi/verify_non_slash_path.json",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains("OpenAPI path must start with /"));
+}
+
+#[test]
 fn verify_exits_two_for_a_lockfile_source_with_a_control_character() {
     verify_command(
         "testdata/openapi/verify_matching.yaml",
