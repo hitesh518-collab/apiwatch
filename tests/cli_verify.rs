@@ -2,7 +2,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn serve_once(status: &str, content_type: &str, body: &'static str, suffix: &str) -> String {
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
 
@@ -14,6 +14,18 @@ fn serve_once(status: &str, content_type: &str, body: &'static str, suffix: &str
     let content_type = content_type.to_string();
     thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("test server should accept");
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0_u8; 1];
+            stream
+                .read_exact(&mut byte)
+                .expect("test server should read request headers");
+            request.push(byte[0]);
+            assert!(
+                request.len() <= 8 * 1024,
+                "test server request headers exceed 8 KiB"
+            );
+        }
         write!(
             stream,
             "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
