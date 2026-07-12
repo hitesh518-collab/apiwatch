@@ -24,9 +24,18 @@ apiwatch verify openapi.yaml --name users --lock api.lock
 apiwatch verify https://api.example.com/openapi.yaml --name users --lock api.lock
 ```
 
+```bash
+apiwatch diff old.openapi.yaml new.openapi.yaml --format json
+apiwatch verify openapi.yaml --name users --lock api.lock --format json
+```
+
 `apiwatch verify <OPENAPI_OR_URL> --name <NAME> --lock <PATH>` compares uppercase HTTP method and normalized path pairs in one OpenAPI contract with a named `api.lock` entry. It accepts local YAML or JSON files and HTTP/HTTPS URLs. It exits `0` for a match, `1` for drift, and `2` for invalid local or remote input.
 
 Remote verification uses a 10-second timeout and a 10 MiB response limit. Authentication, custom headers, and configuration files are not included.
+
+## JSON Output
+
+`apiwatch diff` and `apiwatch verify` support `--format text|json`; text is the default. JSON output is a versioned, deterministic result document written to stdout. Diff reports `breaking`, `warning`, and `non_breaking` summary counts with operation messages; Verify reports the named lock entry and `removed`/`added` operation drift. Exit codes remain `0` for a clean result, `1` for detected breaking changes or Verify drift, and `2` for operational or validation errors.
 
 ## GitHub Action
 
