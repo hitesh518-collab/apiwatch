@@ -51,9 +51,12 @@ fn remote_url(input: &str) -> Result<Option<reqwest::Url>> {
     }
 
     if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") {
-        return reqwest::Url::parse(input)
-            .map(Some)
-            .map_err(|error| anyhow!("invalid OpenAPI URL: {error}"));
+        let url =
+            reqwest::Url::parse(input).map_err(|error| anyhow!("invalid OpenAPI URL: {error}"))?;
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err(anyhow!("remote OpenAPI URL credentials are not allowed"));
+        }
+        return Ok(Some(url));
     }
 
     Err(anyhow!("unsupported OpenAPI URL scheme"))
@@ -95,6 +98,8 @@ fn read_limited_body(reader: impl Read) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::ErrorKind;
+    use std::net::TcpListener;
 
     #[test]
     fn fetch_rejects_an_unsupported_url_scheme() {
@@ -111,5 +116,45 @@ mod tests {
         assert!(error
             .to_string()
             .contains("remote OpenAPI response exceeds 10 MiB"));
+    }
+
+    #[test]
+    fn fetch_rejects_username_credentials_without_making_a_request() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        listener
+            .set_nonblocking(true)
+            .expect("listener should become nonblocking");
+        let address = listener
+            .local_addr()
+            .expect("listener should have an address");
+
+        let error = fetch(&format!("http://username@{address}/openapi.yaml"))
+            .expect_err("username credentials should be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "remote OpenAPI URL credentials are not allowed"
+        );
+        assert!(matches!(listener.accept(), Err(error) if error.kind() == ErrorKind::WouldBlock));
+    }
+
+    #[test]
+    fn fetch_rejects_password_credentials_without_making_a_request() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        listener
+            .set_nonblocking(true)
+            .expect("listener should become nonblocking");
+        let address = listener
+            .local_addr()
+            .expect("listener should have an address");
+
+        let error = fetch(&format!("http://username:password@{address}/openapi.yaml"))
+            .expect_err("password credentials should be rejected");
+
+        assert_eq!(
+            error.to_string(),
+            "remote OpenAPI URL credentials are not allowed"
+        );
+        assert!(matches!(listener.accept(), Err(error) if error.kind() == ErrorKind::WouldBlock));
     }
 }

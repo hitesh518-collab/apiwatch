@@ -41,10 +41,15 @@ pub fn load_contract_text(text: &str, is_json: bool, location: &str) -> Result<A
 
 pub fn load_contract_input(input: &str) -> Result<ApiContract> {
     if let Some(remote) = crate::remote::fetch(input)? {
-        return load_contract_text(&remote.text, remote.is_json, "remote document");
+        return load_remote_contract(remote);
     }
 
     load_contract(Path::new(input))
+}
+
+fn load_remote_contract(remote: crate::remote::RemoteOpenApi) -> Result<ApiContract> {
+    load_contract_text(&remote.text, remote.is_json, "remote document")
+        .map_err(|_| anyhow!("failed to parse remote OpenAPI document"))
 }
 
 fn validate_raw_openapi_paths(raw: &str, is_json: bool) -> Result<()> {
@@ -905,8 +910,9 @@ mod tests {
     use std::path::Path;
 
     use crate::contract::HttpMethod;
+    use crate::remote::RemoteOpenApi;
 
-    use super::load_contract;
+    use super::{load_contract, load_remote_contract};
 
     #[test]
     fn loads_openapi_operations() {
@@ -924,5 +930,19 @@ mod tests {
             .get(key)
             .expect("operation should exist");
         assert!(operation.responses.contains_key("200"));
+    }
+
+    #[test]
+    fn remote_parse_errors_are_sanitized() {
+        let raw_content = "not: [valid\x1b remote OpenAPI";
+        let error = load_remote_contract(RemoteOpenApi {
+            text: raw_content.to_string(),
+            is_json: false,
+        })
+        .expect_err("invalid remote document should fail");
+
+        assert_eq!(error.to_string(), "failed to parse remote OpenAPI document");
+        assert!(!error.to_string().contains(raw_content));
+        assert!(!error.to_string().chars().any(char::is_control));
     }
 }
