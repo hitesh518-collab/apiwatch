@@ -1,0 +1,38 @@
+name: apiwatch verify
+description: Verify a local or live OpenAPI contract against a named api.lock entry.
+
+inputs:
+  openapi:
+    description: Local OpenAPI YAML/JSON path or HTTP(S) URL to verify.
+    required: true
+  name:
+    description: Named api.lock entry to verify.
+    required: true
+  lock:
+    description: api.lock path relative to the working directory.
+    required: false
+    default: api.lock
+  working-directory:
+    description: Consumer repository directory in which Verify runs.
+    required: false
+    default: .
+
+runs:
+  using: composite
+  steps:
+    - name: Install stable Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Build apiwatch
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: cargo build --release --manifest-path "$ACTION_PATH/Cargo.toml"
+    - name: Verify API contract
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        OPENAPI: ${{ inputs.openapi }}
+        API_NAME: ${{ inputs.name }}
+        LOCK: ${{ inputs.lock }}
+      run: '"$ACTION_PATH/target/release/apiwatch" verify "$OPENAPI" --name "$API_NAME" --lock "$LOCK"'

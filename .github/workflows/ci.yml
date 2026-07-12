@@ -17,3 +17,14 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test
+
+  action-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          openapi: testdata/openapi/verify_matching.yaml
+          name: users
+          lock: testdata/lock/verify_users.lock
