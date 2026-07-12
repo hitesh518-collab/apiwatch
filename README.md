@@ -42,6 +42,8 @@ steps:
       lock: api.lock
 ```
 
+The `openapi` and `name` inputs are required. `lock` defaults to `api.lock`, and `working-directory` defaults to `.`.
+
 Pin the action to a commit SHA or release tag. The action builds `apiwatch` from source with Cargo, propagates Verify's `0`/`1`/`2` exit codes, and supports the `working-directory` input. It does not provide caching, action outputs, authentication, custom headers, or configuration files.
 
 ## MVP Scope
