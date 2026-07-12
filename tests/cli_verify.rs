@@ -2,7 +2,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn serve_once(status: &str, content_type: &str, body: &'static str, suffix: &str) -> String {
-    use std::io::{Read, Write};
+    use std::io::Write;
     use std::net::TcpListener;
     use std::thread;
 
@@ -14,10 +14,6 @@ fn serve_once(status: &str, content_type: &str, body: &'static str, suffix: &str
     let content_type = content_type.to_string();
     thread::spawn(move || {
         let (mut stream, _) = listener.accept().expect("test server should accept");
-        let mut request = [0_u8; 1024];
-        stream
-            .read(&mut request)
-            .expect("test server should read request");
         write!(
             stream,
             "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
