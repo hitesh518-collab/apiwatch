@@ -110,16 +110,19 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
         return Err(anyhow!("unsupported api.lock source {}", api.source));
     }
 
+    let operations = api
+        .operations
+        .iter()
+        .enumerate()
+        .map(|(index, operation)| {
+            normalized_locked_operation(operation)
+                .with_context(|| format!("invalid locked operation {}", index + 1))
+        })
+        .collect::<Result<_>>()?;
+
     Ok(VerifyTarget {
         name: name.to_string(),
-        operations: api
-            .operations
-            .iter()
-            .map(|operation| LockedOperation {
-                method: operation.method.to_ascii_uppercase(),
-                path: operation.path.clone(),
-            })
-            .collect(),
+        operations,
     })
 }
 
@@ -160,6 +163,41 @@ fn normalized_name(name: &str) -> Result<&str> {
     }
 
     Ok(name)
+}
+
+fn normalized_locked_operation(operation: &LockedOperation) -> Result<LockedOperation> {
+    let method = operation.method.to_ascii_uppercase();
+    if method.chars().any(char::is_control) {
+        return Err(anyhow!(
+            "locked operation method contains a control character"
+        ));
+    }
+
+    if !matches!(
+        method.as_str(),
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD" | "TRACE"
+    ) {
+        return Err(anyhow!("unsupported locked operation method"));
+    }
+
+    if operation.path.is_empty() {
+        return Err(anyhow!("locked operation path cannot be empty"));
+    }
+
+    if !operation.path.starts_with('/') {
+        return Err(anyhow!("locked operation path must start with /"));
+    }
+
+    if operation.path.chars().any(char::is_control) {
+        return Err(anyhow!(
+            "locked operation path contains a control character"
+        ));
+    }
+
+    Ok(LockedOperation {
+        method,
+        path: operation.path.clone(),
+    })
 }
 
 #[cfg(test)]
@@ -253,6 +291,57 @@ mod tests {
                 path: "/users".to_string(),
             }]
         );
+    }
+
+    #[test]
+    fn select_verify_target_rejects_an_unsupported_locked_method() {
+        let lock = ApiLock {
+            version: 1,
+            apis: BTreeMap::from([(
+                "users".to_string(),
+                LockedApi {
+                    source: "openapi".to_string(),
+                    operations: vec![LockedOperation {
+                        method: "BOGUS".to_string(),
+                        path: "/users".to_string(),
+                    }],
+                },
+            )]),
+        };
+
+        let error = select_verify_target(&lock, "users")
+            .expect_err("unsupported locked method should be rejected");
+
+        assert!(error.chain().any(|cause| cause
+            .to_string()
+            .contains("unsupported locked operation method")));
+    }
+
+    #[test]
+    fn select_verify_target_rejects_a_locked_path_with_a_control_character() {
+        let lock = ApiLock {
+            version: 1,
+            apis: BTreeMap::from([(
+                "users".to_string(),
+                LockedApi {
+                    source: "openapi".to_string(),
+                    operations: vec![LockedOperation {
+                        method: "GET".to_string(),
+                        path: "/users\u{0001}".to_string(),
+                    }],
+                },
+            )]),
+        };
+
+        let error = select_verify_target(&lock, "users")
+            .expect_err("locked path with a control character should be rejected");
+
+        assert!(error.chain().any(|cause| cause
+            .to_string()
+            .contains("locked operation path contains a control character")));
+        assert!(!error
+            .chain()
+            .any(|cause| cause.to_string().contains('\u{0001}')));
     }
 
     #[test]

@@ -1,0 +1,7 @@
+version: 1
+apis:
+  users:
+    source: openapi
+    operations:
+      - method: GET
+        path: "/users\u0001"

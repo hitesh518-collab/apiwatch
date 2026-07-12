@@ -125,6 +125,36 @@ fn verify_exits_two_for_invalid_lockfile_yaml() {
 }
 
 #[test]
+fn verify_exits_two_for_an_invalid_locked_operation_method() {
+    verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/verify_invalid_operation_method.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains(
+        "unsupported locked operation method",
+    ));
+}
+
+#[test]
+fn verify_exits_two_for_an_invalid_locked_operation_path() {
+    verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/verify_invalid_operation_path.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains(
+        "locked operation path contains a control character",
+    ));
+}
+
+#[test]
 fn verify_exits_two_for_invalid_openapi_input() {
     verify_command(
         "testdata/openapi/invalid_yaml.yaml",

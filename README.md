@@ -23,7 +23,7 @@ apiwatch lock openapi.yaml --name users --output api.lock
 apiwatch verify openapi.yaml --name users --lock api.lock
 ```
 
-`apiwatch verify` compares the normalized operation set in a local OpenAPI file with one named `api.lock` entry. It exits `0` when they match and `1` when operations have drifted.
+`apiwatch verify` compares uppercase HTTP method and normalized path pairs in a local OpenAPI file with one named `api.lock` entry. It exits `0` when they match, `1` when operations have drifted, and `2` for invalid input or lockfile data.
 
 ## MVP Scope
 
