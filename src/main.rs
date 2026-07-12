@@ -11,7 +11,7 @@ use std::fs;
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use crate::cli::{Cli, Command};
+use crate::cli::{Cli, Command, OutputFormat};
 use crate::diff::Severity;
 
 fn main() {
@@ -30,11 +30,15 @@ fn run() -> Result<i32> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Diff { old, new } => {
+        Command::Diff { old, new, format } => {
             let old = openapi::load_contract(&old)?;
             let new = openapi::load_contract(&new)?;
             let changes = diff::diff_contracts(&old, &new);
-            print!("{}", output::render_changes(&changes));
+            let rendered = match format {
+                OutputFormat::Text => output::render_changes(&changes),
+                OutputFormat::Json => output::render_changes_json(&changes)?,
+            };
+            print!("{rendered}");
 
             if changes
                 .iter()

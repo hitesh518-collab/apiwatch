@@ -1,5 +1,75 @@
+use anyhow::{Context, Result};
+use serde::Serialize;
+
 use crate::diff::{Change, Severity};
 use crate::lockfile::VerifyChange;
+
+#[derive(Serialize)]
+struct DiffJson<'a> {
+    version: u8,
+    command: &'static str,
+    summary: DiffSummary,
+    changes: Vec<DiffJsonChange<'a>>,
+}
+
+#[derive(Serialize)]
+struct DiffSummary {
+    breaking: usize,
+    warning: usize,
+    non_breaking: usize,
+}
+
+#[derive(Serialize)]
+struct DiffJsonChange<'a> {
+    severity: &'static str,
+    method: &'static str,
+    path: &'a str,
+    message: &'a str,
+}
+
+pub fn render_changes_json(changes: &[Change]) -> Result<String> {
+    let mut summary = DiffSummary {
+        breaking: 0,
+        warning: 0,
+        non_breaking: 0,
+    };
+    let rendered_changes = changes
+        .iter()
+        .map(|change| {
+            let severity = match change.severity {
+                Severity::Breaking => {
+                    summary.breaking += 1;
+                    "breaking"
+                }
+                Severity::Warning => {
+                    summary.warning += 1;
+                    "warning"
+                }
+                Severity::NonBreaking => {
+                    summary.non_breaking += 1;
+                    "non_breaking"
+                }
+            };
+
+            DiffJsonChange {
+                severity,
+                method: change.operation.method.as_str(),
+                path: &change.operation.path,
+                message: &change.message,
+            }
+        })
+        .collect();
+
+    let rendered = serde_json::to_string(&DiffJson {
+        version: 1,
+        command: "diff",
+        summary,
+        changes: rendered_changes,
+    })
+    .context("failed to serialize Diff JSON output")?;
+
+    Ok(format!("{rendered}\n"))
+}
 
 pub fn render_changes(changes: &[Change]) -> String {
     if changes.is_empty() {

@@ -1,5 +1,140 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use serde_json::{json, Value};
+
+#[test]
+fn diff_json_reports_breaking_changes_and_exit_one() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/endpoint_removed_old.yaml",
+            "testdata/openapi/endpoint_removed_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    assert!(output.stdout.ends_with(b"\n"));
+    let rendered: Value = serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    assert_eq!(
+        rendered,
+        json!({
+            "version": 1,
+            "command": "diff",
+            "summary": { "breaking": 1, "warning": 0, "non_breaking": 0 },
+            "changes": [{
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/users",
+                "message": "endpoint removed"
+            }]
+        })
+    );
+}
+
+#[test]
+fn diff_json_reports_warning_only_change_and_exit_zero() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/status_error_added_old.yaml",
+            "testdata/openapi/status_error_added_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let rendered: Value = serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    assert_eq!(
+        rendered,
+        json!({
+            "version": 1,
+            "command": "diff",
+            "summary": { "breaking": 0, "warning": 1, "non_breaking": 0 },
+            "changes": [{
+                "severity": "warning",
+                "method": "GET",
+                "path": "/users",
+                "message": "response status 429 added"
+            }]
+        })
+    );
+}
+
+#[test]
+fn diff_json_reports_no_changes() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/no_breaking_old.yaml",
+            "testdata/openapi/no_breaking_old.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let rendered: Value = serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    assert_eq!(
+        rendered,
+        json!({
+            "version": 1,
+            "command": "diff",
+            "summary": { "breaking": 0, "warning": 0, "non_breaking": 0 },
+            "changes": []
+        })
+    );
+}
+
+#[test]
+fn diff_defaults_to_byte_compatible_text_output() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/endpoint_removed_old.yaml",
+            "testdata/openapi/endpoint_removed_new.yaml",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        output.stdout,
+        b"Breaking changes\n- GET /users: endpoint removed\n"
+    );
+}
+
+#[test]
+fn diff_rejects_invalid_output_format() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/no_breaking_old.yaml",
+            "testdata/openapi/no_breaking_old.yaml",
+            "--format",
+            "yaml",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid value 'yaml' for '--format <FORMAT>'"));
+}
 
 #[test]
 fn diff_exits_one_for_breaking_change() {
