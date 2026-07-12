@@ -28,6 +28,22 @@ apiwatch verify https://api.example.com/openapi.yaml --name users --lock api.loc
 
 Remote verification uses a 10-second timeout and a 10 MiB response limit. Authentication, custom headers, and configuration files are not included.
 
+## GitHub Action
+
+Use the reusable action from an Ubuntu workflow after checking out the consumer repository:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: hitesh518-collab/apiwatch@<commit-sha>
+    with:
+      openapi: https://api.example.com/openapi.yaml
+      name: users
+      lock: api.lock
+```
+
+Pin the action to a commit SHA or release tag. The action builds `apiwatch` from source with Cargo, propagates Verify's `0`/`1`/`2` exit codes, and supports the `working-directory` input. It does not provide caching, action outputs, authentication, custom headers, or configuration files.
+
 ## MVP Scope
 
 - Parse local OpenAPI 3.x YAML and JSON files.

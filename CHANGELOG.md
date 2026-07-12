@@ -8,6 +8,7 @@
 - `apiwatch verify <OPENAPI> --name <NAME> --lock <PATH>` compares a local OpenAPI contract to one named v1 `api.lock` entry and exits `1` for deterministic operation drift.
 - `apiwatch verify <OPENAPI_OR_URL> --name <NAME> --lock <PATH>` supports HTTP/HTTPS OpenAPI URLs for live verification; remote fetch failures exit `2`.
 - Invalid `verify` input and lockfile data errors exit `2`.
+- Reusable `apiwatch verify` composite GitHub Action that builds from source and propagates Verify exit codes.
 
 ## v0.1.0
 
