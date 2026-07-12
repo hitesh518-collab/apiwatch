@@ -19,7 +19,10 @@ use crate::contract::{
 pub fn load_contract(path: &Path) -> Result<ApiContract> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read OpenAPI file {}", path.display()))?;
-    let document: OpenAPI = if path.extension().and_then(|value| value.to_str()) == Some("json") {
+    let is_json = path.extension().and_then(|value| value.to_str()) == Some("json");
+    validate_raw_openapi_paths(&raw, is_json)?;
+
+    let document: OpenAPI = if is_json {
         serde_json::from_str(&raw)
             .with_context(|| format!("failed to parse OpenAPI JSON {}", path.display()))?
     } else {
@@ -30,6 +33,39 @@ pub fn load_contract(path: &Path) -> Result<ApiContract> {
     ensure_openapi_3(&document)?;
 
     normalize(document)
+}
+
+fn validate_raw_openapi_paths(raw: &str, is_json: bool) -> Result<()> {
+    if is_json {
+        let document: serde_json::Value =
+            serde_json::from_str(raw).context("failed to parse OpenAPI JSON")?;
+        let Some(paths) = document.get("paths").and_then(serde_json::Value::as_object) else {
+            return Ok(());
+        };
+
+        for path in paths.keys() {
+            normalized_openapi_path(path)?;
+        }
+    } else {
+        let document: serde_yaml::Value =
+            serde_yaml::from_str(raw).context("failed to parse OpenAPI YAML")?;
+        let Some(paths) = document
+            .as_mapping()
+            .and_then(|document| document.get(serde_yaml::Value::String("paths".to_string())))
+            .and_then(serde_yaml::Value::as_mapping)
+        else {
+            return Ok(());
+        };
+
+        for path in paths.keys() {
+            let path = path
+                .as_str()
+                .ok_or_else(|| anyhow!("OpenAPI path must be a string"))?;
+            normalized_openapi_path(path)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn ensure_openapi_3(document: &OpenAPI) -> Result<()> {

@@ -170,6 +170,32 @@ fn verify_exits_two_for_an_openapi_path_with_a_control_character() {
 }
 
 #[test]
+fn verify_exits_two_for_an_empty_openapi_path() {
+    verify_command(
+        "testdata/openapi/verify_empty_path.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains("OpenAPI path cannot be empty"));
+}
+
+#[test]
+fn verify_exits_two_for_an_openapi_path_without_a_leading_slash() {
+    verify_command(
+        "testdata/openapi/verify_non_slash_path.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains("OpenAPI path must start with /"));
+}
+
+#[test]
 fn verify_exits_two_for_a_lockfile_source_with_a_control_character() {
     verify_command(
         "testdata/openapi/verify_matching.yaml",
