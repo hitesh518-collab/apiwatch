@@ -20,6 +20,7 @@ pub fn fetch(input: &str) -> Result<Option<RemoteOpenApi>> {
     };
 
     let client = Client::builder()
+        .no_proxy()
         .timeout(Duration::from_secs(10))
         .redirect(Policy::limited(5))
         .build()

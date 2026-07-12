@@ -36,6 +36,82 @@ fn serve_once(status: &str, content_type: &str, body: &'static str, suffix: &str
     format!("http://{address}/{suffix}")
 }
 
+struct ProxyProbe {
+    url: String,
+    connection: std::sync::mpsc::Receiver<bool>,
+}
+
+impl ProxyProbe {
+    fn assert_not_used(self) {
+        match self
+            .connection
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .expect("proxy probe should finish")
+        {
+            false => {}
+            true => panic!("Verify unexpectedly connected to the configured HTTP proxy"),
+        }
+    }
+}
+
+fn serve_proxy_probe(body: &'static str) -> ProxyProbe {
+    use std::io::{ErrorKind, Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("proxy probe should bind");
+    listener
+        .set_nonblocking(true)
+        .expect("proxy probe should become nonblocking");
+    let address = listener
+        .local_addr()
+        .expect("proxy probe should have an address");
+    let (connection_sender, connection) = mpsc::sync_channel(1);
+
+    thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let mut request = Vec::new();
+                    while !request.ends_with(b"\r\n\r\n") && request.len() < 8 * 1024 {
+                        let mut byte = [0_u8; 1];
+                        if stream.read_exact(&mut byte).is_err() {
+                            break;
+                        }
+                        request.push(byte[0]);
+                    }
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/yaml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = connection_sender.send(true);
+                    return;
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        let _ = connection_sender.send(false);
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(_) => {
+                    let _ = connection_sender.send(false);
+                    return;
+                }
+            }
+        }
+    });
+
+    ProxyProbe {
+        url: format!("http://{address}"),
+        connection,
+    }
+}
+
 fn verify_command(openapi: &str, name: &str, lock: &str) -> Command {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
     command.args(["verify", openapi, "--name", name, "--lock", lock]);
@@ -54,6 +130,26 @@ fn verify_exits_zero_for_matching_remote_operations() {
         .assert()
         .success()
         .stdout("Verified users\n");
+}
+
+#[test]
+fn verify_ignores_http_proxy_configuration() {
+    let proxy = serve_proxy_probe(include_str!("../testdata/openapi/verify_matching.yaml"));
+    let mut command = verify_command(
+        "http://apiwatch-proxy-test.invalid/openapi.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    );
+    command.env_clear().env("HTTP_PROXY", &proxy.url);
+
+    command
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "failed to request remote OpenAPI document",
+        ));
+    proxy.assert_not_used();
 }
 
 #[test]
