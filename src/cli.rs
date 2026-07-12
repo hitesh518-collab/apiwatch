@@ -32,8 +32,8 @@ pub enum Command {
     },
     /// Verify one OpenAPI contract against a named api.lock entry.
     Verify {
-        /// Current OpenAPI YAML or JSON file to verify.
-        openapi: PathBuf,
+        /// Current local OpenAPI YAML/JSON file or HTTP(S) URL to verify.
+        openapi: String,
         /// API name to verify from the lockfile.
         #[arg(long)]
         name: String,

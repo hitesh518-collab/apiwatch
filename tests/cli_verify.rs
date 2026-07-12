@@ -1,10 +1,109 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 
+fn serve_once(status: &str, content_type: &str, body: &'static str, suffix: &str) -> String {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("test server should bind");
+    let address = listener
+        .local_addr()
+        .expect("test server should have an address");
+    let status = status.to_string();
+    let content_type = content_type.to_string();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("test server should accept");
+        let mut request = [0_u8; 1024];
+        stream
+            .read(&mut request)
+            .expect("test server should read request");
+        write!(
+            stream,
+            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .expect("test server should write response");
+    });
+    format!("http://{address}/{suffix}")
+}
+
 fn verify_command(openapi: &str, name: &str, lock: &str) -> Command {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
     command.args(["verify", openapi, "--name", name, "--lock", lock]);
     command
+}
+
+#[test]
+fn verify_exits_zero_for_matching_remote_operations() {
+    let url = serve_once(
+        "200 OK",
+        "application/yaml",
+        include_str!("../testdata/openapi/verify_matching.yaml"),
+        "openapi.yaml",
+    );
+    verify_command(&url, "users", "testdata/lock/verify_users.lock")
+        .assert()
+        .success()
+        .stdout("Verified users\n");
+}
+
+#[test]
+fn verify_exits_one_for_remote_operation_drift() {
+    let url = serve_once(
+        "200 OK",
+        "application/yaml",
+        include_str!("../testdata/openapi/verify_current.yaml"),
+        "openapi.yaml",
+    );
+    verify_command(&url, "users", "testdata/lock/verify_users.lock")
+        .assert()
+        .code(1)
+        .stdout("REMOVED GET /users\nREMOVED GET /zeta\nADDED POST /users\nADDED POST /zeta\n");
+}
+
+#[test]
+fn verify_exits_two_for_a_remote_non_success_status() {
+    let url = serve_once(
+        "503 Service Unavailable",
+        "text/plain",
+        "unavailable",
+        "openapi.yaml",
+    );
+    verify_command(&url, "users", "testdata/lock/verify_users.lock")
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "remote OpenAPI request returned a non-success status",
+        ));
+}
+
+#[test]
+fn verify_exits_two_for_an_unsupported_remote_url_scheme() {
+    verify_command(
+        "ftp://example.test/openapi.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains("unsupported OpenAPI URL scheme"));
+}
+
+#[test]
+fn verify_exits_zero_for_matching_remote_json_operations() {
+    let url = serve_once(
+        "200 OK",
+        "application/json",
+        include_str!("../testdata/openapi/verify_matching.json"),
+        "openapi.yaml",
+    );
+    verify_command(&url, "users", "testdata/lock/verify_users.lock")
+        .assert()
+        .success()
+        .stdout("Verified users\n");
 }
 
 #[test]

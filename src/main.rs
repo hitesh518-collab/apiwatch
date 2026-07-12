@@ -65,7 +65,7 @@ fn run() -> Result<i32> {
         } => {
             let lock = lockfile::load(&lock)?;
             let target = lockfile::select_verify_target(&lock, &name)?;
-            let contract = openapi::load_contract(&openapi)?;
+            let contract = openapi::load_contract_input(&openapi)?;
             let changes = lockfile::compare_verify_target(&target, &contract);
 
             if changes.is_empty() {
