@@ -20,19 +20,31 @@ pub fn load_contract(path: &Path) -> Result<ApiContract> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read OpenAPI file {}", path.display()))?;
     let is_json = path.extension().and_then(|value| value.to_str()) == Some("json");
-    validate_raw_openapi_paths(&raw, is_json)?;
+    load_contract_text(&raw, is_json, path.to_string_lossy().as_ref())
+}
+
+pub fn load_contract_text(text: &str, is_json: bool, location: &str) -> Result<ApiContract> {
+    validate_raw_openapi_paths(text, is_json)?;
 
     let document: OpenAPI = if is_json {
-        serde_json::from_str(&raw)
-            .with_context(|| format!("failed to parse OpenAPI JSON {}", path.display()))?
+        serde_json::from_str(text)
+            .with_context(|| format!("failed to parse OpenAPI JSON {location}"))?
     } else {
-        serde_yaml::from_str(&raw)
-            .with_context(|| format!("failed to parse OpenAPI YAML {}", path.display()))?
+        serde_yaml::from_str(text)
+            .with_context(|| format!("failed to parse OpenAPI YAML {location}"))?
     };
 
     ensure_openapi_3(&document)?;
 
     normalize(document)
+}
+
+pub fn load_contract_input(input: &str) -> Result<ApiContract> {
+    if let Some(remote) = crate::remote::fetch(input)? {
+        return load_contract_text(&remote.text, remote.is_json, "remote document");
+    }
+
+    load_contract(Path::new(input))
 }
 
 fn validate_raw_openapi_paths(raw: &str, is_json: bool) -> Result<()> {

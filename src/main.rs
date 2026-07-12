@@ -4,6 +4,7 @@ mod diff;
 mod lockfile;
 mod openapi;
 mod output;
+mod remote;
 
 use std::fs;
 
