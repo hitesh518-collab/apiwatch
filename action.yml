@@ -16,6 +16,10 @@ inputs:
     description: Consumer repository directory in which Verify runs.
     required: false
     default: .
+  sarif-file:
+    description: Relative SARIF output path within working-directory; enables Code Scanning upload when set.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -28,6 +32,7 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: cargo build --release --manifest-path "$ACTION_PATH/Cargo.toml"
     - name: Verify API contract
+      if: ${{ inputs.sarif-file == '' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
@@ -36,3 +41,41 @@ runs:
         API_NAME: ${{ inputs.name }}
         LOCK: ${{ inputs.lock }}
       run: '"$ACTION_PATH/target/release/apiwatch" verify "$OPENAPI" --name "$API_NAME" --lock "$LOCK"'
+    - name: Generate SARIF
+      if: ${{ inputs.sarif-file != '' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        OPENAPI: ${{ inputs.openapi }}
+        API_NAME: ${{ inputs.name }}
+        LOCK: ${{ inputs.lock }}
+        SARIF_FILE: ${{ inputs.sarif-file }}
+      run: |
+        case "$SARIF_FILE" in
+          /*|..|../*|*/..|*/../*)
+            echo "error: sarif-file must be a relative path within working-directory" >&2
+            exit 2
+            ;;
+        esac
+        mkdir -p -- "$(dirname "$SARIF_FILE")"
+        set +e
+        "$ACTION_PATH/target/release/apiwatch" verify "$OPENAPI" --name "$API_NAME" --lock "$LOCK" --format sarif > "$SARIF_FILE"
+        status=$?
+        set -e
+        if [ "$status" -eq 2 ]; then
+          exit 2
+        fi
+        echo "APIWATCH_SARIF_EXIT_CODE=$status" >> "$GITHUB_ENV"
+    - name: Upload SARIF
+      if: ${{ inputs.sarif-file != '' && env.APIWATCH_SARIF_EXIT_CODE != '' }}
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: ${{ inputs.working-directory }}/${{ inputs.sarif-file }}
+        category: apiwatch-${{ inputs.name }}
+    - name: Report Verify result
+      if: ${{ inputs.sarif-file != '' && env.APIWATCH_SARIF_EXIT_CODE != '' }}
+      shell: bash
+      env:
+        APIWATCH_SARIF_EXIT_CODE: ${{ env.APIWATCH_SARIF_EXIT_CODE }}
+      run: exit "$APIWATCH_SARIF_EXIT_CODE"

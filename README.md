@@ -35,13 +35,24 @@ Remote verification uses a 10-second timeout and a 10 MiB response limit. Authen
 
 ## JSON Output
 
-`apiwatch diff` and `apiwatch verify` support `--format text|json`; text is the default. JSON output is a versioned, deterministic result document written to stdout. Diff reports `breaking`, `warning`, and `non_breaking` summary counts with operation messages; Verify reports the named lock entry and `removed`/`added` operation drift. Exit codes remain `0` for a clean result, `1` for detected breaking changes or Verify drift, and `2` for operational or validation errors.
+```bash
+apiwatch diff old.openapi.yaml new.openapi.yaml --format json
+apiwatch verify openapi.yaml --name users --lock api.lock --format json
+apiwatch diff old.openapi.yaml new.openapi.yaml --format sarif
+apiwatch verify openapi.yaml --name users --lock api.lock --format sarif
+```
+
+`apiwatch diff` and `apiwatch verify` support `--format text|json|sarif`; text is the default. JSON output is a versioned, deterministic result document written to stdout. Diff reports `breaking`, `warning`, and `non_breaking` summary counts with operation messages; Verify reports the named lock entry and `removed`/`added` operation drift. SARIF 2.1.0 output is intended for GitHub Code Scanning and preserves the same exit codes: `0` for a clean result, `1` for detected breaking changes or Verify drift, and `2` for operational or validation errors.
 
 ## GitHub Action
 
 Use the reusable action from an Ubuntu workflow after checking out the consumer repository:
 
 ```yaml
+permissions:
+  contents: read
+  security-events: write
+
 steps:
   - uses: actions/checkout@v4
   - uses: hitesh518-collab/apiwatch@<commit-sha>
@@ -49,9 +60,10 @@ steps:
       openapi: https://api.example.com/openapi.yaml
       name: users
       lock: api.lock
+      sarif-file: apiwatch.sarif
 ```
 
-The `openapi` and `name` inputs are required. `lock` defaults to `api.lock`, and `working-directory` defaults to `.`.
+The `openapi` and `name` inputs are required. `lock` defaults to `api.lock`, and `working-directory` defaults to `.`. `sarif-file` is relative to `working-directory`; when set, it enables Code Scanning upload and requires `security-events: write`. A Verify drift report uploads before the action returns exit `1`.
 
 Pin the action to a commit SHA or release tag. The action builds `apiwatch` from source with Cargo, propagates Verify's `0`/`1`/`2` exit codes, and supports the `working-directory` input. It does not provide caching, action outputs, authentication, custom headers, or configuration files.
 
