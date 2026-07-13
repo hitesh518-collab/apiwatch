@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -225,7 +226,7 @@ pub fn render_verify_changes_json(name: &str, changes: &[VerifyChange]) -> Resul
 }
 
 pub fn render_changes_sarif(artifact_path: &Path, changes: &[Change]) -> Result<String> {
-    let artifact_uri = artifact_path.to_string_lossy().into_owned();
+    let artifact_uri = render_artifact_uri(artifact_path);
     let results = changes
         .iter()
         .map(|change| {
@@ -258,7 +259,7 @@ pub fn render_verify_changes_sarif(
     name: &str,
     changes: &[VerifyChange],
 ) -> Result<String> {
-    let artifact_uri = artifact_path.to_string_lossy().into_owned();
+    let artifact_uri = render_artifact_uri(artifact_path);
     let results = changes
         .iter()
         .map(|change| {
@@ -287,6 +288,23 @@ pub fn render_verify_changes_sarif(
         .collect();
 
     render_sarif(results)
+}
+
+fn render_artifact_uri(artifact_path: &Path) -> String {
+    let path = artifact_path.to_string_lossy();
+    let mut uri = String::with_capacity(path.len());
+
+    for byte in path.bytes() {
+        match byte {
+            b'\\' => uri.push('/'),
+            b'/' | b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                uri.push(byte.into())
+            }
+            _ => write!(&mut uri, "%{byte:02X}").expect("writing to a String cannot fail"),
+        }
+    }
+
+    uri
 }
 
 fn render_sarif(results: Vec<SarifResult>) -> Result<String> {
@@ -466,4 +484,19 @@ pub fn render_verify_changes(changes: &[VerifyChange]) -> String {
     }
 
     rendered
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::render_artifact_uri;
+
+    #[test]
+    fn render_artifact_uri_normalizes_backslashes() {
+        assert_eq!(
+            render_artifact_uri(Path::new(r"testdata\openapi\endpoint_removed_new.yaml")),
+            "testdata/openapi/endpoint_removed_new.yaml"
+        );
+    }
 }

@@ -72,6 +72,53 @@ fn diff_sarif_reports_breaking_change_and_exit_one() {
     );
 }
 
+#[cfg(windows)]
+#[test]
+fn diff_sarif_normalizes_windows_style_new_artifact_path() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/endpoint_removed_old.yaml",
+            "testdata\\openapi\\endpoint_removed_new.yaml",
+            "--format",
+            "sarif",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    let rendered = parse_json_output(&output);
+    assert_eq!(
+        rendered["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+            ["uri"],
+        "testdata/openapi/endpoint_removed_new.yaml"
+    );
+}
+
+#[test]
+fn diff_sarif_percent_encodes_new_artifact_path() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/endpoint_removed_old.yaml",
+            "testdata/openapi/sarif artifact #%.yaml",
+            "--format",
+            "sarif",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    let rendered = parse_json_output(&output);
+    assert_eq!(
+        rendered["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+            ["uri"],
+        "testdata/openapi/sarif%20artifact%20%23%25.yaml"
+    );
+}
+
 #[test]
 fn diff_sarif_reports_warning_only_change_and_exit_zero() {
     let output = Command::cargo_bin("apiwatch")
