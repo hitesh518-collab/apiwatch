@@ -2,6 +2,156 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{json, Value};
 
+fn parse_json_output(output: &std::process::Output) -> Value {
+    serde_json::from_slice(&output.stdout).expect("stdout should be JSON")
+}
+
+fn sarif_rule_ids(rendered: &Value) -> Vec<&str> {
+    rendered["runs"][0]["tool"]["driver"]["rules"]
+        .as_array()
+        .expect("SARIF rules should be an array")
+        .iter()
+        .map(|rule| rule["id"].as_str().expect("SARIF rule should have an ID"))
+        .collect()
+}
+
+#[test]
+fn diff_sarif_reports_breaking_change_and_exit_one() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/endpoint_removed_old.yaml",
+            "testdata/openapi/endpoint_removed_new.yaml",
+            "--format",
+            "sarif",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    assert!(output.stdout.ends_with(b"\n"));
+    let rendered = parse_json_output(&output);
+    assert_eq!(
+        rendered["$schema"],
+        "https://json.schemastore.org/sarif-2.1.0.json"
+    );
+    assert_eq!(rendered["version"], "2.1.0");
+    assert_eq!(rendered["runs"].as_array().map(Vec::len), Some(1));
+    assert_eq!(rendered["runs"][0]["tool"]["driver"]["name"], "apiwatch");
+    assert_eq!(
+        rendered["runs"][0]["tool"]["driver"]["semanticVersion"],
+        env!("CARGO_PKG_VERSION")
+    );
+    assert_eq!(
+        sarif_rule_ids(&rendered),
+        vec![
+            "apiwatch/diff-breaking",
+            "apiwatch/diff-warning",
+            "apiwatch/diff-non-breaking",
+            "apiwatch/verify-removed",
+            "apiwatch/verify-added",
+        ]
+    );
+    assert_eq!(
+        rendered["runs"][0]["results"],
+        json!([{
+            "ruleId": "apiwatch/diff-breaking",
+            "level": "error",
+            "message": { "text": "endpoint removed" },
+            "locations": [{
+                "physicalLocation": {
+                    "artifactLocation": { "uri": "testdata/openapi/endpoint_removed_new.yaml" }
+                }
+            }],
+            "partialFingerprints": {
+                "apiwatch/v1": "diff:apiwatch/diff-breaking:GET:/users:endpoint removed"
+            }
+        }])
+    );
+}
+
+#[test]
+fn diff_sarif_reports_warning_only_change_and_exit_zero() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/status_error_added_old.yaml",
+            "testdata/openapi/status_error_added_new.yaml",
+            "--format",
+            "sarif",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let rendered = parse_json_output(&output);
+    let result = &rendered["runs"][0]["results"][0];
+    assert_eq!(result["ruleId"], "apiwatch/diff-warning");
+    assert_eq!(result["level"], "warning");
+    assert_eq!(
+        result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+        "testdata/openapi/status_error_added_new.yaml"
+    );
+    assert_eq!(
+        result["partialFingerprints"]["apiwatch/v1"],
+        "diff:apiwatch/diff-warning:GET:/users:response status 429 added"
+    );
+}
+
+#[test]
+fn diff_sarif_reports_no_changes() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/no_breaking_old.yaml",
+            "testdata/openapi/no_breaking_old.yaml",
+            "--format",
+            "sarif",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let rendered = parse_json_output(&output);
+    assert_eq!(
+        sarif_rule_ids(&rendered),
+        vec![
+            "apiwatch/diff-breaking",
+            "apiwatch/diff-warning",
+            "apiwatch/diff-non-breaking",
+            "apiwatch/verify-removed",
+            "apiwatch/verify-added",
+        ]
+    );
+    assert_eq!(rendered["runs"][0]["results"], json!([]));
+}
+
+#[test]
+fn diff_sarif_keeps_invalid_format_rejection() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/no_breaking_old.yaml",
+            "testdata/openapi/no_breaking_old.yaml",
+            "--format",
+            "yaml",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid value 'yaml' for '--format <FORMAT>'"));
+}
+
 #[test]
 fn diff_json_reports_breaking_changes_and_exit_one() {
     let output = Command::cargo_bin("apiwatch")

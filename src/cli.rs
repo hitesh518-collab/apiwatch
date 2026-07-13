@@ -14,6 +14,7 @@ pub struct Cli {
 pub enum OutputFormat {
     Text,
     Json,
+    Sarif,
 }
 
 #[derive(Debug, Subcommand)]

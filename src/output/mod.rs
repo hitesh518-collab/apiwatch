@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use serde::Serialize;
 
@@ -47,6 +49,96 @@ struct VerifyJsonChange<'a> {
     kind: &'static str,
     method: &'a str,
     path: &'a str,
+}
+
+#[derive(Serialize)]
+struct SarifLog {
+    #[serde(rename = "$schema")]
+    schema: String,
+    version: String,
+    runs: Vec<SarifRun>,
+}
+
+#[derive(Serialize)]
+struct SarifRun {
+    tool: SarifTool,
+    results: Vec<SarifResult>,
+}
+
+#[derive(Serialize)]
+struct SarifTool {
+    driver: SarifDriver,
+}
+
+#[derive(Serialize)]
+struct SarifDriver {
+    name: String,
+    #[serde(rename = "semanticVersion")]
+    semantic_version: String,
+    rules: Vec<SarifRule>,
+}
+
+#[derive(Serialize)]
+struct SarifRule {
+    id: String,
+    name: String,
+    #[serde(rename = "shortDescription")]
+    short_description: SarifMessage,
+    help: SarifMessage,
+    #[serde(rename = "defaultConfiguration")]
+    default_configuration: SarifDefaultConfiguration,
+    properties: SarifRuleProperties,
+}
+
+#[derive(Serialize)]
+struct SarifDefaultConfiguration {
+    level: String,
+}
+
+#[derive(Serialize)]
+struct SarifRuleProperties {
+    precision: String,
+    #[serde(rename = "problem.severity")]
+    problem_severity: String,
+}
+
+#[derive(Serialize)]
+struct SarifResult {
+    #[serde(rename = "ruleId")]
+    rule_id: String,
+    level: String,
+    message: SarifMessage,
+    locations: Vec<SarifLocation>,
+    #[serde(rename = "partialFingerprints")]
+    partial_fingerprints: SarifPartialFingerprints,
+}
+
+#[derive(Serialize)]
+struct SarifMessage {
+    text: String,
+}
+
+#[derive(Serialize)]
+struct SarifLocation {
+    #[serde(rename = "physicalLocation")]
+    physical_location: SarifPhysicalLocation,
+}
+
+#[derive(Serialize)]
+struct SarifPhysicalLocation {
+    #[serde(rename = "artifactLocation")]
+    artifact_location: SarifArtifactLocation,
+}
+
+#[derive(Serialize)]
+struct SarifArtifactLocation {
+    uri: String,
+}
+
+#[derive(Serialize)]
+struct SarifPartialFingerprints {
+    #[serde(rename = "apiwatch/v1")]
+    apiwatch_v1: String,
 }
 
 pub fn render_changes_json(changes: &[Change]) -> Result<String> {
@@ -130,6 +222,185 @@ pub fn render_verify_changes_json(name: &str, changes: &[VerifyChange]) -> Resul
     .context("failed to serialize Verify JSON output")?;
 
     Ok(format!("{rendered}\n"))
+}
+
+pub fn render_changes_sarif(artifact_path: &Path, changes: &[Change]) -> Result<String> {
+    let artifact_uri = artifact_path.to_string_lossy().into_owned();
+    let results = changes
+        .iter()
+        .map(|change| {
+            let (rule_id, level) = match change.severity {
+                Severity::Breaking => ("apiwatch/diff-breaking", "error"),
+                Severity::Warning => ("apiwatch/diff-warning", "warning"),
+                Severity::NonBreaking => ("apiwatch/diff-non-breaking", "note"),
+            };
+            let method = change.operation.method.as_str();
+            let message = change.message.clone();
+
+            sarif_result(
+                rule_id,
+                level,
+                message.clone(),
+                artifact_uri.clone(),
+                format!(
+                    "diff:{rule_id}:{method}:{}:{message}",
+                    change.operation.path
+                ),
+            )
+        })
+        .collect();
+
+    render_sarif(results)
+}
+
+pub fn render_verify_changes_sarif(
+    artifact_path: &Path,
+    name: &str,
+    changes: &[VerifyChange],
+) -> Result<String> {
+    let artifact_uri = artifact_path.to_string_lossy().into_owned();
+    let results = changes
+        .iter()
+        .map(|change| {
+            let (rule_id, level, prefix) = match change.kind {
+                VerifyChangeKind::Removed => (
+                    "apiwatch/verify-removed",
+                    "error",
+                    "locked operation removed",
+                ),
+                VerifyChangeKind::Added => (
+                    "apiwatch/verify-added",
+                    "warning",
+                    "unlocked operation added",
+                ),
+            };
+            let message = format!("{prefix}: {} {}", change.method, change.path);
+
+            sarif_result(
+                rule_id,
+                level,
+                message,
+                artifact_uri.clone(),
+                format!("verify:{name}:{rule_id}:{}:{}", change.method, change.path),
+            )
+        })
+        .collect();
+
+    render_sarif(results)
+}
+
+fn render_sarif(results: Vec<SarifResult>) -> Result<String> {
+    let rendered = serde_json::to_string(&SarifLog {
+        schema: "https://json.schemastore.org/sarif-2.1.0.json".to_string(),
+        version: "2.1.0".to_string(),
+        runs: vec![SarifRun {
+            tool: SarifTool {
+                driver: SarifDriver {
+                    name: "apiwatch".to_string(),
+                    semantic_version: env!("CARGO_PKG_VERSION").to_string(),
+                    rules: sarif_rules(),
+                },
+            },
+            results,
+        }],
+    })
+    .context("failed to serialize SARIF output")?;
+
+    Ok(format!("{rendered}\n"))
+}
+
+fn sarif_result(
+    rule_id: &str,
+    level: &str,
+    message: String,
+    artifact_uri: String,
+    fingerprint: String,
+) -> SarifResult {
+    SarifResult {
+        rule_id: rule_id.to_string(),
+        level: level.to_string(),
+        message: SarifMessage { text: message },
+        locations: vec![SarifLocation {
+            physical_location: SarifPhysicalLocation {
+                artifact_location: SarifArtifactLocation { uri: artifact_uri },
+            },
+        }],
+        partial_fingerprints: SarifPartialFingerprints {
+            apiwatch_v1: fingerprint,
+        },
+    }
+}
+
+fn sarif_rules() -> Vec<SarifRule> {
+    vec![
+        sarif_rule(
+            "apiwatch/diff-breaking",
+            "Breaking API change",
+            "A contract change is classified as breaking.",
+            "Review the breaking API contract change before deployment.",
+            "error",
+            "error",
+        ),
+        sarif_rule(
+            "apiwatch/diff-warning",
+            "API change warning",
+            "A contract change needs review but is not classified as breaking.",
+            "Review the API contract change before deployment.",
+            "warning",
+            "warning",
+        ),
+        sarif_rule(
+            "apiwatch/diff-non-breaking",
+            "Non-breaking API change",
+            "A contract change is classified as non-breaking.",
+            "Review the non-breaking API contract change before deployment.",
+            "note",
+            "recommendation",
+        ),
+        sarif_rule(
+            "apiwatch/verify-removed",
+            "Locked operation removed",
+            "A locked operation is missing from the current contract.",
+            "Restore the locked operation or update the lock entry after review.",
+            "error",
+            "error",
+        ),
+        sarif_rule(
+            "apiwatch/verify-added",
+            "Unlocked operation added",
+            "The current contract exposes an operation absent from the lock entry.",
+            "Review the added operation and update the lock entry if intended.",
+            "warning",
+            "warning",
+        ),
+    ]
+}
+
+fn sarif_rule(
+    id: &str,
+    name: &str,
+    short_description: &str,
+    help: &str,
+    level: &str,
+    problem_severity: &str,
+) -> SarifRule {
+    SarifRule {
+        id: id.to_string(),
+        name: name.to_string(),
+        short_description: SarifMessage {
+            text: short_description.to_string(),
+        },
+        help: SarifMessage {
+            text: help.to_string(),
+        },
+        default_configuration: SarifDefaultConfiguration {
+            level: level.to_string(),
+        },
+        properties: SarifRuleProperties {
+            precision: "high".to_string(),
+            problem_severity: problem_severity.to_string(),
+        },
+    }
 }
 
 pub fn render_changes(changes: &[Change]) -> String {

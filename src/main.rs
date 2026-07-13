@@ -32,11 +32,12 @@ fn run() -> Result<i32> {
     match cli.command {
         Command::Diff { old, new, format } => {
             let old = openapi::load_contract(&old)?;
-            let new = openapi::load_contract(&new)?;
-            let changes = diff::diff_contracts(&old, &new);
+            let new_contract = openapi::load_contract(&new)?;
+            let changes = diff::diff_contracts(&old, &new_contract);
             let rendered = match format {
                 OutputFormat::Text => output::render_changes(&changes),
                 OutputFormat::Json => output::render_changes_json(&changes)?,
+                OutputFormat::Sarif => output::render_changes_sarif(&new, &changes)?,
             };
             print!("{rendered}");
 
@@ -65,10 +66,10 @@ fn run() -> Result<i32> {
         Command::Verify {
             openapi,
             name,
-            lock,
+            lock: lock_path,
             format,
         } => {
-            let lock = lockfile::load(&lock)?;
+            let lock = lockfile::load(&lock_path)?;
             let target = lockfile::select_verify_target(&lock, &name)?;
             let contract = openapi::load_contract_input(&openapi)?;
             let changes = lockfile::compare_verify_target(&target, &contract);
@@ -80,6 +81,10 @@ fn run() -> Result<i32> {
                         "{}",
                         output::render_verify_changes_json(target.name(), &changes)?
                     ),
+                    OutputFormat::Sarif => print!(
+                        "{}",
+                        output::render_verify_changes_sarif(&lock_path, target.name(), &changes)?
+                    ),
                 }
                 Ok(0)
             } else {
@@ -87,6 +92,9 @@ fn run() -> Result<i32> {
                     OutputFormat::Text => output::render_verify_changes(&changes),
                     OutputFormat::Json => {
                         output::render_verify_changes_json(target.name(), &changes)?
+                    }
+                    OutputFormat::Sarif => {
+                        output::render_verify_changes_sarif(&lock_path, target.name(), &changes)?
                     }
                 };
                 print!("{rendered}");

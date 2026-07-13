@@ -2,6 +2,19 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{json, Value};
 
+fn parse_json_output(output: &std::process::Output) -> Value {
+    serde_json::from_slice(&output.stdout).expect("stdout should be JSON")
+}
+
+fn sarif_rule_ids(rendered: &Value) -> Vec<&str> {
+    rendered["runs"][0]["tool"]["driver"]["rules"]
+        .as_array()
+        .expect("SARIF rules should be an array")
+        .iter()
+        .map(|rule| rule["id"].as_str().expect("SARIF rule should have an ID"))
+        .collect()
+}
+
 fn serve_once(status: &str, content_type: &str, body: &'static str, suffix: &str) -> String {
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -117,6 +130,116 @@ fn verify_command(openapi: &str, name: &str, lock: &str) -> Command {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
     command.args(["verify", openapi, "--name", name, "--lock", lock]);
     command
+}
+
+#[test]
+fn verify_sarif_reports_drift_and_exit_one() {
+    let output = verify_command(
+        "testdata/openapi/verify_current.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .args(["--format", "sarif"])
+    .output()
+    .expect("Verify command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    assert!(output.stdout.ends_with(b"\n"));
+    let rendered = parse_json_output(&output);
+    assert_eq!(
+        sarif_rule_ids(&rendered),
+        vec![
+            "apiwatch/diff-breaking",
+            "apiwatch/diff-warning",
+            "apiwatch/diff-non-breaking",
+            "apiwatch/verify-removed",
+            "apiwatch/verify-added",
+        ]
+    );
+    let results = rendered["runs"][0]["results"]
+        .as_array()
+        .expect("SARIF results should be an array");
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result["ruleId"]
+                .as_str()
+                .expect("SARIF result should have a rule ID"))
+            .collect::<Vec<_>>(),
+        vec![
+            "apiwatch/verify-removed",
+            "apiwatch/verify-removed",
+            "apiwatch/verify-added",
+            "apiwatch/verify-added",
+        ]
+    );
+    assert_eq!(results[0]["level"], "error");
+    assert_eq!(
+        results[0]["message"]["text"],
+        "locked operation removed: GET /users"
+    );
+    assert_eq!(
+        results[0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+        "testdata/lock/verify_users.lock"
+    );
+    assert_eq!(
+        results[0]["partialFingerprints"]["apiwatch/v1"],
+        "verify:users:apiwatch/verify-removed:GET:/users"
+    );
+    assert_eq!(
+        results[2]["message"]["text"],
+        "unlocked operation added: POST /users"
+    );
+    assert_eq!(results[2]["level"], "warning");
+    assert_eq!(
+        results[2]["partialFingerprints"]["apiwatch/v1"],
+        "verify:users:apiwatch/verify-added:POST:/users"
+    );
+}
+
+#[test]
+fn verify_sarif_reports_matching_contract_and_exit_zero() {
+    let output = verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .args(["--format", "sarif"])
+    .output()
+    .expect("Verify command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let rendered = parse_json_output(&output);
+    assert_eq!(
+        sarif_rule_ids(&rendered),
+        vec![
+            "apiwatch/diff-breaking",
+            "apiwatch/diff-warning",
+            "apiwatch/diff-non-breaking",
+            "apiwatch/verify-removed",
+            "apiwatch/verify-added",
+        ]
+    );
+    assert_eq!(rendered["runs"][0]["results"], json!([]));
+}
+
+#[test]
+fn verify_sarif_keeps_invalid_format_rejection() {
+    let output = verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .args(["--format", "yaml"])
+    .output()
+    .expect("Verify command should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid value 'yaml' for '--format <FORMAT>'"));
 }
 
 #[test]
