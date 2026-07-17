@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -16,6 +16,9 @@ pub enum Shape {
     Object {
         observations: u64,
         properties: BTreeMap<String, ObservedProperty>,
+    },
+    Map {
+        values: Box<Shape>,
     },
     Array {
         items: Box<Shape>,
@@ -96,6 +99,34 @@ pub fn infer(value: &Value) -> Shape {
     }
 }
 
+pub fn apply_map_annotations(shape: &mut Shape, paths: &[String]) -> Result<()> {
+    let parsed = paths
+        .iter()
+        .map(|path| parse_map_path(path).map(|segments| (path, segments)))
+        .collect::<Result<Vec<_>>>()?;
+    let mut seen = BTreeSet::new();
+    for (raw, segments) in &parsed {
+        if !seen.insert(segments.clone()) {
+            bail!("duplicate map annotation path {raw}");
+        }
+    }
+    for (index, (raw, segments)) in parsed.iter().enumerate() {
+        if parsed[..index]
+            .iter()
+            .any(|(_, previous)| paths_overlap(previous, segments))
+        {
+            bail!("overlapping map annotation path {raw}");
+        }
+    }
+
+    let mut annotated = shape.clone();
+    for (raw, segments) in parsed {
+        annotate_map_at(&mut annotated, raw, &segments)?;
+    }
+    *shape = annotated;
+    Ok(())
+}
+
 pub fn merge(existing: &mut Shape, incoming: &Shape) {
     if matches!(incoming, Shape::Unknown) {
         return;
@@ -106,6 +137,28 @@ pub fn merge(existing: &mut Shape, incoming: &Shape) {
     }
 
     match existing {
+        Shape::Map { values } if matches!(incoming, Shape::Map { .. }) => {
+            let Shape::Map {
+                values: incoming_values,
+            } = incoming
+            else {
+                unreachable!("guarded map match must remain a map");
+            };
+            merge(values, incoming_values);
+            return;
+        }
+        Shape::Map { values } if matches!(incoming, Shape::Object { .. }) => {
+            let Shape::Object {
+                properties: incoming_properties,
+                ..
+            } = incoming
+            else {
+                unreachable!("guarded object match must remain an object");
+            };
+            let incoming_values = object_value_shape(incoming_properties);
+            merge(values, &incoming_values);
+            return;
+        }
         Shape::Object {
             observations,
             properties,
@@ -178,6 +231,7 @@ pub fn shape_name(shape: &Shape) -> String {
         Shape::Number => "number".to_string(),
         Shape::String => "string".to_string(),
         Shape::Object { .. } => "object".to_string(),
+        Shape::Map { .. } => "map".to_string(),
         Shape::Array { .. } => "array".to_string(),
         Shape::Unknown => "unknown".to_string(),
         Shape::Union { variants } => variants
@@ -258,6 +312,32 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
 
     match (expected, actual) {
         (
+            Shape::Map {
+                values: expected_values,
+            },
+            Shape::Map {
+                values: actual_values,
+            },
+        ) => compare_at(expected_values, actual_values, path, changes),
+        (
+            Shape::Map {
+                values: expected_values,
+            },
+            Shape::Object {
+                properties: actual_properties,
+                ..
+            },
+        ) => {
+            for (name, actual_property) in actual_properties {
+                compare_at(
+                    expected_values,
+                    &actual_property.shape,
+                    &format!("{path}.{name}"),
+                    changes,
+                );
+            }
+        }
+        (
             Shape::Object {
                 observations,
                 properties,
@@ -318,6 +398,71 @@ fn same_kind(left: &Shape, right: &Shape) -> bool {
     std::mem::discriminant(left) == std::mem::discriminant(right)
 }
 
+fn parse_map_path(raw: &str) -> Result<Vec<String>> {
+    if raw == "$" {
+        return Ok(Vec::new());
+    }
+
+    let Some(remainder) = raw.strip_prefix("$.") else {
+        bail!("invalid map annotation path {raw}: expected $ followed by named property segments");
+    };
+    let mut segments = Vec::new();
+    for segment in remainder.split('.') {
+        let mut characters = segment.bytes();
+        let Some(first) = characters.next() else {
+            bail!(
+                "invalid map annotation path {raw}: expected $ followed by named property segments"
+            );
+        };
+        if !(first.is_ascii_alphabetic() || first == b'_')
+            || !characters.all(|character| character.is_ascii_alphanumeric() || character == b'_')
+        {
+            bail!(
+                "invalid map annotation path {raw}: expected $ followed by named property segments"
+            );
+        }
+        segments.push(segment.to_owned());
+    }
+    Ok(segments)
+}
+
+fn paths_overlap(left: &[String], right: &[String]) -> bool {
+    let shortest = left.len().min(right.len());
+    left[..shortest] == right[..shortest]
+}
+
+fn object_value_shape(properties: &BTreeMap<String, ObservedProperty>) -> Shape {
+    let mut values = Shape::Unknown;
+    for property in properties.values() {
+        merge(&mut values, &property.shape);
+    }
+    values
+}
+
+fn annotate_map_at(shape: &mut Shape, raw: &str, segments: &[String]) -> Result<()> {
+    if segments.is_empty() {
+        return match shape {
+            Shape::Object { properties, .. } => {
+                let values = object_value_shape(properties);
+                *shape = Shape::Map {
+                    values: Box::new(values),
+                };
+                Ok(())
+            }
+            Shape::Map { .. } => Ok(()),
+            _ => bail!("map annotation path {raw} must target an object"),
+        };
+    }
+
+    let Shape::Object { properties, .. } = shape else {
+        bail!("map annotation path {raw} must target an object");
+    };
+    let Some(property) = properties.get_mut(&segments[0]) else {
+        bail!("map annotation path {raw} does not exist");
+    };
+    annotate_map_at(&mut property.shape, raw, &segments[1..])
+}
+
 fn shape_sort_key(shape: &Shape) -> u8 {
     match shape {
         Shape::Null => 0,
@@ -325,9 +470,10 @@ fn shape_sort_key(shape: &Shape) -> u8 {
         Shape::Number => 2,
         Shape::String => 3,
         Shape::Object { .. } => 4,
-        Shape::Array { .. } => 5,
-        Shape::Union { .. } => 6,
-        Shape::Unknown => 7,
+        Shape::Map { .. } => 5,
+        Shape::Array { .. } => 6,
+        Shape::Union { .. } => 7,
+        Shape::Unknown => 8,
     }
 }
 
@@ -335,7 +481,106 @@ fn shape_sort_key(shape: &Shape) -> u8 {
 mod tests {
     use serde_json::json;
 
-    use super::{compare, infer, merge, shape_name, Shape};
+    use super::{apply_map_annotations, compare, infer, merge, shape_name, Shape};
+
+    #[test]
+    fn annotation_converts_an_object_to_a_value_free_map() {
+        let mut shape = infer(&json!({
+            "by_broker": {
+                "acme": {"pnl_pct": 1.2, "session_token": "secret-one"},
+                "globex": {"pnl_pct": 3.4, "session_token": "secret-two"}
+            }
+        }));
+
+        apply_map_annotations(&mut shape, &["$.by_broker".to_owned()])
+            .expect("annotation should succeed");
+        let rendered = serde_yaml::to_string(&shape).expect("shape should serialize");
+
+        assert!(rendered.contains("kind: map"));
+        assert!(rendered.contains("pnl_pct"));
+        assert!(!rendered.contains("acme"));
+        assert!(!rendered.contains("globex"));
+        assert!(!rendered.contains("secret-one"));
+        assert!(!rendered.contains("secret-two"));
+    }
+
+    #[test]
+    fn annotation_accepts_root_and_nested_named_property_paths() {
+        let mut root = infer(&json!({"acme": 1, "globex": 2}));
+        apply_map_annotations(&mut root, &["$".to_owned()]).expect("root map should work");
+        assert!(matches!(root, Shape::Map { .. }));
+
+        let mut nested = infer(&json!({"state": {"by_region": {"in": true}}}));
+        apply_map_annotations(&mut nested, &["$.state.by_region".to_owned()])
+            .expect("nested map should work");
+        let Shape::Object { properties, .. } = nested else {
+            panic!("root should remain object");
+        };
+        let state = &properties["state"].shape;
+        let Shape::Object { properties, .. } = state.as_ref() else {
+            panic!("state should be object");
+        };
+        assert!(matches!(
+            properties["by_region"].shape.as_ref(),
+            Shape::Map { .. }
+        ));
+    }
+
+    #[test]
+    fn annotation_rejects_invalid_duplicate_missing_and_non_object_targets() {
+        let base = infer(&json!({"by_broker": {"acme": 1}, "scalar": 1}));
+        for paths in [
+            vec!["$.by_broker".to_owned(), "$.by_broker".to_owned()],
+            vec!["$".to_owned(), "$.by_broker".to_owned()],
+            vec!["$.missing".to_owned()],
+            vec!["$.scalar".to_owned()],
+            vec!["$.by-broker".to_owned()],
+            vec!["$.by_broker[0]".to_owned()],
+            vec!["$.by_broker.*".to_owned()],
+            vec!["$..by_broker".to_owned()],
+        ] {
+            let mut shape = base.clone();
+            assert!(
+                apply_map_annotations(&mut shape, &paths).is_err(),
+                "{paths:?}"
+            );
+            assert_eq!(shape, base, "invalid paths must leave the shape unchanged");
+        }
+    }
+
+    #[test]
+    fn map_merges_later_plain_objects_and_verify_ignores_key_churn() {
+        let mut expected = infer(&json!({"by_broker": {"acme": {"pnl_pct": 1}}}));
+        apply_map_annotations(&mut expected, &["$.by_broker".to_owned()])
+            .expect("annotation should succeed");
+        merge(
+            &mut expected,
+            &infer(&json!({
+                "by_broker": {"globex": {"pnl_pct": 2}}
+            })),
+        );
+
+        assert!(compare(
+            &expected,
+            &infer(&json!({
+                "by_broker": {"other": {"pnl_pct": 3}}
+            })),
+        )
+        .is_empty());
+        assert!(compare(&expected, &infer(&json!({"by_broker": {}}))).is_empty());
+
+        let changes = compare(
+            &expected,
+            &infer(&json!({
+                "by_broker": {"acme": {"pnl_pct": "wrong"}}
+            })),
+        );
+        assert!(changes.iter().any(|change| {
+            change.path == "$.by_broker.acme.pnl_pct"
+                && change.expected.as_deref() == Some("number")
+                && change.actual.as_deref() == Some("string")
+        }));
+    }
 
     #[test]
     fn merge_marks_late_fields_optional_and_sorts_a_scalar_union() {
