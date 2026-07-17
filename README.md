@@ -44,6 +44,18 @@ apiwatch verify openapi.yaml --name users --lock api.lock --format sarif
 
 `apiwatch diff` and `apiwatch verify` support `--format text|json|sarif`; text is the default. JSON output is a versioned, deterministic result document written to stdout. Diff reports `breaking`, `warning`, and `non_breaking` summary counts with operation messages; Verify reports the named lock entry and `removed`/`added` operation drift. SARIF 2.1.0 output is intended for GitHub Code Scanning and preserves the same exit codes: `0` for a clean result, `1` for detected breaking changes or Verify drift, and `2` for operational or validation errors.
 
+## Homebrew
+
+The repository includes a source-building Homebrew formula for the current v0.6.0 tagged release. Clone this repository, then install the local formula:
+
+```bash
+git clone https://github.com/hitesh518-collab/apiwatch.git
+cd apiwatch
+brew install --build-from-source ./Formula/apiwatch.rb
+```
+
+This first formula is not a Homebrew tap, so `brew install apiwatch` is not available. Each apiwatch release updates the formula's pinned source URL and SHA-256 checksum.
+
 ## GitHub Action
 
 Use the reusable action from an Ubuntu workflow after checking out the consumer repository:
