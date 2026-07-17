@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::diff::{Change, Severity};
 use crate::lockfile::{VerifyChange, VerifyChangeKind};
+use crate::observed::{ObservedChange, ObservedChangeKind};
 
 #[derive(Serialize)]
 struct DiffJson<'a> {
@@ -50,6 +51,31 @@ struct VerifyJsonChange<'a> {
     kind: &'static str,
     method: &'a str,
     path: &'a str,
+}
+
+#[derive(Serialize)]
+struct ObservedVerifyJson<'a> {
+    version: u8,
+    command: &'static str,
+    name: &'a str,
+    provenance: &'static str,
+    summary: ObservedVerifySummary,
+    changes: Vec<ObservedVerifyJsonChange<'a>>,
+}
+
+#[derive(Serialize)]
+struct ObservedVerifySummary {
+    breaking: usize,
+}
+
+#[derive(Serialize)]
+struct ObservedVerifyJsonChange<'a> {
+    kind: &'static str,
+    path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actual: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -308,6 +334,10 @@ fn render_artifact_uri(artifact_path: &Path) -> String {
 }
 
 fn render_sarif(results: Vec<SarifResult>) -> Result<String> {
+    render_sarif_with_rules(sarif_rules(), results)
+}
+
+fn render_sarif_with_rules(rules: Vec<SarifRule>, results: Vec<SarifResult>) -> Result<String> {
     let rendered = serde_json::to_string(&SarifLog {
         schema: "https://json.schemastore.org/sarif-2.1.0.json".to_string(),
         version: "2.1.0".to_string(),
@@ -316,7 +346,7 @@ fn render_sarif(results: Vec<SarifResult>) -> Result<String> {
                 driver: SarifDriver {
                     name: "apiwatch".to_string(),
                     semantic_version: env!("CARGO_PKG_VERSION").to_string(),
-                    rules: sarif_rules(),
+                    rules,
                 },
             },
             results,
@@ -484,6 +514,117 @@ pub fn render_verify_changes(changes: &[VerifyChange]) -> String {
     }
 
     rendered
+}
+
+pub fn render_observed_verify_changes(changes: &[ObservedChange]) -> String {
+    changes
+        .iter()
+        .map(|change| match change.kind {
+            ObservedChangeKind::MissingRequiredField => {
+                format!("BREAKING {}: required field missing\n", change.path)
+            }
+            ObservedChangeKind::IncompatibleShape => format!(
+                "BREAKING {}: expected {}, found {}\n",
+                change.path,
+                change.expected.as_deref().unwrap_or("unknown"),
+                change.actual.as_deref().unwrap_or("unknown"),
+            ),
+        })
+        .collect()
+}
+
+pub fn render_observed_verify_changes_json(
+    name: &str,
+    changes: &[ObservedChange],
+) -> Result<String> {
+    let changes: Vec<_> = changes
+        .iter()
+        .map(|change| ObservedVerifyJsonChange {
+            kind: match change.kind {
+                ObservedChangeKind::MissingRequiredField => "missing_required_field",
+                ObservedChangeKind::IncompatibleShape => "incompatible_shape",
+            },
+            path: &change.path,
+            expected: change.expected.as_deref(),
+            actual: change.actual.as_deref(),
+        })
+        .collect();
+    let rendered = serde_json::to_string(&ObservedVerifyJson {
+        version: 2,
+        command: "verify",
+        name,
+        provenance: "observed",
+        summary: ObservedVerifySummary {
+            breaking: changes.len(),
+        },
+        changes,
+    })
+    .context("failed to serialize observed Verify JSON output")?;
+
+    Ok(format!("{rendered}\n"))
+}
+
+pub fn render_observed_verify_changes_sarif(
+    artifact_path: &Path,
+    name: &str,
+    changes: &[ObservedChange],
+) -> Result<String> {
+    let artifact_uri = render_artifact_uri(artifact_path);
+    let results = changes
+        .iter()
+        .map(|change| {
+            let (rule_id, message) = match change.kind {
+                ObservedChangeKind::MissingRequiredField => (
+                    "apiwatch/verify-observed-missing-required-field",
+                    format!("required field missing: {}", change.path),
+                ),
+                ObservedChangeKind::IncompatibleShape => (
+                    "apiwatch/verify-observed-incompatible-shape",
+                    format!(
+                        "incompatible shape at {}: expected {}, found {}",
+                        change.path,
+                        change.expected.as_deref().unwrap_or("unknown"),
+                        change.actual.as_deref().unwrap_or("unknown"),
+                    ),
+                ),
+            };
+            sarif_result(
+                rule_id,
+                "error",
+                message,
+                artifact_uri.clone(),
+                format!(
+                    "verify-observed:{name}:{rule_id}:{}:{}:{}",
+                    change.path,
+                    change.expected.as_deref().unwrap_or(""),
+                    change.actual.as_deref().unwrap_or(""),
+                ),
+            )
+        })
+        .collect();
+
+    render_sarif_with_rules(observed_sarif_rules(), results)
+}
+
+fn observed_sarif_rules() -> Vec<SarifRule> {
+    vec![
+        sarif_rule(
+            "apiwatch/verify-observed-missing-required-field",
+            "Observed required field missing",
+            "A required field is absent from an observed JSON response.",
+            "Restore the required field or deliberately update the observed lock.",
+            "error",
+            "error",
+        ),
+        sarif_rule(
+            "apiwatch/verify-observed-incompatible-shape",
+            "Observed JSON shape incompatible",
+            "A JSON value no longer matches the observed contract shape.",
+            "Restore the compatible shape or deliberately update the observed lock.",
+            "error",
+            "error",
+        ),
+    ]
 }
 
 #[cfg(test)]

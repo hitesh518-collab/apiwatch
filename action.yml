@@ -3,7 +3,7 @@ description: Verify a local or live OpenAPI contract against a named api.lock en
 
 inputs:
   openapi:
-    description: Local OpenAPI YAML/JSON path or HTTP(S) URL to verify.
+    description: OpenAPI input or local JSON body, selected by the named lock entry provenance.
     required: true
   name:
     description: Named api.lock entry to verify.

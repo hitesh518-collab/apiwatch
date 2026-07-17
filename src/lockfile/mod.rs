@@ -6,11 +6,53 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::contract::ApiContract;
+use crate::observed::{merge as merge_shapes, Shape};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiLock {
     version: u8,
     apis: BTreeMap<String, LockedApi>,
+    #[serde(skip)]
+    observed: BTreeMap<String, Shape>,
+}
+
+#[derive(Deserialize)]
+struct LockVersion {
+    version: u8,
+}
+
+#[derive(Deserialize)]
+struct V2Lock {
+    version: u8,
+    apis: BTreeMap<String, V2LockedApi>,
+}
+
+#[derive(Deserialize)]
+struct V2LockedApi {
+    provenance: String,
+    source: Option<String>,
+    operations: Option<Vec<LockedOperation>>,
+    shape: Option<Shape>,
+}
+
+#[derive(Serialize)]
+struct V2RenderedLock<'a> {
+    version: u8,
+    apis: BTreeMap<&'a String, V2RenderedApi<'a>>,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum V2RenderedApi<'a> {
+    Declared {
+        provenance: &'static str,
+        source: &'a str,
+        operations: &'a [LockedOperation],
+    },
+    Observed {
+        provenance: &'static str,
+        shape: &'a Shape,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,11 +71,16 @@ struct LockedOperation {
 pub struct VerifyTarget {
     name: String,
     operations: BTreeSet<LockedOperation>,
+    observed_shape: Option<Shape>,
 }
 
 impl VerifyTarget {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn observed_shape(&self) -> Option<&Shape> {
+        self.observed_shape.as_ref()
     }
 }
 
@@ -80,27 +127,139 @@ pub fn from_contract(name: &str, contract: &ApiContract) -> Result<ApiLock> {
         },
     );
 
-    Ok(ApiLock { version: 1, apis })
+    Ok(ApiLock {
+        version: 1,
+        apis,
+        observed: BTreeMap::new(),
+    })
 }
 
 pub fn render(lock: &ApiLock) -> Result<String> {
-    serde_yaml::to_string(lock).context("failed to serialize lockfile")
+    if lock.version == 1 {
+        return serde_yaml::to_string(lock).context("failed to serialize lockfile");
+    }
+
+    let mut apis = BTreeMap::new();
+    for (name, api) in &lock.apis {
+        apis.insert(
+            name,
+            V2RenderedApi::Declared {
+                provenance: "declared",
+                source: &api.source,
+                operations: &api.operations,
+            },
+        );
+    }
+    for (name, shape) in &lock.observed {
+        apis.insert(
+            name,
+            V2RenderedApi::Observed {
+                provenance: "observed",
+                shape,
+            },
+        );
+    }
+
+    serde_yaml::to_string(&V2RenderedLock { version: 2, apis })
+        .context("failed to serialize lockfile")
 }
 
 pub fn load(path: &Path) -> Result<ApiLock> {
     let contents = fs::read_to_string(path)
         .with_context(|| format!("failed to read api.lock {}", path.display()))?;
-    let lock: ApiLock = serde_yaml::from_str(&contents).context("failed to parse api.lock YAML")?;
+    let header: LockVersion =
+        serde_yaml::from_str(&contents).context("failed to parse api.lock YAML")?;
 
-    if lock.version != 1 {
-        return Err(anyhow!("unsupported api.lock version {}", lock.version));
+    match header.version {
+        1 => serde_yaml::from_str(&contents).context("failed to parse api.lock YAML"),
+        2 => load_v2(&contents),
+        version => Err(anyhow!("unsupported api.lock version {version}")),
+    }
+}
+
+pub fn record_observed(
+    lock: &mut ApiLock,
+    name: &str,
+    incoming: Shape,
+    merge_existing: bool,
+) -> Result<()> {
+    let name = normalized_name(name)?;
+    if lock.apis.contains_key(name) {
+        return Err(anyhow!(
+            "api {name} is declared and cannot be recorded as observed"
+        ));
     }
 
-    Ok(lock)
+    match lock.observed.get_mut(name) {
+        Some(existing) if merge_existing => merge_shapes(existing, &incoming),
+        Some(_) => return Err(anyhow!("api {name} already exists; use --merge")),
+        None if merge_existing => return Err(anyhow!("observed api {name} was not found")),
+        None => {
+            lock.observed.insert(name.to_string(), incoming);
+        }
+    }
+
+    lock.version = 2;
+    Ok(())
+}
+
+pub fn load_or_create_for_record(path: &Path) -> Result<ApiLock> {
+    if path.exists() {
+        load(path)
+    } else {
+        Ok(ApiLock {
+            version: 2,
+            apis: BTreeMap::new(),
+            observed: BTreeMap::new(),
+        })
+    }
+}
+
+fn load_v2(contents: &str) -> Result<ApiLock> {
+    let raw: V2Lock = serde_yaml::from_str(contents).context("failed to parse api.lock YAML")?;
+    if raw.version != 2 {
+        return Err(anyhow!("unsupported api.lock version {}", raw.version));
+    }
+
+    let mut apis = BTreeMap::new();
+    let mut observed = BTreeMap::new();
+    for (name, api) in raw.apis {
+        match api.provenance.as_str() {
+            "declared" => {
+                let source = api
+                    .source
+                    .ok_or_else(|| anyhow!("declared api {name} is missing source"))?;
+                let operations = api
+                    .operations
+                    .ok_or_else(|| anyhow!("declared api {name} is missing operations"))?;
+                apis.insert(name, LockedApi { source, operations });
+            }
+            "observed" => {
+                let shape = api
+                    .shape
+                    .ok_or_else(|| anyhow!("observed api {name} is missing shape"))?;
+                observed.insert(name, shape);
+            }
+            provenance => return Err(anyhow!("unsupported api.lock provenance {provenance}")),
+        }
+    }
+
+    Ok(ApiLock {
+        version: 2,
+        apis,
+        observed,
+    })
 }
 
 pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> {
     let name = normalized_name(name)?;
+    if let Some(shape) = lock.observed.get(name) {
+        return Ok(VerifyTarget {
+            name: name.to_string(),
+            operations: BTreeSet::new(),
+            observed_shape: Some(shape.clone()),
+        });
+    }
     let api = lock
         .apis
         .get(name)
@@ -127,6 +286,7 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
     Ok(VerifyTarget {
         name: name.to_string(),
         operations,
+        observed_shape: None,
     })
 }
 
@@ -231,6 +391,7 @@ mod tests {
                     ],
                 },
             )]),
+            observed: BTreeMap::new(),
         };
         let current =
             crate::openapi::load_contract(Path::new("testdata/openapi/verify_current.yaml"))
@@ -280,6 +441,7 @@ mod tests {
                     }],
                 },
             )]),
+            observed: BTreeMap::new(),
         };
         let current =
             crate::openapi::load_contract(Path::new("testdata/openapi/lock_ordering.yaml"))
@@ -311,6 +473,7 @@ mod tests {
                     }],
                 },
             )]),
+            observed: BTreeMap::new(),
         };
 
         let error = select_verify_target(&lock, "users")
@@ -335,6 +498,7 @@ mod tests {
                     }],
                 },
             )]),
+            observed: BTreeMap::new(),
         };
 
         let error = select_verify_target(&lock, "users")
@@ -351,8 +515,28 @@ mod tests {
     #[test]
     fn load_rejects_an_unsupported_lockfile_version() {
         let error = load(Path::new("testdata/lock/verify_unsupported_version.lock"))
-            .expect_err("version 2 lockfile should be rejected");
+            .expect_err("version 3 lockfile should be rejected");
 
-        assert!(error.to_string().contains("unsupported api.lock version 2"));
+        assert!(error.to_string().contains("unsupported api.lock version 3"));
+    }
+
+    #[test]
+    fn recording_into_v1_preserves_declared_operations_and_renders_v2() {
+        let mut lock =
+            load(Path::new("testdata/lock/verify_users.lock")).expect("v1 lock should load");
+        let shape = crate::observed::infer(&serde_json::json!({
+            "id": 1,
+            "token": "super-secret-token"
+        }));
+
+        record_observed(&mut lock, "portfolio", shape, false)
+            .expect("new observed entry should be recorded");
+        let rendered = render(&lock).expect("v2 lock should render");
+
+        assert!(rendered.starts_with("version: 2\n"));
+        assert!(rendered.contains("provenance: declared"));
+        assert!(rendered.contains("provenance: observed"));
+        assert!(rendered.contains("path: /users"));
+        assert!(!rendered.contains("super-secret-token"));
     }
 }

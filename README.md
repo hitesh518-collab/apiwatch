@@ -24,12 +24,28 @@ apiwatch verify openapi.yaml --name users --lock api.lock
 apiwatch verify https://api.example.com/openapi.yaml --name users --lock api.lock
 ```
 
+## Observed JSON Contracts
+
+When an OpenAPI specification is absent or incomplete, record the shape of a
+local JSON response, then verify future local JSON responses against it:
+
+```bash
+apiwatch record --from-json body.json --name portfolio --output api.lock
+apiwatch record --from-json updated.json --name portfolio --output api.lock --merge
+apiwatch verify body.json --name portfolio --lock api.lock
+```
+
+APIWatch records JSON structure, never captured values. `record` is an
+explicit learning command that updates a lock; `verify` only checks it. This
+release accepts local JSON files for observed contracts. Map annotations,
+coverage reporting, HAR imports, and live recording are deferred.
+
 ```bash
 apiwatch diff old.openapi.yaml new.openapi.yaml --format json
 apiwatch verify openapi.yaml --name users --lock api.lock --format json
 ```
 
-`apiwatch verify <OPENAPI_OR_URL> --name <NAME> --lock <PATH>` compares uppercase HTTP method and normalized path pairs in one OpenAPI contract with a named `api.lock` entry. It accepts local YAML or JSON files and HTTP/HTTPS URLs. It exits `0` for a match, `1` for drift, and `2` for invalid local or remote input.
+`apiwatch verify <INPUT> --name <NAME> --lock <PATH>` selects OpenAPI or observed JSON verification from the named lock entry's provenance. Declared OpenAPI entries accept local YAML/JSON files and HTTP/HTTPS URLs; observed entries accept local JSON only. It exits `0` for a match, `1` for drift, and `2` for invalid input.
 
 Remote verification uses a 10-second timeout and a 10 MiB response limit. Authentication, custom headers, and configuration files are not included.
 

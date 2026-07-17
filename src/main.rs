@@ -2,6 +2,7 @@ mod cli;
 mod contract;
 mod diff;
 mod lockfile;
+mod observed;
 mod openapi;
 mod output;
 mod remote;
@@ -63,6 +64,21 @@ fn run() -> Result<i32> {
             println!("Wrote {}", output.display());
             Ok(0)
         }
+        Command::Record {
+            from_json,
+            name,
+            output,
+            merge,
+        } => {
+            let shape = observed::load_shape(&from_json)?;
+            let mut lock = lockfile::load_or_create_for_record(&output)?;
+            lockfile::record_observed(&mut lock, &name, shape, merge)?;
+            let rendered = lockfile::render(&lock)?;
+            fs::write(&output, rendered)
+                .with_context(|| format!("failed to write lockfile {}", output.display()))?;
+            println!("Wrote {}", output.display());
+            Ok(0)
+        }
         Command::Verify {
             openapi,
             name,
@@ -71,6 +87,30 @@ fn run() -> Result<i32> {
         } => {
             let lock = lockfile::load(&lock_path)?;
             let target = lockfile::select_verify_target(&lock, &name)?;
+            if let Some(expected) = target.observed_shape() {
+                if openapi.starts_with("http://") || openapi.starts_with("https://") {
+                    anyhow::bail!("observed verification requires a local JSON file");
+                }
+                let current = observed::load_shape(std::path::Path::new(&openapi))?;
+                let changes = observed::compare(expected, &current);
+                if changes.is_empty() {
+                    println!("Verified {}", target.name());
+                    return Ok(0);
+                }
+                let rendered = match format {
+                    OutputFormat::Text => output::render_observed_verify_changes(&changes),
+                    OutputFormat::Json => {
+                        output::render_observed_verify_changes_json(target.name(), &changes)?
+                    }
+                    OutputFormat::Sarif => output::render_observed_verify_changes_sarif(
+                        &lock_path,
+                        target.name(),
+                        &changes,
+                    )?,
+                };
+                print!("{rendered}");
+                return Ok(1);
+            }
             let contract = openapi::load_contract_input(&openapi)?;
             let changes = lockfile::compare_verify_target(&target, &contract);
 
