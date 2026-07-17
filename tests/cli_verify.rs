@@ -178,6 +178,144 @@ fn record_portfolio(lock: &Path) {
         .success();
 }
 
+fn record_map_portfolio(lock: &Path) {
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-map-initial.json",
+            "--name",
+            "portfolio",
+            "--output",
+            lock,
+            "--map-at",
+            "$.by_broker",
+            "--map-at",
+            "$.state.by_region",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn verify_observed_map_accepts_dynamic_key_churn_and_empty_maps() {
+    let lock = observed_lock_path();
+    record_map_portfolio(&lock);
+    verify_command(
+        "testdata/observed/portfolio-map-matching.json",
+        "portfolio",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .success()
+    .stdout("Verified portfolio\n");
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_observed_map_reports_dynamic_value_type_drift_without_values() {
+    let lock = observed_lock_path();
+    record_map_portfolio(&lock);
+    verify_command(
+        "testdata/observed/portfolio-map-value-drift.json",
+        "portfolio",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .code(1)
+    .stdout(predicate::str::contains(
+        "BREAKING $.by_broker.acme.pnl_pct: expected number, found string\n",
+    ))
+    .stdout(predicate::str::contains("verify-secret").not());
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_observed_map_reports_map_to_scalar_drift() {
+    let lock = observed_lock_path();
+    record_map_portfolio(&lock);
+    verify_command(
+        "testdata/observed/portfolio-map-scalar-drift.json",
+        "portfolio",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .code(1)
+    .stdout("BREAKING $.by_broker: expected map, found string\n");
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_observed_map_json_and_sarif_report_only_paths_and_shape_names() {
+    let lock = observed_lock_path();
+    record_map_portfolio(&lock);
+    let lock_arg = lock.to_str().expect("temp path should be valid UTF-8");
+
+    let json_output = verify_command(
+        "testdata/observed/portfolio-map-value-drift.json",
+        "portfolio",
+        lock_arg,
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("verify should run");
+    assert_eq!(json_output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&json_output),
+        json!({
+            "version": 2,
+            "command": "verify",
+            "name": "portfolio",
+            "provenance": "observed",
+            "summary": {"breaking": 1},
+            "changes": [{
+                "kind": "incompatible_shape",
+                "path": "$.by_broker.acme.pnl_pct",
+                "expected": "number",
+                "actual": "string"
+            }]
+        })
+    );
+
+    let sarif_output = verify_command(
+        "testdata/observed/portfolio-map-value-drift.json",
+        "portfolio",
+        lock_arg,
+    )
+    .args(["--format", "sarif"])
+    .output()
+    .expect("verify should run");
+    assert_eq!(sarif_output.status.code(), Some(1));
+    let sarif = parse_json_output(&sarif_output);
+    assert_eq!(
+        sarif["runs"][0]["results"][0]["ruleId"],
+        "apiwatch/verify-observed-incompatible-shape"
+    );
+    assert_eq!(
+        sarif["runs"][0]["results"][0]["message"]["text"],
+        "incompatible shape at $.by_broker.acme.pnl_pct: expected number, found string"
+    );
+    assert_eq!(
+        sarif["runs"][0]["results"][0]["partialFingerprints"]["apiwatch/v1"],
+        "verify-observed:portfolio:apiwatch/verify-observed-incompatible-shape:$.by_broker.acme.pnl_pct:number:string"
+    );
+    assert!(!json_output
+        .stdout
+        .windows(b"verify-secret".len())
+        .any(|part| part == b"verify-secret"));
+    assert!(!sarif_output
+        .stdout
+        .windows(b"verify-secret".len())
+        .any(|part| part == b"verify-secret"));
+
+    fs::remove_file(lock).ok();
+}
+
 #[test]
 fn verify_observed_json_body_with_matching_shape() {
     let lock = observed_lock_path();

@@ -37,8 +37,26 @@ apiwatch verify body.json --name portfolio --lock api.lock
 
 APIWatch records JSON structure, never captured values. `record` is an
 explicit learning command that updates a lock; `verify` only checks it. This
-release accepts local JSON files for observed contracts. Map annotations,
-coverage reporting, HAR imports, and live recording are deferred.
+release accepts local JSON files for observed contracts. Coverage reporting,
+HAR imports, and live recording are deferred.
+
+### Observed JSON Maps
+
+When object keys are dynamic data rather than API fields, mark the object
+explicitly with repeatable `--map-at` annotations:
+
+```bash
+apiwatch record --from-json portfolio.json --name portfolio --output api.lock --map-at $.by_broker --map-at $.state.by_region
+```
+
+Each annotation accepts only `$` or named property segments such as
+`$.by_broker`. Map keys may be added, removed, or renamed without drift, while
+every map value is still verified structurally. APIWatch never infers maps
+automatically: an annotation is required because choosing map semantics changes
+compatibility. Stored locks and Verify diagnostics contain field names, JSON
+paths, and shape names only—never dynamic map keys or captured scalar values. Bracket
+notation, arrays, wildcards, filters, scripts, advanced JSONPath, and coverage
+reporting remain deferred.
 
 ```bash
 apiwatch diff old.openapi.yaml new.openapi.yaml --format json
