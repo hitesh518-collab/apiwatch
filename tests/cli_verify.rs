@@ -227,9 +227,11 @@ fn verify_observed_map_reports_dynamic_value_type_drift_without_values() {
     .assert()
     .code(1)
     .stdout(predicate::str::contains(
-        "BREAKING $.by_broker.acme.pnl_pct: expected number, found string\n",
+        "BREAKING $.by_broker.<map-value>.pnl_pct: expected number, found string\n",
     ))
-    .stdout(predicate::str::contains("verify-secret").not());
+    .stdout(predicate::str::contains("verify-secret").not())
+    .stdout(predicate::str::contains("acme").not())
+    .stdout(predicate::str::contains("globex").not());
 
     fs::remove_file(lock).ok();
 }
@@ -275,7 +277,7 @@ fn verify_observed_map_json_and_sarif_report_only_paths_and_shape_names() {
             "summary": {"breaking": 1},
             "changes": [{
                 "kind": "incompatible_shape",
-                "path": "$.by_broker.acme.pnl_pct",
+                "path": "$.by_broker.<map-value>.pnl_pct",
                 "expected": "number",
                 "actual": "string"
             }]
@@ -298,20 +300,36 @@ fn verify_observed_map_json_and_sarif_report_only_paths_and_shape_names() {
     );
     assert_eq!(
         sarif["runs"][0]["results"][0]["message"]["text"],
-        "incompatible shape at $.by_broker.acme.pnl_pct: expected number, found string"
+        "incompatible shape at $.by_broker.<map-value>.pnl_pct: expected number, found string"
     );
     assert_eq!(
         sarif["runs"][0]["results"][0]["partialFingerprints"]["apiwatch/v1"],
-        "verify-observed:portfolio:apiwatch/verify-observed-incompatible-shape:$.by_broker.acme.pnl_pct:number:string"
+        "verify-observed:portfolio:apiwatch/verify-observed-incompatible-shape:$.by_broker.<map-value>.pnl_pct:number:string"
     );
     assert!(!json_output
         .stdout
         .windows(b"verify-secret".len())
         .any(|part| part == b"verify-secret"));
+    assert!(!json_output
+        .stdout
+        .windows(b"acme".len())
+        .any(|part| part == b"acme"));
+    assert!(!json_output
+        .stdout
+        .windows(b"globex".len())
+        .any(|part| part == b"globex"));
     assert!(!sarif_output
         .stdout
         .windows(b"verify-secret".len())
         .any(|part| part == b"verify-secret"));
+    assert!(!sarif_output
+        .stdout
+        .windows(b"acme".len())
+        .any(|part| part == b"acme"));
+    assert!(!sarif_output
+        .stdout
+        .windows(b"globex".len())
+        .any(|part| part == b"globex"));
 
     fs::remove_file(lock).ok();
 }

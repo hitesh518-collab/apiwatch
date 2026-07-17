@@ -58,6 +58,11 @@ paths, and shape names only—never dynamic map keys or captured scalar values. 
 notation, arrays, wildcards, filters, scripts, advanced JSONPath, and coverage
 reporting remain deferred.
 
+When a dynamic map value is incompatible, diagnostics use the stable redacted
+segment `<map-value>`—for example,
+`$.by_broker.<map-value>.pnl_pct`. Text, JSON, SARIF messages, and SARIF
+fingerprints therefore never expose the actual dynamic key.
+
 ```bash
 apiwatch diff old.openapi.yaml new.openapi.yaml --format json
 apiwatch verify openapi.yaml --name users --lock api.lock --format json

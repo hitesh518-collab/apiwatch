@@ -93,7 +93,9 @@ a map only through an explicit annotation.
 Verify is directional: a locked map accepts an actual object with any keys,
 including no keys, but every actual value must match the locked `values` shape.
 An actual scalar, array, or null at a locked map path is incompatible. Map
-diagnostics include the annotated path, dynamic key path, and shape names only.
+diagnostics use the annotated path plus a stable `<map-value>` segment in place
+of each dynamic key, along with shape names only. This redacted notation is
+used consistently in text, JSON, SARIF messages, and SARIF fingerprints.
 
 ## Privacy
 

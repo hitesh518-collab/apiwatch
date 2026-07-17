@@ -133,7 +133,7 @@
           "by_broker": {"acme": {"pnl_pct": "wrong"}}
       })));
       assert!(changes.iter().any(|change| {
-          change.path == "$.by_broker.acme.pnl_pct"
+          change.path == "$.by_broker.<map-value>.pnl_pct"
               && change.expected.as_deref() == Some("number")
               && change.actual.as_deref() == Some("string")
       }));
@@ -561,7 +561,7 @@
       )
       .assert().code(1)
       .stdout(predicate::str::contains(
-          "BREAKING $.by_broker.acme.pnl_pct: expected number, found string\n",
+          "BREAKING $.by_broker.<map-value>.pnl_pct: expected number, found string\n",
       ))
       .stdout(predicate::str::contains("verify-secret").not());
       fs::remove_file(lock).ok();
@@ -608,7 +608,7 @@
   ```rust
   ObservedChange {
       kind: ObservedChangeKind::IncompatibleShape,
-      path: "$.by_broker.acme.pnl_pct".to_owned(),
+      path: "$.by_broker.<map-value>.pnl_pct".to_owned(),
       expected: Some("number".to_owned()),
       actual: Some("string".to_owned()),
   }

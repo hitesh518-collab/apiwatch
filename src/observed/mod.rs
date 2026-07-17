@@ -328,11 +328,11 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
                 ..
             },
         ) => {
-            for (name, actual_property) in actual_properties {
+            for actual_property in actual_properties.values() {
                 compare_at(
                     expected_values,
                     &actual_property.shape,
-                    &format!("{path}.{name}"),
+                    &format!("{path}.<map-value>"),
                     changes,
                 );
             }
@@ -576,7 +576,7 @@ mod tests {
             })),
         );
         assert!(changes.iter().any(|change| {
-            change.path == "$.by_broker.acme.pnl_pct"
+            change.path == "$.by_broker.<map-value>.pnl_pct"
                 && change.expected.as_deref() == Some("number")
                 && change.actual.as_deref() == Some("string")
         }));

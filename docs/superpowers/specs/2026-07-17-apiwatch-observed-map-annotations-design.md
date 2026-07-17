@@ -103,11 +103,11 @@ Observed Verify is directional from the lock to the supplied local JSON:
 - Existing object field, array item, union, unknown, and privacy behavior
   stays unchanged.
 
-Map diagnostics use the annotated JSONPath plus dynamic key segments and type
-names only. For example:
+Map diagnostics use the annotated JSONPath plus the stable redacted
+`<map-value>` segment and type names only. For example:
 
 ```text
-BREAKING $.by_broker.acme: expected number, found string
+BREAKING $.by_broker.<map-value>: expected number, found string
 ```
 
 ## Architecture
