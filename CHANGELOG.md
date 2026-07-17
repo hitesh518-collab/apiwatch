@@ -5,6 +5,7 @@
 ### Added
 
 - A repository-owned Homebrew formula for source-building the tagged apiwatch release.
+- A repository-owned Scoop manifest for source-building the tagged apiwatch release on Windows.
 
 ## v0.6.0 - 2026-07-16
 

@@ -56,6 +56,18 @@ brew install --build-from-source ./Formula/apiwatch.rb
 
 This first formula is not a Homebrew tap, so `brew install apiwatch` is not available. Each apiwatch release updates the formula's pinned source URL and SHA-256 checksum.
 
+## Scoop
+
+The repository includes a Scoop manifest for source-building the current v0.6.0 tagged release on Windows. Clone this repository, then install the local manifest:
+
+```powershell
+git clone https://github.com/hitesh518-collab/apiwatch.git
+cd apiwatch
+scoop install ./Scoop/apiwatch.json
+```
+
+Scoop installs the Rust dependency automatically. Rust source builds on Windows also require Microsoft C++ Build Tools and a Windows SDK. This first manifest is not in a Scoop bucket, so `scoop install apiwatch` is not available. Each apiwatch release updates the manifest's pinned source URL and SHA-256 checksum after its tag is published.
+
 ## GitHub Action
 
 Use the reusable action from an Ubuntu workflow after checking out the consumer repository:
