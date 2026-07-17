@@ -4,6 +4,12 @@
 
 ### Added
 
+- A repository-owned Homebrew formula for source-building the tagged apiwatch release.
+
+## v0.6.0 - 2026-07-16
+
+### Added
+
 - SARIF 2.1.0 output for `apiwatch diff` and `apiwatch verify`, plus opt-in GitHub Code Scanning upload from the reusable action.
 - Deterministic, versioned JSON output for `apiwatch diff` and `apiwatch verify` via `--format json`.
 - `apiwatch lock <OPENAPI> --name <NAME> --output <PATH>` writes a deterministic v1 `api.lock` file with normalized operation metadata.
