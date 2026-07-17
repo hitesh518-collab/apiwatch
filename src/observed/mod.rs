@@ -226,7 +226,9 @@ fn canonical_union(variants: Vec<Shape>) -> Shape {
     if canonical.len() == 1 {
         canonical.pop().expect("single union variant should exist")
     } else {
-        Shape::Union { variants: canonical }
+        Shape::Union {
+            variants: canonical,
+        }
     }
 }
 
@@ -286,7 +288,14 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
                 }
             }
         }
-        (Shape::Array { items: expected_items }, Shape::Array { items: actual_items }) => {
+        (
+            Shape::Array {
+                items: expected_items,
+            },
+            Shape::Array {
+                items: actual_items,
+            },
+        ) => {
             if !matches!(actual_items.as_ref(), Shape::Unknown) {
                 compare_at(expected_items, actual_items, &format!("{path}[]"), changes);
             }

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use assert_cmd::Command;
@@ -147,7 +147,7 @@ fn observed_lock_path() -> PathBuf {
     ))
 }
 
-fn record_portfolio(lock: &PathBuf) {
+fn record_portfolio(lock: &Path) {
     let lock = lock.to_str().expect("temp path should be valid UTF-8");
     Command::cargo_bin("apiwatch")
         .expect("binary should build")
@@ -230,6 +230,75 @@ fn verify_observed_json_reports_type_drift_without_values() {
     .code(1)
     .stdout("BREAKING $.live_price: expected null | number, found string\n")
     .stdout(predicate::str::contains("recording-secret").not());
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_observed_json_format_reports_versioned_drift() {
+    let lock = observed_lock_path();
+    record_portfolio(&lock);
+    let lock_arg = lock.to_str().expect("temp path should be valid UTF-8");
+
+    let output = verify_command(
+        "testdata/observed/portfolio-missing-required.json",
+        "portfolio",
+        lock_arg,
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("verify should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output),
+        json!({
+            "version": 2,
+            "command": "verify",
+            "name": "portfolio",
+            "provenance": "observed",
+            "summary": {"breaking": 1},
+            "changes": [{
+                "kind": "missing_required_field",
+                "path": "$.summary.current_value"
+            }]
+        })
+    );
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_observed_sarif_reports_a_lockfile_finding_without_values() {
+    let lock = observed_lock_path();
+    record_portfolio(&lock);
+    let lock_arg = lock.to_str().expect("temp path should be valid UTF-8");
+
+    let output = verify_command(
+        "testdata/observed/portfolio-missing-required.json",
+        "portfolio",
+        lock_arg,
+    )
+    .args(["--format", "sarif"])
+    .output()
+    .expect("verify should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    let rendered = parse_json_output(&output);
+    assert_eq!(rendered["version"], "2.1.0");
+    assert_eq!(
+        rendered["runs"][0]["results"][0]["ruleId"],
+        "apiwatch/verify-observed-missing-required-field"
+    );
+    assert_eq!(
+        rendered["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]
+            ["uri"],
+        lock_arg.replace(':', "%3A").replace('\\', "/")
+    );
+    assert!(!output
+        .stdout
+        .windows(b"recording-secret".len())
+        .any(|part| part == b"recording-secret"));
 
     fs::remove_file(lock).ok();
 }
@@ -766,7 +835,7 @@ fn verify_exits_two_for_an_unsupported_lockfile_version() {
     .assert()
     .code(2)
     .stdout(predicate::str::is_empty())
-    .stderr(predicate::str::contains("unsupported api.lock version 2"));
+    .stderr(predicate::str::contains("unsupported api.lock version 3"));
 }
 
 #[test]

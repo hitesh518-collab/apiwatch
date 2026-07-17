@@ -97,7 +97,18 @@ fn run() -> Result<i32> {
                     println!("Verified {}", target.name());
                     return Ok(0);
                 }
-                print!("{}", output::render_observed_verify_changes(&changes));
+                let rendered = match format {
+                    OutputFormat::Text => output::render_observed_verify_changes(&changes),
+                    OutputFormat::Json => {
+                        output::render_observed_verify_changes_json(target.name(), &changes)?
+                    }
+                    OutputFormat::Sarif => output::render_observed_verify_changes_sarif(
+                        &lock_path,
+                        target.name(),
+                        &changes,
+                    )?,
+                };
+                print!("{rendered}");
                 return Ok(1);
             }
             let contract = openapi::load_contract_input(&openapi)?;

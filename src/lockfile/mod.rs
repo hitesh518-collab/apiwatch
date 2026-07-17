@@ -185,7 +185,9 @@ pub fn record_observed(
 ) -> Result<()> {
     let name = normalized_name(name)?;
     if lock.apis.contains_key(name) {
-        return Err(anyhow!("api {name} is declared and cannot be recorded as observed"));
+        return Err(anyhow!(
+            "api {name} is declared and cannot be recorded as observed"
+        ));
     }
 
     match lock.observed.get_mut(name) {
@@ -520,8 +522,8 @@ mod tests {
 
     #[test]
     fn recording_into_v1_preserves_declared_operations_and_renders_v2() {
-        let mut lock = load(Path::new("testdata/lock/verify_users.lock"))
-            .expect("v1 lock should load");
+        let mut lock =
+            load(Path::new("testdata/lock/verify_users.lock")).expect("v1 lock should load");
         let shape = crate::observed::infer(&serde_json::json!({
             "id": 1,
             "token": "super-secret-token"
