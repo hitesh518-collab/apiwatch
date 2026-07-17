@@ -1,0 +1,6 @@
+{
+  "by_broker": {
+    "initech": {"pnl_pct": 5.6, "session_token": "map-secret-merged"}
+  },
+  "state": {"by_region": {"us": {"active": false}}}
+}

@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::contract::ApiContract;
-use crate::observed::{merge as merge_shapes, Shape};
+use crate::observed::{apply_map_annotations, merge as merge_shapes, Shape};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiLock {
@@ -182,6 +182,7 @@ pub fn record_observed(
     name: &str,
     incoming: Shape,
     merge_existing: bool,
+    map_paths: &[String],
 ) -> Result<()> {
     let name = normalized_name(name)?;
     if lock.apis.contains_key(name) {
@@ -190,8 +191,16 @@ pub fn record_observed(
         ));
     }
 
-    match lock.observed.get_mut(name) {
-        Some(existing) if merge_existing => merge_shapes(existing, &incoming),
+    let mut incoming = incoming;
+    apply_map_annotations(&mut incoming, map_paths)?;
+
+    match lock.observed.get(name) {
+        Some(existing) if merge_existing => {
+            let mut existing = existing.clone();
+            apply_map_annotations(&mut existing, map_paths)?;
+            merge_shapes(&mut existing, &incoming);
+            lock.observed.insert(name.to_string(), existing);
+        }
         Some(_) => return Err(anyhow!("api {name} already exists; use --merge")),
         None if merge_existing => return Err(anyhow!("observed api {name} was not found")),
         None => {
@@ -529,7 +538,7 @@ mod tests {
             "token": "super-secret-token"
         }));
 
-        record_observed(&mut lock, "portfolio", shape, false)
+        record_observed(&mut lock, "portfolio", shape, false, &[])
             .expect("new observed entry should be recorded");
         let rendered = render(&lock).expect("v2 lock should render");
 
@@ -538,5 +547,35 @@ mod tests {
         assert!(rendered.contains("provenance: observed"));
         assert!(rendered.contains("path: /users"));
         assert!(!rendered.contains("super-secret-token"));
+    }
+
+    #[test]
+    fn invalid_map_annotation_leaves_an_existing_observed_entry_unchanged() {
+        let mut lock = ApiLock {
+            version: 2,
+            apis: BTreeMap::new(),
+            observed: BTreeMap::new(),
+        };
+        record_observed(
+            &mut lock,
+            "portfolio",
+            crate::observed::infer(&serde_json::json!({"by_broker": {"acme": 1}})),
+            false,
+            &[],
+        )
+        .expect("initial observed entry should be recorded");
+        let before = render(&lock).expect("lock should serialize");
+
+        let error = record_observed(
+            &mut lock,
+            "portfolio",
+            crate::observed::infer(&serde_json::json!({"by_broker": {"acme": 2}})),
+            true,
+            &["$.by-broker".to_owned()],
+        )
+        .expect_err("invalid annotation should fail");
+
+        assert!(error.to_string().contains("invalid map annotation"));
+        assert_eq!(render(&lock).expect("lock should serialize"), before);
     }
 }

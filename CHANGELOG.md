@@ -5,6 +5,7 @@
 ### Added
 
 - Versioned observed JSON contracts with local shape recording, monotonic merging, and verification.
+- Add explicit repeatable `--map-at` annotations for dynamic-key observed JSON maps.
 - A repository-owned Homebrew formula for source-building the tagged apiwatch release.
 - A repository-owned Scoop manifest for source-building the tagged apiwatch release on Windows.
 

@@ -1,0 +1,7 @@
+{
+  "by_broker": {
+    "acme": {"pnl_pct": 1.2, "session_token": "map-secret-initial"},
+    "globex": {"pnl_pct": 3.4, "session_token": "map-secret-initial-2"}
+  },
+  "state": {"by_region": {"in": {"active": true}}}
+}

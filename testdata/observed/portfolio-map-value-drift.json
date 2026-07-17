@@ -1,0 +1,6 @@
+{
+  "by_broker": {
+    "acme": {"pnl_pct": "not-a-number", "session_token": "verify-secret"}
+  },
+  "state": {"by_region": {"in": {"active": true}}}
+}
