@@ -2,6 +2,7 @@ mod cli;
 mod contract;
 mod diff;
 mod lockfile;
+mod observed;
 mod openapi;
 mod output;
 mod remote;
