@@ -69,10 +69,11 @@ fn run() -> Result<i32> {
             name,
             output,
             merge,
+            map_at,
         } => {
             let shape = observed::load_shape(&from_json)?;
             let mut lock = lockfile::load_or_create_for_record(&output)?;
-            lockfile::record_observed(&mut lock, &name, shape, merge)?;
+            lockfile::record_observed(&mut lock, &name, shape, merge, &map_at)?;
             let rendered = lockfile::render(&lock)?;
             fs::write(&output, rendered)
                 .with_context(|| format!("failed to write lockfile {}", output.display()))?;

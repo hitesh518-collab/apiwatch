@@ -53,6 +53,9 @@ pub enum Command {
         /// Merge the JSON shape into an existing observed entry.
         #[arg(long)]
         merge: bool,
+        /// Mark a JSON object path as a dynamic-key map.
+        #[arg(long = "map-at")]
+        map_at: Vec<String>,
     },
     /// Verify one OpenAPI contract against a named api.lock entry.
     Verify {
