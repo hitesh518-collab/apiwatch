@@ -1,2 +1,4 @@
 target/
 implementation-log/
+.worktrees/
+.superpowers/
