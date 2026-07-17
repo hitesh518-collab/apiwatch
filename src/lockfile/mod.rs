@@ -71,11 +71,16 @@ struct LockedOperation {
 pub struct VerifyTarget {
     name: String,
     operations: BTreeSet<LockedOperation>,
+    observed_shape: Option<Shape>,
 }
 
 impl VerifyTarget {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn observed_shape(&self) -> Option<&Shape> {
+        self.observed_shape.as_ref()
     }
 }
 
@@ -196,6 +201,18 @@ pub fn record_observed(
     Ok(())
 }
 
+pub fn load_or_create_for_record(path: &Path) -> Result<ApiLock> {
+    if path.exists() {
+        load(path)
+    } else {
+        Ok(ApiLock {
+            version: 2,
+            apis: BTreeMap::new(),
+            observed: BTreeMap::new(),
+        })
+    }
+}
+
 fn load_v2(contents: &str) -> Result<ApiLock> {
     let raw: V2Lock = serde_yaml::from_str(contents).context("failed to parse api.lock YAML")?;
     if raw.version != 2 {
@@ -234,6 +251,13 @@ fn load_v2(contents: &str) -> Result<ApiLock> {
 
 pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> {
     let name = normalized_name(name)?;
+    if let Some(shape) = lock.observed.get(name) {
+        return Ok(VerifyTarget {
+            name: name.to_string(),
+            operations: BTreeSet::new(),
+            observed_shape: Some(shape.clone()),
+        });
+    }
     let api = lock
         .apis
         .get(name)
@@ -260,6 +284,7 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
     Ok(VerifyTarget {
         name: name.to_string(),
         operations,
+        observed_shape: None,
     })
 }
 

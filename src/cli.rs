@@ -39,6 +39,21 @@ pub enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Record the observed shape of one JSON body.
+    Record {
+        /// Local JSON body to record.
+        #[arg(long)]
+        from_json: PathBuf,
+        /// API name to use as the lockfile key.
+        #[arg(long)]
+        name: String,
+        /// api.lock path to write.
+        #[arg(long)]
+        output: PathBuf,
+        /// Merge the JSON shape into an existing observed entry.
+        #[arg(long)]
+        merge: bool,
+    },
     /// Verify one OpenAPI contract against a named api.lock entry.
     Verify {
         /// Current local OpenAPI YAML/JSON file or HTTP(S) URL to verify.

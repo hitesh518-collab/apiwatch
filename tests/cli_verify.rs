@@ -1,3 +1,7 @@
+use std::fs;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{json, Value};
@@ -130,6 +134,104 @@ fn verify_command(openapi: &str, name: &str, lock: &str) -> Command {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
     command.args(["verify", openapi, "--name", name, "--lock", lock]);
     command
+}
+
+fn observed_lock_path() -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after Unix epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "apiwatch-observed-verify-{}-{suffix}.lock",
+        std::process::id()
+    ))
+}
+
+fn record_portfolio(lock: &PathBuf) {
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--name",
+            "portfolio",
+            "--output",
+            lock,
+        ])
+        .assert()
+        .success();
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-populated.json",
+            "--name",
+            "portfolio",
+            "--output",
+            lock,
+            "--merge",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn verify_observed_json_body_with_matching_shape() {
+    let lock = observed_lock_path();
+    record_portfolio(&lock);
+    let lock_arg = lock.to_str().expect("temp path should be valid UTF-8");
+
+    verify_command(
+        "testdata/observed/portfolio-matching.json",
+        "portfolio",
+        lock_arg,
+    )
+    .assert()
+    .success()
+    .stdout("Verified portfolio\n");
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_observed_json_reports_a_missing_required_field_without_values() {
+    let lock = observed_lock_path();
+    record_portfolio(&lock);
+    let lock_arg = lock.to_str().expect("temp path should be valid UTF-8");
+
+    verify_command(
+        "testdata/observed/portfolio-missing-required.json",
+        "portfolio",
+        lock_arg,
+    )
+    .assert()
+    .code(1)
+    .stdout("BREAKING $.summary.current_value: required field missing\n")
+    .stderr(predicate::str::is_empty());
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_observed_json_reports_type_drift_without_values() {
+    let lock = observed_lock_path();
+    record_portfolio(&lock);
+    let lock_arg = lock.to_str().expect("temp path should be valid UTF-8");
+
+    verify_command(
+        "testdata/observed/portfolio-type-drift.json",
+        "portfolio",
+        lock_arg,
+    )
+    .assert()
+    .code(1)
+    .stdout("BREAKING $.live_price: expected null | number, found string\n")
+    .stdout(predicate::str::contains("recording-secret").not());
+
+    fs::remove_file(lock).ok();
 }
 
 #[test]

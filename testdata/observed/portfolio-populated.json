@@ -1,0 +1,15 @@
+{
+  "summary": {
+    "current_value": 1100,
+    "pnl_pct": 5.1
+  },
+  "live_price": null,
+  "holdings": [
+    {
+      "ticker": "APW",
+      "pnl_pct": 1.3
+    }
+  ],
+  "session_token": "recording-secret-002",
+  "error": "temporary"
+}

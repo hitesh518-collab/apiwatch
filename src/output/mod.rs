@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::diff::{Change, Severity};
 use crate::lockfile::{VerifyChange, VerifyChangeKind};
+use crate::observed::{ObservedChange, ObservedChangeKind};
 
 #[derive(Serialize)]
 struct DiffJson<'a> {
@@ -484,6 +485,23 @@ pub fn render_verify_changes(changes: &[VerifyChange]) -> String {
     }
 
     rendered
+}
+
+pub fn render_observed_verify_changes(changes: &[ObservedChange]) -> String {
+    changes
+        .iter()
+        .map(|change| match change.kind {
+            ObservedChangeKind::MissingRequiredField => {
+                format!("BREAKING {}: required field missing\n", change.path)
+            }
+            ObservedChangeKind::IncompatibleShape => format!(
+                "BREAKING {}: expected {}, found {}\n",
+                change.path,
+                change.expected.as_deref().unwrap_or("unknown"),
+                change.actual.as_deref().unwrap_or("unknown"),
+            ),
+        })
+        .collect()
 }
 
 #[cfg(test)]
