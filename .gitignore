@@ -2,3 +2,6 @@ target/
 implementation-log/
 .worktrees/
 .superpowers/
+.compat-cache/
+__pycache__/
+*.pyc

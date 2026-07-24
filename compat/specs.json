@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "max_total_bytes": 104857600,
+  "specs": [
+    {
+      "name": "github",
+      "file": "github.json",
+      "url": "https://raw.githubusercontent.com/github/rest-api-description/5c88ff6bc3c36a12ccd69b8e0fee479b7202188a/descriptions/api.github.com/api.github.com.json",
+      "sha256": "17d0cf71ec30e78bd1dc27085be8371504b98e9a9326cf2a0802ab88c37fbfb5",
+      "max_bytes": 52428800,
+      "status": "passing"
+    },
+    {
+      "name": "asana",
+      "file": "asana.yaml",
+      "url": "https://raw.githubusercontent.com/Asana/openapi/56796a67a3c093eedf55fd9682357957a2ebfd85/defs/asana_oas.yaml",
+      "sha256": "cb3b90f4e0af56035eab0c648974f625b942a28a7144aa6c2326e38ca0bb3d56",
+      "max_bytes": 52428800,
+      "status": "passing"
+    },
+    {
+      "name": "box",
+      "file": "box.json",
+      "url": "https://raw.githubusercontent.com/box/box-openapi/f28eec5d49b9597d7df82f3a0c75bd92478b699a/openapi.json",
+      "sha256": "0db1ffa51e52b9f1cb779bc4a37f200ac5f978630cab5178141687b2fed24e7a",
+      "max_bytes": 52428800,
+      "status": "passing"
+    },
+    {
+      "name": "stripe",
+      "file": "stripe.json",
+      "url": "https://raw.githubusercontent.com/stripe/openapi/86b6ae4db114ff06968dcc191ff4a898e9b5db7c/openapi/spec3.json",
+      "sha256": "e24a26de4188fd64dec4c043d5d3726277fdcb07556a493ea481c305b0a223d8",
+      "max_bytes": 52428800,
+      "status": "known_failing",
+      "expected_error": "circular schema reference detected: #/components/schemas/file"
+    },
+    {
+      "name": "digitalocean",
+      "file": "digitalocean.yaml",
+      "url": "https://raw.githubusercontent.com/digitalocean/openapi/7667351a0c8a1a526343160e1778cb5e97b2c9da/specification/DigitalOcean-public.v2.yaml",
+      "sha256": "cda2db55fb97ceef551a3e35682dca49ad331b486f88f712f7c93f4ba05eefbc",
+      "max_bytes": 52428800,
+      "status": "known_failing",
+      "expected_error": "tags[0].description: invalid type: map, expected a string"
+    }
+  ]
+}
