@@ -7,6 +7,8 @@ pub mod contract;
 #[doc(hidden)]
 pub mod diff;
 #[doc(hidden)]
+pub mod lock_size;
+#[doc(hidden)]
 pub mod lockfile;
 #[doc(hidden)]
 pub mod observed;
