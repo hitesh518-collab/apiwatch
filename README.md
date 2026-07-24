@@ -187,27 +187,34 @@ action outputs, authentication, custom headers, or configuration files.
 
 ## Known Limitations
 
-- **Declared locks are route-only.** Full schema, parameter, authentication,
-  content-type, and response verification requires
-  [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful).
-- **Diff semantics have confirmed gaps.** Request bodies, content types,
-  response requiredness, composition, path templates, authentication identity,
-  and related rules are tracked in
-  [Phase 2](ROADMAP.md#phase-2--make-the-comparison-engine-trustworthy).
-- **Input compatibility is incomplete.** OpenAPI 3.1, external and multi-file
-  `$ref`, recursive schemas, and some real-world documents require
-  [Phase 3](ROADMAP.md#phase-3--real-world-compatibility).
-- **Observed evidence is sample-bound.** Requiredness confidence and coverage
-  are planned in [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts).
-- **Traffic capture is not implemented.** HAR import, live recording,
-  multi-entry Verify, and onboarding automation are planned in
-  [Phase 5](ROADMAP.md#phase-5--frictionless-recording-and-ci-adoption).
-- **Distribution is source-heavy.** The Action, Homebrew formula, and Scoop
-  manifest build from source. Binary distribution is tracked in the
-  [continuous distribution work](ROADMAP.md#continuous-distribution-track).
+APIWatch is pre-v1. A clean result does not yet prove that every change class
+below was checked.
 
-These limitations are release constraints, not hidden implementation details.
-Consult the [full roadmap](ROADMAP.md) before relying on a planned capability.
+| Area | Current limitation | Tracked work |
+|---|---|---|
+| Request bodies (D-01) | Adding or removing an entire request body may be missed. | [Phase 2](ROADMAP.md#phase-2--make-the-comparison-engine-trustworthy) |
+| Content types (D-02) | Adding or removing a request or response media type may be missed. | Phase 2 |
+| Response requiredness (D-03) | Required/optional response-field changes are not compared correctly. | Phase 2 |
+| Dictionary schemas (D-04) | `additionalProperties` constraints are not represented. | Phase 2 |
+| Schema formats (D-05) | Formats such as `int32`, `int64`, and date-time are normalized but not compared. | Phase 2 |
+| Servers (D-06) | Server and base-URL changes are not tracked. | Phase 2 |
+| Path templates (D-07) | Renaming a path parameter may appear as endpoint removal plus addition. | Phase 2 |
+| Security identity (D-08) | Renaming an equivalent security scheme may be reported as breaking. | Phase 2 |
+| Composition (D-09) | Reordering `allOf`, `oneOf`, or `anyOf` branches can cause false breaking findings. | Phase 2 |
+| Array model (D-10) | Array items are represented internally as a synthetic property, limiting some comparisons. | Phase 2 |
+| Enum severity (D-11) | Direction is handled, but response enum-widening severity is not yet a stable policy. | Phase 2 |
+| OpenAPI 3.1 (D-12) | OpenAPI 3.1 is explicitly rejected until it is implemented. | [Phase 3](ROADMAP.md#phase-3--real-world-compatibility) |
+| Strict metadata parsing (D-13) | Irrelevant malformed metadata can reject an otherwise usable specification. | Phase 3 |
+| Recursive schemas (D-14) | Circular schema references are currently rejected. | Phase 3 |
+| External references (D-15) | External and multi-file `$ref` targets are unsupported. | Phase 3 |
+| Declared locks (D-16) | Version 1 and 2 declared locks store routes only; Verify cannot detect full semantic drift. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
+| Null observations (D-17) | A null-only sample can make an observed shape too narrow. | [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts) |
+| Observed requiredness (D-18) | Requiredness does not yet use a configurable confidence threshold. | Phase 4 |
+| Observed inputs (D-19) | Observed Verify accepts local JSON only; HAR and live capture are not implemented. | [Phase 5](ROADMAP.md#phase-5--frictionless-recording-and-ci-adoption) |
+| Distribution | The Action, Homebrew formula, and Scoop manifest still build from source. | [Continuous distribution](ROADMAP.md#continuous-distribution-track) |
+
+Repeated phase names in the table refer to the linked phase in the first row
+for that group. See [ROADMAP.md](ROADMAP.md) for exit criteria.
 
 ## Product Direction
 
