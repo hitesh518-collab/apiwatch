@@ -1,8 +1,43 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use serde::Serialize;
 
 use crate::contract::{ApiContract, HttpMethod, OperationKey};
+
+pub const PRIVACY_SENTINELS: &[&str] = &[
+    "APIWATCH_DESCRIPTION_SENTINEL",
+    "APIWATCH_EXTENSION_SENTINEL",
+    "APIWATCH_OPERATION_DESCRIPTION_SENTINEL",
+    "APIWATCH_RESPONSE_DESCRIPTION_SENTINEL",
+    "APIWATCH_DEFAULT_SENTINEL",
+    "APIWATCH_EXAMPLE_SENTINEL",
+    "APIWATCH_CREDENTIAL_SENTINEL",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateKind {
+    ExpandedYaml,
+    CanonicalJson,
+    DeduplicatedYaml,
+}
+
+pub fn encode_expanded_yaml(contract: &ApiContract) -> Result<Vec<u8>> {
+    let mut rendered = serde_yaml::to_string(contract)
+        .context("failed to encode expanded YAML")?
+        .into_bytes();
+    if !rendered.ends_with(b"\n") {
+        rendered.push(b'\n');
+    }
+    Ok(rendered)
+}
+
+pub fn encode_canonical_json(contract: &ApiContract) -> Result<Vec<u8>> {
+    let mut rendered = serde_json::to_vec(contract).context("failed to encode canonical JSON")?;
+    rendered.push(b'\n');
+    Ok(rendered)
+}
 
 pub fn parse_operation_selector(value: &str) -> Result<OperationKey> {
     let Some((method, path)) = value.split_once(' ') else {
@@ -59,7 +94,10 @@ pub fn scope_contract(contract: &ApiContract, selectors: &[String]) -> Result<Ap
 mod tests {
     use std::path::Path;
 
-    use super::{parse_operation_selector, scope_contract};
+    use super::{
+        encode_canonical_json, encode_expanded_yaml, parse_operation_selector, scope_contract,
+        PRIVACY_SENTINELS,
+    };
     use crate::contract::HttpMethod;
     use crate::openapi::load_contract;
 
@@ -103,5 +141,28 @@ mod tests {
     fn empty_selectors_clone_the_full_contract() {
         let contract = load_contract(Path::new("testdata/openapi/verify_matching.yaml")).unwrap();
         assert_eq!(scope_contract(&contract, &[]).unwrap(), contract);
+    }
+
+    #[test]
+    fn expanded_encoders_are_deterministic_and_value_free() {
+        let contract = load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml")).unwrap();
+        for rendered in [
+            encode_expanded_yaml(&contract).unwrap(),
+            encode_canonical_json(&contract).unwrap(),
+        ] {
+            assert_eq!(rendered.last(), Some(&b'\n'));
+            let second = if rendered.starts_with(b"{") {
+                encode_canonical_json(&contract).unwrap()
+            } else {
+                encode_expanded_yaml(&contract).unwrap()
+            };
+            assert_eq!(rendered, second);
+            let text = String::from_utf8(rendered).unwrap();
+            for sentinel in PRIVACY_SENTINELS {
+                assert!(!text.contains(sentinel));
+            }
+            assert!(text.contains("/accounts"));
+            assert!(text.contains("token"));
+        }
     }
 }

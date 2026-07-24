@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info:
+  title: Privacy sentinels
+  version: 1.0.0
+  description: APIWATCH_DESCRIPTION_SENTINEL
+x-private-note: APIWATCH_EXTENSION_SENTINEL
+paths:
+  /accounts:
+    get:
+      description: APIWATCH_OPERATION_DESCRIPTION_SENTINEL
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: APIWATCH_RESPONSE_DESCRIPTION_SENTINEL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    default: APIWATCH_DEFAULT_SENTINEL
+                    example: APIWATCH_EXAMPLE_SENTINEL
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: APIWATCH_CREDENTIAL_SENTINEL
