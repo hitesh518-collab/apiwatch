@@ -1,0 +1,9 @@
+[package]
+name = "apiwatch-lock-size-report"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.86"
+publish = false
+
+[dependencies]
+apiwatch = { path = "../.." }
