@@ -99,8 +99,10 @@ contract changes APIWatch promises to catch.
 
 ### Ordered Scope
 
-1. Prototype full-contract lock sizes on small and large public
-   specifications.
+1. **Completed:** Prototype full-contract lock sizes on small and large public
+   specifications. The measured recommendation is `deduplicated_yaml`; see the
+   [human-readable](docs/benchmarks/phase-1-lock-size-report.md) and
+   [machine-readable](docs/benchmarks/phase-1-lock-size-report.json) reports.
 2. Design and approve the exact lockfile v3 schema (D-16).
 3. Target a **5 MB default ceiling per upstream API** committed to Git, with
    explicit endpoint scoping for larger APIs.

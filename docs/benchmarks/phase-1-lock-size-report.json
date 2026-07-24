@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "apiwatch_version": "0.7.0",
+  "max_lock_bytes": 5242880,
+  "corpus": [
+    {
+      "name": "github",
+      "source_commit": "5c88ff6bc3c36a12ccd69b8e0fee479b7202188a",
+      "sha256": "17d0cf71ec30e78bd1dc27085be8371504b98e9a9326cf2a0802ab88c37fbfb5",
+      "source_bytes": 12816309,
+      "normalization_status": "passing",
+      "operation_count": 1209,
+      "measurements": {
+        "operation_count": 1209,
+        "expanded_yaml": {
+          "bytes": 39730491,
+          "within_ceiling": false
+        },
+        "canonical_json": {
+          "bytes": 13885612,
+          "within_ceiling": false
+        },
+        "deduplicated_yaml": {
+          "bytes": 2327580,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "asana",
+      "source_commit": "56796a67a3c093eedf55fd9682357957a2ebfd85",
+      "sha256": "cb3b90f4e0af56035eab0c648974f625b942a28a7144aa6c2326e38ca0bb3d56",
+      "source_bytes": 3066750,
+      "normalization_status": "passing",
+      "operation_count": 249,
+      "measurements": {
+        "operation_count": 249,
+        "expanded_yaml": {
+          "bytes": 10846401,
+          "within_ceiling": false
+        },
+        "canonical_json": {
+          "bytes": 3394194,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 806691,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "box",
+      "source_commit": "f28eec5d49b9597d7df82f3a0c75bd92478b699a",
+      "sha256": "0db1ffa51e52b9f1cb779bc4a37f200ac5f978630cab5178141687b2fed24e7a",
+      "source_bytes": 1765788,
+      "normalization_status": "passing",
+      "operation_count": 296,
+      "measurements": {
+        "operation_count": 296,
+        "expanded_yaml": {
+          "bytes": 2082776,
+          "within_ceiling": true
+        },
+        "canonical_json": {
+          "bytes": 1044360,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 485332,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "stripe",
+      "source_commit": "86b6ae4db114ff06968dcc191ff4a898e9b5db7c",
+      "sha256": "e24a26de4188fd64dec4c043d5d3726277fdcb07556a493ea481c305b0a223d8",
+      "source_bytes": 7866866,
+      "normalization_status": "known_failing",
+      "expected_error": "circular schema reference detected: #/components/schemas/file"
+    },
+    {
+      "name": "digitalocean",
+      "source_commit": "7667351a0c8a1a526343160e1778cb5e97b2c9da",
+      "sha256": "cda2db55fb97ceef551a3e35682dca49ad331b486f88f712f7c93f4ba05eefbc",
+      "source_bytes": 110982,
+      "normalization_status": "known_failing",
+      "expected_error": "tags[0].description: invalid type: map, expected a string"
+    }
+  ],
+  "privacy": {
+    "passed": true,
+    "candidate_count": 3
+  },
+  "recommendation": "deduplicated_yaml"
+}

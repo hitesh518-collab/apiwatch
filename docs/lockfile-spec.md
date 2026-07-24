@@ -135,6 +135,21 @@ The size ceiling is a design target, not an implemented file-size limit.
 Phase 1 must prototype representative small and large specifications before
 choosing the final serialization and scoping interfaces.
 
+### Phase 1 Prototype Results
+
+The completed lock-size prototype recommends `deduplicated_yaml`. It is the
+only tested full-contract representation that remains below the 5,242,880-byte
+ceiling for every currently normalizable public corpus entry: GitHub measures
+2,327,580 bytes, Asana 806,691 bytes, and Box 485,332 bytes. Expanded YAML and
+canonical JSON exceed the ceiling on the GitHub contract. Privacy sentinels
+remain absent from all three candidate representations.
+
+The reproducible evidence is available as a
+[human-readable report](benchmarks/phase-1-lock-size-report.md) and
+[machine-readable report](benchmarks/phase-1-lock-size-report.json).
+This result selects the representation to take into the exact schema design;
+it does not implement or approve the final version 3 schema.
+
 ### Migration Policy
 
 Versions 1 and 2 remain readable during migration. A route-only declared entry

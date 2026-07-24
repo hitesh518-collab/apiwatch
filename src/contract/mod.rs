@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ApiContract {
     pub operations: BTreeMap<OperationKey, Operation>,
 }
@@ -19,7 +21,8 @@ pub struct OperationKey {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum HttpMethod {
     Get,
     Post,
@@ -46,7 +49,7 @@ impl HttpMethod {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Operation {
     pub auth: BTreeMap<String, AuthRequirement>,
     pub parameters: BTreeMap<ParameterKey, Parameter>,
@@ -54,14 +57,15 @@ pub struct Operation {
     pub responses: BTreeMap<String, Response>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AuthRequirement {
     pub name: String,
     pub kind: AuthSchemeKind,
     pub scopes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum AuthSchemeKind {
     ApiKey,
     Basic,
@@ -92,7 +96,8 @@ pub struct ParameterKey {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ParameterLocation {
     Path,
     Query,
@@ -111,24 +116,24 @@ impl ParameterLocation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Parameter {
     pub name: String,
     pub required: bool,
     pub schema: Schema,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RequestBody {
     pub content: BTreeMap<String, Schema>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Response {
     pub content: BTreeMap<String, Schema>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Schema {
     pub kind: SchemaKind,
     pub nullable: bool,
@@ -137,7 +142,8 @@ pub struct Schema {
     pub properties: BTreeMap<String, Property>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum SchemaKind {
     Object,
     Array,
@@ -151,8 +157,26 @@ pub enum SchemaKind {
     Unknown,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Property {
     pub required: bool,
     pub schema: Box<Schema>,
+}
+
+impl Serialize for OperationKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{} {}", self.method.as_str(), self.path))
+    }
+}
+
+impl Serialize for ParameterKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{}:{}", self.location.as_str(), self.name))
+    }
 }

@@ -1,19 +1,10 @@
-mod cli;
-mod contract;
-mod diff;
-mod lockfile;
-mod observed;
-mod openapi;
-mod output;
-mod remote;
-
 use std::fs;
 
 use anyhow::{Context, Result};
+use apiwatch::cli::{Cli, Command, OutputFormat};
+use apiwatch::diff::Severity;
+use apiwatch::{diff, lockfile, observed, openapi, output};
 use clap::Parser;
-
-use crate::cli::{Cli, Command, OutputFormat};
-use crate::diff::Severity;
 
 fn main() {
     let exit_code = match run() {
