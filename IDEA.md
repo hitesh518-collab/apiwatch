@@ -1,14 +1,28 @@
 # apiwatch Idea
 
-`apiwatch` prevents third-party API changes from silently breaking applications.
+`apiwatch` prevents changes in third-party APIs from silently breaking the
+applications that depend on them.
 
-Most API monitoring answers whether an API is up. `apiwatch` focuses on whether the API contract still matches what a repository expects.
+Uptime monitoring answers whether an API responds. It does not answer whether
+the response, authentication, parameters, status codes, or schemas still match
+what a consumer expects.
 
-The first version starts with OpenAPI because it gives structured contracts:
+Provider specifications are useful evidence, but external APIs often publish
+no OpenAPI document, publish an incomplete one, or change behavior without
+updating it. APIWatch therefore supports two contract sources:
 
-1. Import two OpenAPI 3.x files.
-2. Normalize them into contract snapshots.
-3. Compare the snapshots.
-4. Report breaking, warning, and non-breaking changes.
+1. **Declared contracts** normalize a usable OpenAPI document.
+2. **Observed contracts** infer response structure from explicit JSON samples.
 
-Longer term, `apiwatch` can support lockfiles, CI verification, remote specs, runtime JSON samples, and language scanners.
+Both produce deterministic, reviewable evidence that can be locked in a
+repository and verified in CI. Their confidence is different: a declaration
+states what a provider claims, while an observation proves only the structure
+that has been sampled. APIWatch keeps that provenance visible.
+
+Observed contracts store shape, paths, and type information—never captured
+scalar values, credentials, or dynamic map keys. This structure-only boundary
+is a core privacy property.
+
+The product is designed for a global, cross-industry audience. The
+correctness-first delivery sequence and explicit scope boundaries live in
+[ROADMAP.md](ROADMAP.md).
