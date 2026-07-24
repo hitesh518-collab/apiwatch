@@ -75,6 +75,7 @@ Invocation:
 cargo run --manifest-path tools/lock-size-report/Cargo.toml -- \
   --manifest compat/specs.json \
   --compat-dir .compat-cache \
+  --privacy-fixture testdata/openapi/privacy_sentinels.yaml \
   --max-lock-bytes 5242880 \
   --json-out docs/benchmarks/phase-1-lock-size-report.json \
   --markdown-out docs/benchmarks/phase-1-lock-size-report.md
