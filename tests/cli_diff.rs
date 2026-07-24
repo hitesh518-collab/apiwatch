@@ -383,6 +383,22 @@ fn diff_exits_two_for_unsupported_openapi_version() {
 }
 
 #[test]
+fn diff_rejects_openapi_31_with_an_accurate_message() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/unsupported_31.yaml",
+            "testdata/openapi/unsupported_31.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("OpenAPI 3.1 is not yet supported"));
+}
+
+#[test]
 fn diff_exits_two_for_invalid_yaml_spec() {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
 

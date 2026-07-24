@@ -24,7 +24,7 @@ pub fn load_contract(path: &Path) -> Result<ApiContract> {
 }
 
 pub fn load_contract_text(text: &str, is_json: bool, location: &str) -> Result<ApiContract> {
-    validate_raw_openapi_paths(text, is_json)?;
+    validate_raw_openapi(text, is_json)?;
 
     let document: OpenAPI = if is_json {
         serde_json::from_str(text)
@@ -52,10 +52,11 @@ fn load_remote_contract(remote: crate::remote::RemoteOpenApi) -> Result<ApiContr
         .map_err(|_| anyhow!("failed to parse remote OpenAPI document"))
 }
 
-fn validate_raw_openapi_paths(raw: &str, is_json: bool) -> Result<()> {
+fn validate_raw_openapi(raw: &str, is_json: bool) -> Result<()> {
     if is_json {
         let document: serde_json::Value =
             serde_json::from_str(raw).context("failed to parse OpenAPI JSON")?;
+        validate_openapi_version(document.get("openapi").and_then(serde_json::Value::as_str))?;
         let Some(paths) = document.get("paths").and_then(serde_json::Value::as_object) else {
             return Ok(());
         };
@@ -66,9 +67,18 @@ fn validate_raw_openapi_paths(raw: &str, is_json: bool) -> Result<()> {
     } else {
         let document: serde_yaml::Value =
             serde_yaml::from_str(raw).context("failed to parse OpenAPI YAML")?;
+        let openapi_key = serde_yaml::Value::String("openapi".to_string());
+        validate_openapi_version(
+            document
+                .as_mapping()
+                .and_then(|document| document.get(&openapi_key))
+                .and_then(serde_yaml::Value::as_str),
+        )?;
+
+        let paths_key = serde_yaml::Value::String("paths".to_string());
         let Some(paths) = document
             .as_mapping()
-            .and_then(|document| document.get(serde_yaml::Value::String("paths".to_string())))
+            .and_then(|document| document.get(&paths_key))
             .and_then(serde_yaml::Value::as_mapping)
         else {
             return Ok(());
@@ -85,6 +95,24 @@ fn validate_raw_openapi_paths(raw: &str, is_json: bool) -> Result<()> {
     Ok(())
 }
 
+fn validate_openapi_version(version: Option<&str>) -> Result<()> {
+    let Some(version) = version else {
+        return Ok(());
+    };
+
+    if version == "3.0" || version.starts_with("3.0.") {
+        return Ok(());
+    }
+
+    if version == "3.1" || version.starts_with("3.1.") {
+        return Err(anyhow!("OpenAPI 3.1 is not yet supported"));
+    }
+
+    Err(anyhow!(
+        "unsupported OpenAPI version {version}; expected OpenAPI 3.0"
+    ))
+}
+
 fn validate_raw_openapi_path(path: &str) -> Result<()> {
     if path.starts_with("x-") {
         return Ok(());
@@ -95,14 +123,7 @@ fn validate_raw_openapi_path(path: &str) -> Result<()> {
 }
 
 fn ensure_openapi_3(document: &OpenAPI) -> Result<()> {
-    if document.openapi.starts_with("3.") {
-        return Ok(());
-    }
-
-    Err(anyhow!(
-        "unsupported OpenAPI version {}; expected OpenAPI 3.x",
-        document.openapi
-    ))
+    validate_openapi_version(Some(&document.openapi))
 }
 
 fn normalize(document: OpenAPI) -> Result<ApiContract> {

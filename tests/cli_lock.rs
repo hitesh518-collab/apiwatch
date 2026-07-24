@@ -114,3 +114,26 @@ fn lock_exits_two_for_invalid_openapi_input() {
         "lockfile should not be written when OpenAPI parsing fails"
     );
 }
+
+#[test]
+fn lock_rejects_openapi_31_with_an_accurate_message() {
+    let output = temp_lock_path("unsupported-31");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/unsupported_31.yaml",
+            "--name",
+            "users",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("OpenAPI 3.1 is not yet supported"));
+
+    fs::remove_file(output).ok();
+}

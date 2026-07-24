@@ -954,6 +954,19 @@ fn verify_exits_two_for_an_invalid_locked_operation_path() {
 }
 
 #[test]
+fn verify_rejects_openapi_31_with_an_accurate_message() {
+    verify_command(
+        "testdata/openapi/unsupported_31.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains("OpenAPI 3.1 is not yet supported"));
+}
+
+#[test]
 fn verify_exits_two_for_an_openapi_path_with_a_control_character() {
     verify_command(
         "testdata/openapi/verify_invalid_operation_path.yaml",
