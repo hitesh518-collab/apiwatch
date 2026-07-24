@@ -2,7 +2,22 @@
 
 `api.lock` is a repository-level lockfile for external API contracts.
 
-The first lockfile version is intentionally small and stores normalized operation metadata produced by the single-API `apiwatch lock` command.
+The implemented formats are intentionally small. Declared entries in versions
+1 and 2 store normalized operation routes, not complete schemas, parameters,
+authentication, content types, or response contracts.
+
+## Format Status
+
+| Version | Status | Declared entries | Observed entries |
+|---|---|---|---|
+| 1 | Readable legacy format | Route-only | Not supported |
+| 2 | Current development format | Route-only with provenance | Value-free shapes |
+| 3 | Approved direction; not designed or implemented | Complete normalized contracts | First-class observed contracts |
+
+The exact version 3 schema, canonical digest representation, endpoint-scoping
+CLI, and migration command remain
+[Phase 1](../ROADMAP.md#phase-1--make-verify-meaningful) design decisions.
+No version 3 example in this document should be inferred from the goals below.
 
 ## Version 1
 
@@ -97,8 +112,47 @@ diagnostics use the annotated path plus a stable `<map-value>` segment in place
 of each dynamic key, along with shape names only. This redacted notation is
 used consistently in text, JSON, SARIF messages, and SARIF fingerprints.
 
+## Planned Version 3
+
+The breaking version 3 direction is approved in the
+[product pivot design](superpowers/specs/2026-07-24-apiwatch-product-pivot-design.md).
+Implementation requires a separate format design and explicit approval.
+
+Version 3 must:
+
+- store enough normalized declared contract data for Verify to call the same
+  comparison engine as `diff`;
+- keep declared and observed provenance explicit and first-class;
+- serialize deterministically with stable ordering;
+- remain reviewable in Git;
+- tolerate unknown fields where forward compatibility permits;
+- exclude captured values, examples, defaults, credentials, headers, and
+  other source data that is unnecessary for comparison;
+- target a 5 MB default ceiling per upstream API committed to Git;
+- support explicit endpoint scoping for larger APIs.
+
+The size ceiling is a design target, not an implemented file-size limit.
+Phase 1 must prototype representative small and large specifications before
+choosing the final serialization and scoping interfaces.
+
+### Migration Policy
+
+Versions 1 and 2 remain readable during migration. A route-only declared entry
+cannot be upgraded into a complete contract from the lockfile alone because
+the required schema, parameter, authentication, content-type, and response
+data was never stored.
+
+Users must therefore re-lock from the original OpenAPI source to obtain a
+complete version 3 declared entry. Migration tooling may preserve names and
+other available metadata, but it must warn clearly and must not invent missing
+contract data. The command syntax is deferred to the Phase 1 design.
+
 ## Privacy
 
 The lockfile avoids secrets, sensitive raw payloads, examples, headers, raw
-OpenAPI fragments, and captured JSON values. Future versions may add schema
-metadata or hashes while keeping sensitive input out of the file.
+OpenAPI fragments, and captured JSON values. Complete declared contracts may
+add normalized schema metadata or canonical hashes while preserving this
+boundary.
+
+See [ROADMAP.md](../ROADMAP.md) for the implementation order and exit
+criteria.
