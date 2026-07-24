@@ -1,5 +1,7 @@
 #![doc = "Internal APIWatch library. Public interfaces are pre-v1 and unstable."]
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[doc(hidden)]
 pub mod cli;
 #[doc(hidden)]
