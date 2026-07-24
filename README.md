@@ -19,13 +19,11 @@ external API expectations reviewable in Git and enforceable in CI.
 
 ## Status
 
-APIWatch is in early development. The latest tagged release is v0.6.0.
-
-The current repository also contains unreleased observed JSON recording,
-monotonic shape merging, observed verification, and explicit `--map-at`
-annotations. These changes are planned for v0.7.0 after the release,
-compatibility, and documentation checks in
-[Roadmap Phase 0](ROADMAP.md#phase-0--stabilize-and-release-honestly).
+APIWatch is in early development. The v0.7.0 release adds observed JSON
+recording, monotonic shape merging, value-free observed verification, and
+explicit `--map-at` annotations. It also adds output-format parity, an explicit
+Rust 1.86 floor, accurate OpenAPI 3.1 rejection, and a pinned real-world
+compatibility smoke suite.
 
 Current declared v1 and v2 locks contain normalized routes only. Declared
 `verify` detects added or removed operations, but it does not yet verify the

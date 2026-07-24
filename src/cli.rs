@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[derive(Debug, Parser)]
 #[command(name = "apiwatch")]
 #[command(about = "Lock, diff, and verify the APIs your code depends on.")]
+#[command(version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

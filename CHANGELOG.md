@@ -1,13 +1,28 @@
 # Changelog
 
-## Unreleased
+## v0.7.0 - 2026-07-24
 
 ### Added
 
-- Versioned observed JSON contracts with local shape recording, monotonic merging, and verification.
-- Add explicit repeatable `--map-at` annotations for dynamic-key observed JSON maps.
-- A repository-owned Homebrew formula for source-building the tagged apiwatch release.
-- A repository-owned Scoop manifest for source-building the tagged apiwatch release on Windows.
+- Versioned observed JSON contracts with local shape recording, monotonic
+  merging, and read-only verification.
+- Explicit repeatable `--map-at` annotations for value-free dynamic-key maps.
+- Matching observed Verify output in text, versioned JSON, and SARIF 2.1.0.
+- A commit-pinned, hash-verified compatibility suite for five public OpenAPI
+  specifications.
+- A declared and CI-checked minimum supported Rust version of 1.86.
+
+### Changed
+
+- OpenAPI 3.1 documents now fail with an explicit unsupported-version message
+  instead of entering the OpenAPI 3.0 parser.
+- Documentation now distinguishes route-only declared Verify from full
+  semantic verification and lists all audited limitations.
+
+### Security
+
+- Observed locks and diagnostics retain structure only and redact dynamic map
+  keys consistently across text, JSON, SARIF, and fingerprints.
 
 ## v0.6.0 - 2026-07-16
 
