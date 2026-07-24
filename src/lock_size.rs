@@ -220,6 +220,74 @@ pub fn encode_deduplicated_yaml(contract: &ApiContract) -> Result<Vec<u8>> {
     Ok(rendered)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CandidateMeasurement {
+    pub bytes: u64,
+    pub within_ceiling: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ContractMeasurement {
+    pub operation_count: usize,
+    pub expanded_yaml: CandidateMeasurement,
+    pub canonical_json: CandidateMeasurement,
+    pub deduplicated_yaml: CandidateMeasurement,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Recommendation {
+    ExpandedYaml,
+    DeduplicatedYaml,
+    CanonicalJson,
+    OperationScopingRequired,
+}
+
+pub fn measure_contract(contract: &ApiContract, ceiling: u64) -> Result<ContractMeasurement> {
+    if ceiling == 0 {
+        return Err(anyhow!("lock-size ceiling must be positive"));
+    }
+    fn candidate(rendered: Vec<u8>, ceiling: u64) -> Result<CandidateMeasurement> {
+        let bytes = u64::try_from(rendered.len()).context("candidate size does not fit in u64")?;
+        Ok(CandidateMeasurement {
+            bytes,
+            within_ceiling: bytes <= ceiling,
+        })
+    }
+    Ok(ContractMeasurement {
+        operation_count: contract.operations.len(),
+        expanded_yaml: candidate(encode_expanded_yaml(contract)?, ceiling)?,
+        canonical_json: candidate(encode_canonical_json(contract)?, ceiling)?,
+        deduplicated_yaml: candidate(encode_deduplicated_yaml(contract)?, ceiling)?,
+    })
+}
+
+pub fn recommend(measurements: &[ContractMeasurement], ceiling: u64) -> Recommendation {
+    if measurements.is_empty() {
+        return Recommendation::OperationScopingRequired;
+    }
+    let expanded_headroom_limit = ceiling.saturating_mul(4) / 5;
+    if measurements
+        .iter()
+        .all(|measurement| measurement.expanded_yaml.bytes <= expanded_headroom_limit)
+    {
+        return Recommendation::ExpandedYaml;
+    }
+    if measurements
+        .iter()
+        .all(|measurement| measurement.deduplicated_yaml.bytes <= ceiling)
+    {
+        return Recommendation::DeduplicatedYaml;
+    }
+    if measurements
+        .iter()
+        .all(|measurement| measurement.canonical_json.bytes <= ceiling)
+    {
+        return Recommendation::CanonicalJson;
+    }
+    Recommendation::OperationScopingRequired
+}
+
 #[cfg(test)]
 fn intern_schemas_for_test<F>(input: &[Schema], digest: F) -> Result<()>
 where
@@ -291,8 +359,8 @@ mod tests {
 
     use super::{
         encode_canonical_json, encode_deduplicated_yaml, encode_expanded_yaml,
-        intern_schemas_for_test, parse_operation_selector, scope_contract, sha256_id,
-        PRIVACY_SENTINELS,
+        intern_schemas_for_test, parse_operation_selector, recommend, scope_contract, sha256_id,
+        CandidateMeasurement, ContractMeasurement, Recommendation, PRIVACY_SENTINELS,
     };
     use crate::contract::{HttpMethod, Schema, SchemaKind};
     use crate::openapi::load_contract;
@@ -403,5 +471,52 @@ mod tests {
         let error =
             intern_schemas_for_test(&[first, second], |_| "sha256:forced".into()).unwrap_err();
         assert!(error.to_string().contains("schema digest collision"));
+    }
+
+    #[test]
+    fn recommendation_requires_twenty_percent_yaml_headroom() {
+        assert_eq!(
+            recommend(&[measurement(4_194_304, 3_000_000, 2_000_000)], 5_242_880),
+            Recommendation::ExpandedYaml
+        );
+        assert_eq!(
+            recommend(&[measurement(4_194_305, 3_000_000, 2_000_000)], 5_242_880),
+            Recommendation::DeduplicatedYaml
+        );
+    }
+
+    #[test]
+    fn recommendation_falls_back_in_the_approved_order() {
+        assert_eq!(
+            recommend(&[measurement(6_000_000, 5_000_000, 4_000_000)], 5_242_880),
+            Recommendation::DeduplicatedYaml
+        );
+        assert_eq!(
+            recommend(&[measurement(6_000_000, 5_500_000, 4_000_000)], 5_242_880),
+            Recommendation::CanonicalJson
+        );
+        assert_eq!(
+            recommend(&[measurement(6_000_000, 5_500_000, 5_400_000)], 5_242_880),
+            Recommendation::OperationScopingRequired
+        );
+    }
+
+    fn measurement(
+        expanded_yaml: u64,
+        deduplicated_yaml: u64,
+        canonical_json: u64,
+    ) -> ContractMeasurement {
+        fn candidate(bytes: u64) -> CandidateMeasurement {
+            CandidateMeasurement {
+                bytes,
+                within_ceiling: bytes <= 5_242_880,
+            }
+        }
+        ContractMeasurement {
+            operation_count: 1,
+            expanded_yaml: candidate(expanded_yaml),
+            canonical_json: candidate(canonical_json),
+            deduplicated_yaml: candidate(deduplicated_yaml),
+        }
     }
 }
