@@ -26,7 +26,7 @@ Markdown, Homebrew Ruby formula, Scoop JSON
 - Preserve observed JSON schema version 2 and SARIF 2.1.0.
 - Never expose captured JSON values or dynamic map keys.
 - Accept OpenAPI 3.0 only; explicitly reject 3.1 without implementing it.
-- Verify Rust 1.85 before declaring it as MSRV.
+- Verify Rust 1.86 before declaring it as MSRV.
 - Normal `cargo test` must remain offline.
 - Compatibility URLs must contain immutable 40-character upstream commits.
 - Compatibility files stay in gitignored `.compat-cache/`.
@@ -46,7 +46,7 @@ Markdown, Homebrew Ruby formula, Scoop JSON
 - Modify `tests/cli_diff.rs`: diff 3.1 integration test.
 - Modify `tests/cli_lock.rs`: lock 3.1 integration test.
 - Create `testdata/openapi/unsupported_31.yaml`: valid minimal 3.1 fixture.
-- Modify `Cargo.toml`: Rust 1.85 and later crate version 0.7.0.
+- Modify `Cargo.toml`: Rust 1.86 and later crate version 0.7.0.
 - Modify `Cargo.lock`: crate version 0.7.0.
 - Modify `.github/workflows/ci.yml`: MSRV and compatibility jobs.
 - Modify `.gitignore`: compatibility cache.
@@ -464,7 +464,7 @@ git add src/openapi/mod.rs tests/cli_diff.rs tests/cli_lock.rs tests/cli_verify.
 git commit -m "fix: reject unsupported OpenAPI 3.1"
 ```
 
-### Task 3: Verify and Declare Rust 1.85
+### Task 3: Verify and Declare Rust 1.86
 
 **Files:**
 - Modify: `Cargo.toml`
@@ -480,28 +480,28 @@ git commit -m "fix: reject unsupported OpenAPI 3.1"
 Run only after environment-change approval:
 
 ```powershell
-rustup toolchain install 1.85.0 --profile minimal
+rustup toolchain install 1.86.0 --profile minimal
 ```
 
-Expected: Rust and Cargo 1.85.0 install successfully.
+Expected: Rust and Cargo 1.86.0 install successfully.
 
 - [ ] **Step 2: Verify the candidate before declaring it**
 
 Run:
 
 ```powershell
-cargo +1.85.0 check --locked
+cargo +1.86.0 check --locked
 ```
 
-Expected: PASS. If it fails because project code or locked dependencies require
-a newer compiler, stop and revise the spec; do not continue with `1.85`.
+Expected: PASS. Rust 1.85 was tested first and correctly rejected because ICU
+2.2 and `idna_adapter` require Rust 1.86.
 
 - [ ] **Step 3: Declare MSRV**
 
 Add to `[package]` in `Cargo.toml`:
 
 ```toml
-rust-version = "1.85"
+rust-version = "1.86"
 ```
 
 - [ ] **Step 4: Add exact-version CI job**
@@ -514,7 +514,7 @@ Add before `action-smoke` in `.github/workflows/ci.yml`:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: dtolnay/rust-toolchain@1.86.0
       - run: cargo check --locked
 ```
 
@@ -523,7 +523,7 @@ Add before `action-smoke` in `.github/workflows/ci.yml`:
 Add under `## Installation` in `README.md`:
 
 ```markdown
-Source builds require Rust 1.85 or newer. APIWatch declares and checks this
+Source builds require Rust 1.86 or newer. APIWatch declares and checks this
 minimum in CI so dependency changes cannot raise it silently.
 ```
 
@@ -532,7 +532,7 @@ minimum in CI so dependency changes cannot raise it silently.
 Run:
 
 ```powershell
-cargo +1.85.0 check --locked
+cargo +1.86.0 check --locked
 cargo check --locked
 ```
 
@@ -542,7 +542,7 @@ Expected: both PASS.
 
 ```powershell
 git add Cargo.toml .github/workflows/ci.yml README.md
-git commit -m "build: declare and check Rust 1.85 MSRV"
+git commit -m "build: declare and check Rust 1.86 MSRV"
 ```
 
 ### Task 4: Build the Verified Compatibility Fetcher
@@ -1314,7 +1314,7 @@ Replace `## Unreleased` in `CHANGELOG.md` with:
 - Matching observed Verify output in text, versioned JSON, and SARIF 2.1.0.
 - A commit-pinned, hash-verified compatibility suite for five public OpenAPI
   specifications.
-- A declared and CI-checked minimum supported Rust version of 1.85.
+- A declared and CI-checked minimum supported Rust version of 1.86.
 
 ### Changed
 
@@ -1344,7 +1344,7 @@ to:
 ```markdown
 The v0.7.0 release adds observed JSON recording, monotonic shape merging,
 value-free observed verification, and explicit `--map-at` annotations. It also
-adds output-format parity, an explicit Rust 1.85 floor, accurate OpenAPI 3.1
+adds output-format parity, an explicit Rust 1.86 floor, accurate OpenAPI 3.1
 rejection, and a pinned real-world compatibility smoke suite.
 ```
 
@@ -1575,7 +1575,7 @@ Run:
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-cargo +1.85.0 check --locked
+cargo +1.86.0 check --locked
 cargo build --release --locked
 ```
 

@@ -118,6 +118,9 @@ failure.
 
 ## Installation
 
+Source builds require Rust 1.86 or newer. APIWatch declares and checks this
+minimum in CI so dependency changes cannot raise it silently.
+
 ### Homebrew
 
 The repository includes a source-building Homebrew formula for the v0.6.0

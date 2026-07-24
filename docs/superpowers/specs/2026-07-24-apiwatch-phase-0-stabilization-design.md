@@ -83,22 +83,23 @@ commands so every loader path is protected.
 
 ### Minimum Supported Rust Version
 
-Rust 1.85 is the candidate MSRV because the committed lockfile and dependency
-graph require edition-2024-aware Cargo.
+Rust 1.86 is the verified MSRV. Empirical testing rejected the original Rust
+1.85 candidate because the committed ICU 2.2 and `idna_adapter` dependency
+graph declares Rust 1.86 as its minimum.
 
 Before declaring the floor:
 
-1. Install or select Rust 1.85.
-2. Run `cargo +1.85 check --locked`.
+1. Install or select Rust 1.86.
+2. Run `cargo +1.86 check --locked`.
 3. If the command fails because the project itself requires a newer compiler,
    stop and revise the design rather than declaring an unverified MSRV.
 
 After verification:
 
-- add `rust-version = "1.85"` to `Cargo.toml`;
+- add `rust-version = "1.86"` to `Cargo.toml`;
 - allow Cargo to update package metadata in `Cargo.lock`;
-- document Rust 1.85 for source-based installation;
-- add a dedicated `msrv` CI job using exactly Rust 1.85 and
+- document Rust 1.86 for source-based installation;
+- add a dedicated `msrv` CI job using exactly Rust 1.86 and
   `cargo check --locked`;
 - retain stable CI for formatting, Clippy, tests, and the Action smoke test.
 
@@ -235,7 +236,7 @@ The release candidate must pass, from the repository root:
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-cargo +1.85 check --locked
+cargo +1.86 check --locked
 cargo build --release --locked
 python scripts/fetch-compat-specs.py
 cargo test --test compat -- --ignored --nocapture
@@ -296,7 +297,7 @@ Implementation follows test-driven development:
    parse path or acceptance.
 3. Apply the minimal implementation for each behavior.
 4. Run focused tests, then the complete suite.
-5. Verify Rust 1.85 before committing the MSRV declaration.
+5. Verify Rust 1.86 before committing the MSRV declaration.
 6. Add compatibility expectations only after each pinned document and hash is
    independently obtained.
 
@@ -338,7 +339,7 @@ Repository work is release-ready when:
 
 - observed matching output honors text, JSON, and SARIF;
 - OpenAPI 3.1 fails with the intentional unsupported message;
-- Rust 1.85 is declared and checked;
+- Rust 1.86 is declared and checked;
 - the compatibility job reproduces three passing and two known-failing specs;
 - all audited limitations are visible in the README;
 - all release verification and clean-install smoke commands pass.
