@@ -353,6 +353,72 @@ fn verify_observed_json_body_with_matching_shape() {
 }
 
 #[test]
+fn verify_matching_observed_json_honors_json_format() {
+    let lock = observed_lock_path();
+    record_portfolio(&lock);
+    let lock_arg = lock.to_str().expect("temp path should be valid UTF-8");
+
+    let output = verify_command(
+        "testdata/observed/portfolio-matching.json",
+        "portfolio",
+        lock_arg,
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("verify should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        parse_json_output(&output),
+        json!({
+            "version": 2,
+            "command": "verify",
+            "name": "portfolio",
+            "provenance": "observed",
+            "summary": {"breaking": 0},
+            "changes": []
+        })
+    );
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_matching_observed_json_honors_sarif_format() {
+    let lock = observed_lock_path();
+    record_portfolio(&lock);
+    let lock_arg = lock.to_str().expect("temp path should be valid UTF-8");
+
+    let output = verify_command(
+        "testdata/observed/portfolio-matching.json",
+        "portfolio",
+        lock_arg,
+    )
+    .args(["--format", "sarif"])
+    .output()
+    .expect("verify should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    let rendered = parse_json_output(&output);
+    assert_eq!(rendered["version"], "2.1.0");
+    assert_eq!(
+        rendered["runs"][0]["results"].as_array().map(Vec::len),
+        Some(0)
+    );
+    assert_eq!(
+        sarif_rule_ids(&rendered),
+        vec![
+            "apiwatch/verify-observed-missing-required-field",
+            "apiwatch/verify-observed-incompatible-shape"
+        ]
+    );
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
 fn verify_observed_json_reports_a_missing_required_field_without_values() {
     let lock = observed_lock_path();
     record_portfolio(&lock);

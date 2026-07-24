@@ -94,11 +94,11 @@ fn run() -> Result<i32> {
                 }
                 let current = observed::load_shape(std::path::Path::new(&openapi))?;
                 let changes = observed::compare(expected, &current);
-                if changes.is_empty() {
-                    println!("Verified {}", target.name());
-                    return Ok(0);
-                }
+                let has_changes = !changes.is_empty();
                 let rendered = match format {
+                    OutputFormat::Text if changes.is_empty() => {
+                        format!("Verified {}\n", target.name())
+                    }
                     OutputFormat::Text => output::render_observed_verify_changes(&changes),
                     OutputFormat::Json => {
                         output::render_observed_verify_changes_json(target.name(), &changes)?
@@ -110,7 +110,7 @@ fn run() -> Result<i32> {
                     )?,
                 };
                 print!("{rendered}");
-                return Ok(1);
+                return Ok(if has_changes { 1 } else { 0 });
             }
             let contract = openapi::load_contract_input(&openapi)?;
             let changes = lockfile::compare_verify_target(&target, &contract);
