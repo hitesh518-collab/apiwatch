@@ -60,7 +60,8 @@ intent but may change without reordering the phases.
 
 ## Phase 0 — Stabilize and Release Honestly
 
-**Target:** v0.7.0  
+**Target:** v0.7.0
+
 **Goal:** make the existing product installable, internally aligned, and
 accurately represented before adding features.
 
@@ -91,7 +92,8 @@ understand exactly what APIWatch does and does not verify.
 
 ## Phase 1 — Make `verify` Meaningful
 
-**Target:** v0.8.0  
+**Target:** v0.8.0
+
 **Goal:** make a declared API lock contain enough information to detect the
 contract changes APIWatch promises to catch.
 
@@ -132,7 +134,8 @@ correctly classified findings.
 
 ## Phase 2 — Make the Comparison Engine Trustworthy
 
-**Target:** v0.9.0  
+**Target:** v0.9.0
+
 **Goal:** eliminate the confirmed cases where semantic diffing misses real
 breakage or reports harmless changes as breaking.
 
@@ -172,7 +175,8 @@ one regression fixture exists per defect, and the complete test suite passes.
 
 ## Phase 3 — Real-World Compatibility
 
-**Target:** v0.10.0  
+**Target:** v0.10.0
+
 **Goal:** make declared contracts work against the specifications and delivery
 patterns users encounter outside controlled fixtures.
 
@@ -204,7 +208,8 @@ correctly, and a split specification resolves `./schemas.yaml#/User` safely.
 
 ## Phase 4 — Trustworthy Observed Contracts
 
-**Target:** v0.11.0  
+**Target:** v0.11.0
+
 **Goal:** make the confidence and boundaries of inferred response shapes
 explicit enough for reliable CI use.
 
@@ -238,7 +243,8 @@ captured scalar values, credentials, or dynamic map keys.
 
 ## Phase 5 — Frictionless Recording and CI Adoption
 
-**Target:** v0.12.0  
+**Target:** v0.12.0
+
 **Goal:** let users adopt observed contracts from real traffic without writing
 an OpenAPI document or application harness.
 
@@ -287,7 +293,8 @@ users from installing; distribution is not a final cleanup project.
 
 ## Phase 6 — v1 Stabilization and Adoption
 
-**Target:** v1.0.0  
+**Target:** v1.0.0
+
 **Goal:** make the proven REST contract workflow stable enough for long-term
 automation.
 
