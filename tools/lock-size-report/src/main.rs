@@ -290,7 +290,7 @@ fn write_or_check(path: &Path, bytes: &[u8], check: bool) -> Result<(), Failure>
     if check {
         let existing = fs::read(path)
             .map_err(|error| Failure::input(format!("failed to read report: {error}")))?;
-        if existing != bytes {
+        if canonical_report_bytes(&existing) != canonical_report_bytes(bytes) {
             return Err(Failure::behavior(format!(
                 "report differs: {}",
                 path.display()
@@ -315,4 +315,19 @@ fn write_or_check(path: &Path, bytes: &[u8], check: bool) -> Result<(), Failure>
         .persist(path)
         .map_err(|error| Failure::input(format!("failed to replace report: {}", error.error)))?;
     Ok(())
+}
+
+fn canonical_report_bytes(bytes: &[u8]) -> Vec<u8> {
+    let mut canonical = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'\r' && bytes.get(index + 1) == Some(&b'\n') {
+            canonical.push(b'\n');
+            index += 2;
+        } else {
+            canonical.push(bytes[index]);
+            index += 1;
+        }
+    }
+    canonical
 }

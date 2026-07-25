@@ -101,6 +101,12 @@ fn writes_deterministic_reports_and_checks_existing_bytes() {
     assert!(!markdown.contains(path_text(fixture.cache.parent().unwrap())));
 
     assert!(fixture.run(true).status.success());
+    fs::write(&fixture.json_out, json.replace('\n', "\r\n")).unwrap();
+    fs::write(&fixture.markdown_out, markdown.replace('\n', "\r\n")).unwrap();
+    assert!(
+        fixture.run(true).status.success(),
+        "report checks should canonicalize platform line endings"
+    );
     fs::write(&fixture.json_out, "changed\n").unwrap();
     assert_eq!(fixture.run(true).status.code(), Some(1));
 }

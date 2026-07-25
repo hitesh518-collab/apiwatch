@@ -942,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn v3_builds_and_round_trips_a_deterministic_declared_entry() {
+    fn production_v3_writer_excludes_privacy_sentinels() {
         let source =
             crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
                 .expect("fixture should load");
