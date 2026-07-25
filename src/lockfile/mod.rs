@@ -6,6 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::contract::ApiContract;
+use crate::diff::{Change, Severity};
 use crate::observed::{apply_map_annotations, merge as merge_shapes, Shape};
 
 mod atomic;
@@ -445,12 +446,12 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
     })
 }
 
-pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Vec<VerifyChange> {
+pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Result<Vec<Change>> {
     let VerifyTargetKind::LegacyDeclared {
         operations: target_operations,
     } = &target.kind
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let current_operations: BTreeSet<_> = current
         .operations
@@ -463,22 +464,28 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Ve
     let mut changes = Vec::new();
 
     for operation in target_operations.difference(&current_operations) {
-        changes.push(VerifyChange {
-            kind: VerifyChangeKind::Removed,
-            method: operation.method.clone(),
-            path: operation.path.clone(),
+        changes.push(Change {
+            severity: Severity::Breaking,
+            operation: crate::lock_size::parse_operation_selector(&format!(
+                "{} {}",
+                operation.method, operation.path
+            ))?,
+            message: "endpoint removed".to_string(),
         });
     }
 
     for operation in current_operations.difference(target_operations) {
-        changes.push(VerifyChange {
-            kind: VerifyChangeKind::Added,
-            method: operation.method.clone(),
-            path: operation.path.clone(),
+        changes.push(Change {
+            severity: Severity::Warning,
+            operation: crate::lock_size::parse_operation_selector(&format!(
+                "{} {}",
+                operation.method, operation.path
+            ))?,
+            message: "endpoint added outside route-only lock".to_string(),
         });
     }
 
-    changes
+    Ok(changes)
 }
 
 pub fn scope_current_for_verify(current: &ApiContract, scope: &v3::Scope) -> Result<ApiContract> {
@@ -644,27 +651,27 @@ mod tests {
 
         assert_eq!(target.name(), "users");
         assert_eq!(
-            compare_verify_target(&target, &current),
+            compare_verify_target(&target, &current).expect("comparison should succeed"),
             vec![
-                VerifyChange {
-                    kind: VerifyChangeKind::Removed,
-                    method: "GET".to_string(),
-                    path: "/users".to_string(),
+                Change {
+                    severity: Severity::Breaking,
+                    operation: crate::lock_size::parse_operation_selector("GET /users").unwrap(),
+                    message: "endpoint removed".to_string(),
                 },
-                VerifyChange {
-                    kind: VerifyChangeKind::Removed,
-                    method: "GET".to_string(),
-                    path: "/zeta".to_string(),
+                Change {
+                    severity: Severity::Breaking,
+                    operation: crate::lock_size::parse_operation_selector("GET /zeta").unwrap(),
+                    message: "endpoint removed".to_string(),
                 },
-                VerifyChange {
-                    kind: VerifyChangeKind::Added,
-                    method: "POST".to_string(),
-                    path: "/users".to_string(),
+                Change {
+                    severity: Severity::Warning,
+                    operation: crate::lock_size::parse_operation_selector("POST /users").unwrap(),
+                    message: "endpoint added outside route-only lock".to_string(),
                 },
-                VerifyChange {
-                    kind: VerifyChangeKind::Added,
-                    method: "POST".to_string(),
-                    path: "/zeta".to_string(),
+                Change {
+                    severity: Severity::Warning,
+                    operation: crate::lock_size::parse_operation_selector("POST /zeta").unwrap(),
+                    message: "endpoint added outside route-only lock".to_string(),
                 },
             ]
         );
@@ -694,11 +701,11 @@ mod tests {
         let target = select_verify_target(&lock, "users").expect("target should select");
 
         assert_eq!(
-            compare_verify_target(&target, &current),
-            vec![VerifyChange {
-                kind: VerifyChangeKind::Added,
-                method: "POST".to_string(),
-                path: "/users".to_string(),
+            compare_verify_target(&target, &current).expect("comparison should succeed"),
+            vec![Change {
+                severity: Severity::Warning,
+                operation: crate::lock_size::parse_operation_selector("POST /users").unwrap(),
+                message: "endpoint added outside route-only lock".to_string(),
             }]
         );
     }

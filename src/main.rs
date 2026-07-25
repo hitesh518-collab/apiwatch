@@ -132,12 +132,21 @@ fn run() -> Result<i32> {
                     let current = lockfile::scope_current_for_verify(&current, scope)?;
                     let changes = diff::diff_contracts(locked, &current);
                     let rendered = match format {
-                        OutputFormat::Text if changes.is_empty() => {
-                            format!("Verified {}\n", target.name())
+                        OutputFormat::Text => {
+                            output::render_declared_verify_text(target.name(), &changes)
                         }
-                        OutputFormat::Text => output::render_changes(&changes),
-                        OutputFormat::Json => output::render_changes_json(&changes)?,
-                        OutputFormat::Sarif => output::render_changes_sarif(&lock_path, &changes)?,
+                        OutputFormat::Json => output::render_declared_verify_json(
+                            target.name(),
+                            output::Coverage::Full,
+                            None,
+                            &changes,
+                        )?,
+                        OutputFormat::Sarif => output::render_declared_verify_sarif(
+                            &lock_path,
+                            target.name(),
+                            None,
+                            &changes,
+                        )?,
                     };
                     print!("{rendered}");
                     Ok(
@@ -153,40 +162,39 @@ fn run() -> Result<i32> {
                 }
                 lockfile::VerifyTargetKind::LegacyDeclared { .. } => {
                     let contract = openapi::load_contract_input(&openapi)?;
-                    let changes = lockfile::compare_verify_target(&target, &contract);
-
-                    if changes.is_empty() {
-                        match format {
-                            OutputFormat::Text => println!("Verified {}", target.name()),
-                            OutputFormat::Json => print!(
-                                "{}",
-                                output::render_verify_changes_json(target.name(), &changes)?
-                            ),
-                            OutputFormat::Sarif => print!(
-                                "{}",
-                                output::render_verify_changes_sarif(
-                                    &lock_path,
-                                    target.name(),
-                                    &changes
-                                )?
-                            ),
+                    let changes = lockfile::compare_verify_target(&target, &contract)?;
+                    let limitation = Some(output::Limitation::RouteOnlyLock);
+                    let rendered = match format {
+                        OutputFormat::Text => {
+                            eprintln!(
+                                "warning: api.lock v1/v2 declared entry is route-only; full contract changes are not verified"
+                            );
+                            output::render_declared_verify_text(target.name(), &changes)
                         }
-                        Ok(0)
-                    } else {
-                        let rendered = match format {
-                            OutputFormat::Text => output::render_verify_changes(&changes),
-                            OutputFormat::Json => {
-                                output::render_verify_changes_json(target.name(), &changes)?
-                            }
-                            OutputFormat::Sarif => output::render_verify_changes_sarif(
-                                &lock_path,
-                                target.name(),
-                                &changes,
-                            )?,
-                        };
-                        print!("{rendered}");
-                        Ok(1)
-                    }
+                        OutputFormat::Json => output::render_declared_verify_json(
+                            target.name(),
+                            output::Coverage::Routes,
+                            limitation,
+                            &changes,
+                        )?,
+                        OutputFormat::Sarif => output::render_declared_verify_sarif(
+                            &lock_path,
+                            target.name(),
+                            limitation,
+                            &changes,
+                        )?,
+                    };
+                    print!("{rendered}");
+                    Ok(
+                        if changes
+                            .iter()
+                            .any(|change| change.severity == Severity::Breaking)
+                        {
+                            1
+                        } else {
+                            0
+                        },
+                    )
                 }
             }
         }

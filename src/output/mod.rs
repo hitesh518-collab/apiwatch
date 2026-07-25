@@ -31,6 +31,44 @@ struct DiffJsonChange<'a> {
     message: &'a str,
 }
 
+#[derive(Clone, Copy)]
+pub enum Coverage {
+    Full,
+    Routes,
+}
+
+impl Coverage {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Routes => "routes",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum Limitation {
+    RouteOnlyLock,
+}
+
+#[derive(Serialize)]
+struct LimitationJson {
+    code: &'static str,
+    message: &'static str,
+}
+
+#[derive(Serialize)]
+struct DeclaredVerifyJson<'a> {
+    version: u8,
+    command: &'static str,
+    name: &'a str,
+    provenance: &'static str,
+    coverage: &'static str,
+    limitations: Vec<LimitationJson>,
+    summary: DiffSummary,
+    changes: Vec<DiffJsonChange<'a>>,
+}
+
 #[derive(Serialize)]
 struct VerifyJson<'a> {
     version: u8,
@@ -89,7 +127,29 @@ struct SarifLog {
 #[derive(Serialize)]
 struct SarifRun {
     tool: SarifTool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    invocations: Vec<SarifInvocation>,
     results: Vec<SarifResult>,
+}
+
+#[derive(Serialize)]
+struct SarifInvocation {
+    #[serde(rename = "executionSuccessful")]
+    execution_successful: bool,
+    #[serde(rename = "toolExecutionNotifications")]
+    tool_execution_notifications: Vec<SarifNotification>,
+}
+
+#[derive(Serialize)]
+struct SarifNotification {
+    descriptor: SarifDescriptor,
+    level: String,
+    message: SarifMessage,
+}
+
+#[derive(Serialize)]
+struct SarifDescriptor {
+    id: String,
 }
 
 #[derive(Serialize)]
@@ -169,47 +229,86 @@ struct SarifPartialFingerprints {
 }
 
 pub fn render_changes_json(changes: &[Change]) -> Result<String> {
+    let rendered = serde_json::to_string(&DiffJson {
+        version: 1,
+        command: "diff",
+        summary: summarize_changes(changes),
+        changes: json_changes(changes),
+    })
+    .context("failed to serialize Diff JSON output")?;
+
+    Ok(format!("{rendered}\n"))
+}
+
+pub fn render_declared_verify_text(name: &str, changes: &[Change]) -> String {
+    if changes.is_empty() {
+        format!("Verified {name}\n")
+    } else {
+        render_changes(changes)
+    }
+}
+
+pub fn render_declared_verify_json(
+    name: &str,
+    coverage: Coverage,
+    limitation: Option<Limitation>,
+    changes: &[Change],
+) -> Result<String> {
+    let rendered = serde_json::to_string(&DeclaredVerifyJson {
+        version: 2,
+        command: "verify",
+        name,
+        provenance: "declared",
+        coverage: coverage.as_str(),
+        limitations: limitation.into_iter().map(limitation_json).collect(),
+        summary: summarize_changes(changes),
+        changes: json_changes(changes),
+    })
+    .context("failed to serialize declared Verify JSON output")?;
+
+    Ok(format!("{rendered}\n"))
+}
+
+fn summarize_changes(changes: &[Change]) -> DiffSummary {
     let mut summary = DiffSummary {
         breaking: 0,
         warning: 0,
         non_breaking: 0,
     };
-    let rendered_changes = changes
+    for change in changes {
+        match change.severity {
+            Severity::Breaking => summary.breaking += 1,
+            Severity::Warning => summary.warning += 1,
+            Severity::NonBreaking => summary.non_breaking += 1,
+        }
+    }
+    summary
+}
+
+fn json_changes(changes: &[Change]) -> Vec<DiffJsonChange<'_>> {
+    changes
         .iter()
-        .map(|change| {
-            let severity = match change.severity {
-                Severity::Breaking => {
-                    summary.breaking += 1;
-                    "breaking"
-                }
-                Severity::Warning => {
-                    summary.warning += 1;
-                    "warning"
-                }
-                Severity::NonBreaking => {
-                    summary.non_breaking += 1;
-                    "non_breaking"
-                }
-            };
-
-            DiffJsonChange {
-                severity,
-                method: change.operation.method.as_str(),
-                path: &change.operation.path,
-                message: &change.message,
-            }
+        .map(|change| DiffJsonChange {
+            severity: match change.severity {
+                Severity::Breaking => "breaking",
+                Severity::Warning => "warning",
+                Severity::NonBreaking => "non_breaking",
+            },
+            method: change.operation.method.as_str(),
+            path: &change.operation.path,
+            message: &change.message,
         })
-        .collect();
+        .collect()
+}
 
-    let rendered = serde_json::to_string(&DiffJson {
-        version: 1,
-        command: "diff",
-        summary,
-        changes: rendered_changes,
-    })
-    .context("failed to serialize Diff JSON output")?;
-
-    Ok(format!("{rendered}\n"))
+fn limitation_json(limitation: Limitation) -> LimitationJson {
+    match limitation {
+        Limitation::RouteOnlyLock => LimitationJson {
+            code: "route_only_lock",
+            message:
+                "api.lock v1/v2 declared entry is route-only; full contract changes are not verified",
+        },
+    }
 }
 
 pub fn render_verify_changes_json(name: &str, changes: &[VerifyChange]) -> Result<String> {
@@ -252,6 +351,15 @@ pub fn render_verify_changes_json(name: &str, changes: &[VerifyChange]) -> Resul
 }
 
 pub fn render_changes_sarif(artifact_path: &Path, changes: &[Change]) -> Result<String> {
+    render_declared_verify_sarif(artifact_path, "", None, changes)
+}
+
+pub fn render_declared_verify_sarif(
+    artifact_path: &Path,
+    _name: &str,
+    limitation: Option<Limitation>,
+    changes: &[Change],
+) -> Result<String> {
     let artifact_uri = render_artifact_uri(artifact_path);
     let results = changes
         .iter()
@@ -277,7 +385,24 @@ pub fn render_changes_sarif(artifact_path: &Path, changes: &[Change]) -> Result<
         })
         .collect();
 
-    render_sarif(results)
+    let invocations = limitation
+        .into_iter()
+        .map(|limitation| match limitation {
+            Limitation::RouteOnlyLock => SarifInvocation {
+                execution_successful: true,
+                tool_execution_notifications: vec![SarifNotification {
+                    descriptor: SarifDescriptor {
+                        id: "apiwatch/route-only-lock".to_string(),
+                    },
+                    level: "warning".to_string(),
+                    message: SarifMessage {
+                        text: "api.lock v1/v2 declared entry is route-only; full contract changes are not verified".to_string(),
+                    },
+                }],
+            },
+        })
+        .collect();
+    render_sarif_with_invocations(results, invocations)
 }
 
 pub fn render_verify_changes_sarif(
@@ -334,10 +459,21 @@ fn render_artifact_uri(artifact_path: &Path) -> String {
 }
 
 fn render_sarif(results: Vec<SarifResult>) -> Result<String> {
-    render_sarif_with_rules(sarif_rules(), results)
+    render_sarif_with_rules(sarif_rules(), results, Vec::new())
 }
 
-fn render_sarif_with_rules(rules: Vec<SarifRule>, results: Vec<SarifResult>) -> Result<String> {
+fn render_sarif_with_invocations(
+    results: Vec<SarifResult>,
+    invocations: Vec<SarifInvocation>,
+) -> Result<String> {
+    render_sarif_with_rules(sarif_rules(), results, invocations)
+}
+
+fn render_sarif_with_rules(
+    rules: Vec<SarifRule>,
+    results: Vec<SarifResult>,
+    invocations: Vec<SarifInvocation>,
+) -> Result<String> {
     let rendered = serde_json::to_string(&SarifLog {
         schema: "https://json.schemastore.org/sarif-2.1.0.json".to_string(),
         version: "2.1.0".to_string(),
@@ -349,6 +485,7 @@ fn render_sarif_with_rules(rules: Vec<SarifRule>, results: Vec<SarifResult>) -> 
                     rules,
                 },
             },
+            invocations,
             results,
         }],
     })
@@ -603,7 +740,7 @@ pub fn render_observed_verify_changes_sarif(
         })
         .collect();
 
-    render_sarif_with_rules(observed_sarif_rules(), results)
+    render_sarif_with_rules(observed_sarif_rules(), results, Vec::new())
 }
 
 fn observed_sarif_rules() -> Vec<SarifRule> {

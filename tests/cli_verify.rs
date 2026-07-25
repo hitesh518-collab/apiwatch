@@ -271,6 +271,89 @@ fn verify_v3_warning_only_change_exits_zero() {
     fs::remove_file(lock).ok();
 }
 
+#[test]
+fn verify_v3_json_uses_full_coverage_and_diff_findings() {
+    let lock = lock_from("testdata/openapi/v3_d16_old.yaml", "d16");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "verify",
+            "testdata/openapi/v3_d16_new.yaml",
+            "--name",
+            "d16",
+            "--lock",
+            lock.to_str().expect("temp path should be valid UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("verify should run");
+    fs::remove_file(lock).ok();
+
+    let rendered = parse_json_output(&output);
+    assert_eq!(rendered["version"], 2);
+    assert_eq!(rendered["coverage"], "full");
+    assert_eq!(rendered["limitations"], json!([]));
+    assert!(
+        rendered["summary"]["breaking"]
+            .as_u64()
+            .expect("breaking count should be numeric")
+            > 0
+    );
+    assert!(rendered["changes"][0]["message"].is_string());
+}
+
+#[test]
+fn legacy_json_reports_route_only_limitation_without_stderr_noise() {
+    let output = verify_command(
+        "testdata/openapi/verify_current.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .arg("--format")
+    .arg("json")
+    .output()
+    .expect("verify should run");
+
+    let rendered = parse_json_output(&output);
+    assert_eq!(rendered["coverage"], "routes");
+    assert_eq!(rendered["limitations"][0]["code"], "route_only_lock");
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn legacy_text_warns_on_stderr() {
+    verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .assert()
+    .stderr(predicate::str::contains(
+        "api.lock v1/v2 declared entry is route-only",
+    ));
+}
+
+#[test]
+fn legacy_sarif_uses_tool_execution_notification() {
+    let output = verify_command(
+        "testdata/openapi/verify_current.yaml",
+        "users",
+        "testdata/lock/verify_users.lock",
+    )
+    .arg("--format")
+    .arg("sarif")
+    .output()
+    .expect("verify should run");
+
+    assert!(output.stderr.is_empty());
+    let rendered = parse_json_output(&output);
+    assert_eq!(
+        rendered["runs"][0]["invocations"][0]["toolExecutionNotifications"][0]["descriptor"]["id"],
+        "apiwatch/route-only-lock"
+    );
+}
+
 fn record_portfolio(lock: &Path) {
     let lock = lock.to_str().expect("temp path should be valid UTF-8");
     Command::cargo_bin("apiwatch")
@@ -685,33 +768,30 @@ fn verify_sarif_reports_drift_and_exit_one() {
                 .expect("SARIF result should have a rule ID"))
             .collect::<Vec<_>>(),
         vec![
-            "apiwatch/verify-removed",
-            "apiwatch/verify-removed",
-            "apiwatch/verify-added",
-            "apiwatch/verify-added",
+            "apiwatch/diff-breaking",
+            "apiwatch/diff-breaking",
+            "apiwatch/diff-warning",
+            "apiwatch/diff-warning",
         ]
     );
     assert_eq!(results[0]["level"], "error");
-    assert_eq!(
-        results[0]["message"]["text"],
-        "locked operation removed: GET /users"
-    );
+    assert_eq!(results[0]["message"]["text"], "endpoint removed");
     assert_eq!(
         results[0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
         "testdata/lock/verify_users.lock"
     );
     assert_eq!(
         results[0]["partialFingerprints"]["apiwatch/v1"],
-        "verify:users:apiwatch/verify-removed:GET:/users"
+        "diff:apiwatch/diff-breaking:GET:/users:endpoint removed"
     );
     assert_eq!(
         results[2]["message"]["text"],
-        "unlocked operation added: POST /users"
+        "endpoint added outside route-only lock"
     );
     assert_eq!(results[2]["level"], "warning");
     assert_eq!(
         results[2]["partialFingerprints"]["apiwatch/v1"],
-        "verify:users:apiwatch/verify-added:POST:/users"
+        "diff:apiwatch/diff-warning:POST:/users:endpoint added outside route-only lock"
     );
 }
 
@@ -777,15 +857,21 @@ fn verify_json_reports_drift_and_exit_one() {
     assert_eq!(
         rendered,
         json!({
-            "version": 1,
+            "version": 2,
             "command": "verify",
             "name": "users",
-            "summary": { "removed": 2, "added": 2 },
+            "provenance": "declared",
+            "coverage": "routes",
+            "limitations": [{
+                "code": "route_only_lock",
+                "message": "api.lock v1/v2 declared entry is route-only; full contract changes are not verified"
+            }],
+            "summary": { "breaking": 2, "warning": 2, "non_breaking": 0 },
             "changes": [
-                { "kind": "removed", "method": "GET", "path": "/users" },
-                { "kind": "removed", "method": "GET", "path": "/zeta" },
-                { "kind": "added", "method": "POST", "path": "/users" },
-                { "kind": "added", "method": "POST", "path": "/zeta" }
+                { "severity": "breaking", "method": "GET", "path": "/users", "message": "endpoint removed" },
+                { "severity": "breaking", "method": "GET", "path": "/zeta", "message": "endpoint removed" },
+                { "severity": "warning", "method": "POST", "path": "/users", "message": "endpoint added outside route-only lock" },
+                { "severity": "warning", "method": "POST", "path": "/zeta", "message": "endpoint added outside route-only lock" }
             ]
         })
     );
@@ -806,7 +892,10 @@ fn verify_json_reports_matching_contract_and_exit_zero() {
     assert!(output.stderr.is_empty());
     let rendered: Value = serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
     assert_eq!(rendered["name"], "users");
-    assert_eq!(rendered["summary"], json!({ "removed": 0, "added": 0 }));
+    assert_eq!(
+        rendered["summary"],
+        json!({ "breaking": 0, "warning": 0, "non_breaking": 0 })
+    );
     assert_eq!(rendered["changes"], json!([]));
 }
 
@@ -819,7 +908,9 @@ fn verify_default_format_preserves_text_output() {
     )
     .assert()
     .code(1)
-    .stdout("REMOVED GET /users\nREMOVED GET /zeta\nADDED POST /users\nADDED POST /zeta\n");
+    .stdout(
+        "Breaking changes\n- GET /users: endpoint removed\n- GET /zeta: endpoint removed\n\nWarnings\n- POST /users: endpoint added outside route-only lock\n- POST /zeta: endpoint added outside route-only lock\n",
+    );
 }
 
 #[test]
@@ -883,7 +974,9 @@ fn verify_exits_one_for_remote_operation_drift() {
     verify_command(&url, "users", "testdata/lock/verify_users.lock")
         .assert()
         .code(1)
-        .stdout("REMOVED GET /users\nREMOVED GET /zeta\nADDED POST /users\nADDED POST /zeta\n");
+        .stdout(
+            "Breaking changes\n- GET /users: endpoint removed\n- GET /zeta: endpoint removed\n\nWarnings\n- POST /users: endpoint added outside route-only lock\n- POST /zeta: endpoint added outside route-only lock\n",
+        );
 }
 
 #[test]
@@ -943,15 +1036,15 @@ fn verify_exits_zero_for_matching_locked_operations() {
 }
 
 #[test]
-fn verify_exits_one_for_an_added_operation() {
+fn verify_exits_zero_with_warning_for_an_added_operation() {
     verify_command(
         "testdata/openapi/verify_added.yaml",
         "users",
         "testdata/lock/verify_users.lock",
     )
     .assert()
-    .code(1)
-    .stdout("ADDED POST /users\n");
+    .success()
+    .stdout("Warnings\n- POST /users: endpoint added outside route-only lock\n");
 }
 
 #[test]
@@ -963,7 +1056,7 @@ fn verify_exits_one_for_a_removed_operation() {
     )
     .assert()
     .code(1)
-    .stdout("REMOVED GET /users\n");
+    .stdout("Breaking changes\n- GET /users: endpoint removed\n");
 }
 
 #[test]
@@ -977,10 +1070,13 @@ fn verify_renders_removed_operations_before_added_operations() {
     .code(1)
     .stdout(
         "\
-REMOVED GET /users
-REMOVED GET /zeta
-ADDED POST /users
-ADDED POST /zeta
+Breaking changes
+- GET /users: endpoint removed
+- GET /zeta: endpoint removed
+
+Warnings
+- POST /users: endpoint added outside route-only lock
+- POST /zeta: endpoint added outside route-only lock
 ",
     );
 }
@@ -996,12 +1092,15 @@ fn verify_orders_operations_by_method_and_path_within_each_group() {
     .code(1)
     .stdout(
         "\
-REMOVED GET /beta
-REMOVED GET /zeta
-REMOVED POST /zeta
-ADDED GET /alpha
-ADDED GET /omega
-ADDED PUT /zeta
+Breaking changes
+- GET /beta: endpoint removed
+- GET /zeta: endpoint removed
+- POST /zeta: endpoint removed
+
+Warnings
+- GET /alpha: endpoint added outside route-only lock
+- GET /omega: endpoint added outside route-only lock
+- PUT /zeta: endpoint added outside route-only lock
 ",
     );
 }
