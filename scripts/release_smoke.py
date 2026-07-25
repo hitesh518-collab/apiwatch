@@ -94,6 +94,60 @@ def main():
             expected=1,
         )
 
+        d16_lock = temporary / "d16.lock"
+        run(
+            [
+                binary,
+                "lock",
+                ROOT / "testdata/openapi/v3_d16_old.yaml",
+                "--name",
+                "d16",
+                "--output",
+                d16_lock,
+            ]
+        )
+        d16_verify = run(
+            [
+                binary,
+                "verify",
+                ROOT / "testdata/openapi/v3_d16_new.yaml",
+                "--name",
+                "d16",
+                "--lock",
+                d16_lock,
+                "--format",
+                "json",
+            ],
+            expected=1,
+        )
+        d16_json = json.loads(d16_verify.stdout)
+        if (
+            d16_json["coverage"] != "full"
+            or d16_json["summary"]["breaking"] != 4
+        ):
+            raise RuntimeError("D-16 did not report full coverage and four breakages")
+
+        legacy_verify = run(
+            [
+                binary,
+                "verify",
+                ROOT / "testdata/openapi/verify_current.yaml",
+                "--name",
+                "users",
+                "--lock",
+                ROOT / "testdata/lock/verify_users.lock",
+                "--format",
+                "json",
+            ],
+            expected=1,
+        )
+        legacy_json = json.loads(legacy_verify.stdout)
+        if (
+            legacy_json["coverage"] != "routes"
+            or legacy_json["limitations"][0]["code"] != "route_only_lock"
+        ):
+            raise RuntimeError("legacy Verify did not report route-only coverage")
+
         observed_lock = temporary / "observed.lock"
         run(
             [

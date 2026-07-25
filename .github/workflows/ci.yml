@@ -17,6 +17,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace
+      - run: cargo test --test cli_verify verify_v3_d16_reports_four_breaking_findings
 
   msrv:
     runs-on: ubuntu-latest

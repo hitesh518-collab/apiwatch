@@ -25,27 +25,37 @@ explicit `--map-at` annotations. It also adds output-format parity, an explicit
 Rust 1.86 floor, accurate OpenAPI 3.1 rejection, and a pinned real-world
 compatibility smoke suite.
 
-Current declared v1 and v2 locks contain normalized routes only. Declared
-`verify` detects added or removed operations, but it does not yet verify the
-complete schemas, parameters, authentication, content types, or responses
-represented by the original OpenAPI document. Full-contract locking and
-shared diff/Verify semantics are planned in
-[Roadmap Phase 1](ROADMAP.md#phase-1--make-verify-meaningful).
+Current v3 declared locks contain complete normalized contracts. Declared
+`verify` uses the same semantic comparison engine as `diff`, covering
+operations, schemas, parameters, authentication, content types, and
+responses. Versions 1 and 2 remain readable as route-only legacy formats.
 
 ## CLI
 
 ```bash
 apiwatch diff old.openapi.yaml new.openapi.yaml
 apiwatch lock openapi.yaml --name users --output api.lock
+apiwatch lock openapi.yaml --name users --output api.lock --update
+apiwatch lock openapi.yaml --name users --output api.lock \
+  --include-operation "GET /users/{id}" \
+  --max-lock-bytes 5242880
 apiwatch verify openapi.yaml --name users --lock api.lock
 apiwatch verify https://api.example.com/openapi.yaml --name users --lock api.lock
 ```
 
 The declared-contract path currently targets OpenAPI 3.0 YAML and JSON.
 `apiwatch diff` normalizes two documents and reports semantic changes.
-`apiwatch lock` writes a deterministic route-only declared entry.
-`apiwatch verify` compares the named route set with a local document or
-HTTP/HTTPS URL.
+`apiwatch lock` creates a deterministic v3 full-contract entry and refuses to
+overwrite an existing file. Use `--update` for deliberate atomic replacement.
+Repeatable `--include-operation` options scope large APIs; the default
+per-entry payload ceiling is 5,242,880 bytes.
+
+`apiwatch verify` reconstructs a v3 declared contract and runs the same
+`diff_contracts` path used by `diff`. Warning-only and non-breaking changes
+exit `0`; breaking changes exit `1`. Updating a v1/v2 lock requires the
+original OpenAPI source and is refused when other legacy declared entries
+would be left partially migrated. Legacy Verify remains route-only and reports
+that limitation in text, JSON, and SARIF.
 
 Remote verification uses a 10-second timeout and a 10 MiB response limit.
 Authentication, custom headers, and configuration files are not included.
@@ -110,9 +120,10 @@ deterministic result document written to stdout. SARIF 2.1.0 output is intended
 for GitHub Code Scanning.
 
 `apiwatch verify <INPUT> --name <NAME> --lock <PATH>` selects declared or
-observed verification from the named lock entry's provenance. It exits `0` for
-a match, `1` for detected drift, and `2` for invalid input or operational
-failure.
+observed verification from the named lock entry's provenance. It exits `0`
+when no breaking finding is present, `1` for breaking drift, and `2` for
+invalid input or operational failure. Declared Verify JSON version 2 includes
+`coverage: full|routes` and structured limitations.
 
 ## Installation
 
@@ -205,7 +216,7 @@ below was checked.
 | Strict metadata parsing (D-13) | Irrelevant malformed metadata can reject an otherwise usable specification. | Phase 3 |
 | Recursive schemas (D-14) | Circular schema references are currently rejected. | Phase 3 |
 | External references (D-15) | External and multi-file `$ref` targets are unsupported. | Phase 3 |
-| Declared locks (D-16) | Version 1 and 2 declared locks store routes only; Verify cannot detect full semantic drift. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
+| Legacy declared locks (D-16) | Versions 1 and 2 remain route-only and require re-locking from original sources for full v3 coverage. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
 | Null observations (D-17) | A null-only sample can make an observed shape too narrow. | [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts) |
 | Observed requiredness (D-18) | Requiredness does not yet use a configurable confidence threshold. | Phase 4 |
 | Observed inputs (D-19) | Observed Verify accepts local JSON only; HAR and live capture are not implemented. | [Phase 5](ROADMAP.md#phase-5--frictionless-recording-and-ci-adoption) |

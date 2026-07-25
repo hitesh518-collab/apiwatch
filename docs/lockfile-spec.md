@@ -2,22 +2,16 @@
 
 `api.lock` is a repository-level lockfile for external API contracts.
 
-The implemented formats are intentionally small. Declared entries in versions
-1 and 2 store normalized operation routes, not complete schemas, parameters,
-authentication, content types, or response contracts.
+Versions 1 and 2 store normalized operation routes. Version 3 stores a
+complete normalized declared contract suitable for semantic verification.
 
 ## Format Status
 
 | Version | Status | Declared entries | Observed entries |
 |---|---|---|---|
 | 1 | Readable legacy format | Route-only | Not supported |
-| 2 | Current development format | Route-only with provenance | Value-free shapes |
-| 3 | Approved direction; not designed or implemented | Complete normalized contracts | First-class observed contracts |
-
-The exact version 3 schema, canonical digest representation, endpoint-scoping
-CLI, and migration command remain
-[Phase 1](../ROADMAP.md#phase-1--make-verify-meaningful) design decisions.
-No version 3 example in this document should be inferred from the goals below.
+| 2 | Readable legacy format | Route-only with provenance | Value-free shapes |
+| 3 | Current format | Complete normalized contracts | Value-free shapes |
 
 ## Version 1
 
@@ -112,28 +106,79 @@ diagnostics use the annotated path plus a stable `<map-value>` segment in place
 of each dynamic key, along with shape names only. This redacted notation is
 used consistently in text, JSON, SARIF messages, and SARIF fingerprints.
 
-## Planned Version 3
+## Version 3
 
-The breaking version 3 direction is approved in the
-[product pivot design](superpowers/specs/2026-07-24-apiwatch-product-pivot-design.md).
-Implementation requires a separate format design and explicit approval.
+Version 3 stores complete normalized declared contracts in deterministic YAML:
 
-Version 3 must:
+```yaml
+version: 3
+apis:
+  users:
+    provenance: declared
+    source: openapi
+    scope: all
+    max_lock_bytes: 5242880
+    contract_bytes: 18432
+    contract_digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    contract:
+      operations: {}
+      schemas: {}
+```
 
-- store enough normalized declared contract data for Verify to call the same
-  comparison engine as `diff`;
-- keep declared and observed provenance explicit and first-class;
-- serialize deterministically with stable ordering;
-- remain reviewable in Git;
-- tolerate unknown fields where forward compatibility permits;
-- exclude captured values, examples, defaults, credentials, headers, and
-  other source data that is unnecessary for comparison;
-- target a 5 MB default ceiling per upstream API committed to Git;
-- support explicit endpoint scoping for larger APIs.
+`contract.operations` contains normalized operation, authentication,
+parameter, request-body, and response data. `contract.schemas` is a
+content-addressed table. Schema IDs are lowercase `sha256:` digests over a
+domain-separated canonical representation. Repeated schemas share one table
+entry; every referenced schema must exist, every stored schema must be
+reachable, and its key must match its content.
 
-The size ceiling is a design target, not an implemented file-size limit.
-Phase 1 must prototype representative small and large specifications before
-choosing the final serialization and scoping interfaces.
+`contract_digest` is a domain-separated SHA-256 digest over `scope`,
+`contract`, and any `x-*` extensions. It excludes metadata, the measured byte
+count, and the digest itself. Loading revalidates schema IDs, reachability,
+`contract_bytes`, and `contract_digest`; tampering is rejected.
+
+`contract_bytes` is the exact byte length of the standalone canonical YAML
+serialization of `contract`, including its final newline. `max_lock_bytes`
+defaults to 5,242,880 bytes and is enforced before any destination file is
+created or replaced.
+
+Semantic fields are strict: missing, malformed, or unknown semantic fields
+are rejected. Optional forward-compatible metadata must use a direct `x-*`
+key. Extension objects are recursively canonicalized so map insertion order
+does not affect the digest.
+
+### Scope
+
+`scope: all` locks the full normalized contract. A scoped entry instead stores
+an exact, sorted list:
+
+```yaml
+scope:
+  operations:
+    - GET /users/{id}
+```
+
+Create scoped locks with repeatable `--include-operation "METHOD /path"`
+arguments. A selector absent at lock time is an input error. During Verify,
+an absent selected operation is a breaking endpoint removal; unrelated
+operations outside the stored scope are ignored.
+
+### Create, Update, and Migration
+
+Plain `apiwatch lock` creates a new file and refuses to overwrite existing
+bytes. `--update` requires an existing lock and atomically replaces the named
+declared entry after all parsing, size, integrity, and migration checks pass.
+
+An existing v1 or v2 file can migrate only when the updated name is its sole
+legacy declared entry. Observed entries are preserved. If other legacy
+declared entries exist, migration is refused and lists the APIs whose
+original OpenAPI sources are required. An observed name cannot be replaced as
+declared.
+
+Version 3 declared Verify reconstructs the locked contract and calls the same
+semantic `diff_contracts` path as `apiwatch diff`. Breaking findings exit `1`;
+warning-only and non-breaking findings exit `0`. Text, version-2 Verify JSON,
+and SARIF share the same severities and messages.
 
 ### Phase 1 Prototype Results
 
@@ -147,8 +192,8 @@ remain absent from all three candidate representations.
 The reproducible evidence is available as a
 [human-readable report](benchmarks/phase-1-lock-size-report.md) and
 [machine-readable report](benchmarks/phase-1-lock-size-report.json).
-This result selects the representation to take into the exact schema design;
-it does not implement or approve the final version 3 schema.
+This evidence selected the content-addressed YAML representation implemented
+by version 3.
 
 ### Migration Policy
 
@@ -157,10 +202,11 @@ cannot be upgraded into a complete contract from the lockfile alone because
 the required schema, parameter, authentication, content-type, and response
 data was never stored.
 
-Users must therefore re-lock from the original OpenAPI source to obtain a
-complete version 3 declared entry. Migration tooling may preserve names and
-other available metadata, but it must warn clearly and must not invent missing
-contract data. The command syntax is deferred to the Phase 1 design.
+Users must re-lock from the original OpenAPI source to obtain a complete
+version 3 declared entry. Legacy Verify remains available, reports
+`coverage: routes` plus a `route_only_lock` limitation in JSON, emits a warning
+for text, and records a SARIF tool execution notification. It never invents
+missing contract data.
 
 ## Privacy
 

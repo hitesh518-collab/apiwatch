@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Content-addressed `api.lock` version 3 entries containing complete
+  normalized declared contracts with strict integrity validation.
+- Atomic Lock creation and `--update`, repeatable `--include-operation`
+  scoping, and an enforced 5,242,880-byte default contract ceiling.
+- Full declared Verify through the shared `diff_contracts` engine, including
+  severity-aligned text, version-2 JSON, and SARIF output.
+
+### Changed
+
+- Versions 1 and 2 remain readable but explicitly report route-only coverage.
+  Their added endpoints are warnings; removals remain breaking.
+- Legacy migration preserves observed entries and refuses partial migration
+  when other declared APIs require their original OpenAPI sources.
+
+### Security
+
+- Version 3 excludes examples, defaults, credentials, source extensions, and
+  captured values; schema and contract digests, reachability, and exact
+  payload bytes are revalidated on load.
+
 ## v0.7.0 - 2026-07-24
 
 ### Added

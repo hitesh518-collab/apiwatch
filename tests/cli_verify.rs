@@ -184,7 +184,7 @@ fn observed_lock_path() -> PathBuf {
 }
 
 #[test]
-fn verify_v3_reports_exact_d16_findings() {
+fn verify_v3_d16_reports_four_breaking_findings() {
     let lock = lock_from("testdata/openapi/v3_d16_old.yaml", "d16");
     let output = Command::cargo_bin("apiwatch")
         .expect("binary should build")

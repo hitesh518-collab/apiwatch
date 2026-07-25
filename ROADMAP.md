@@ -18,7 +18,7 @@ single country, industry, or design-partner project.
 ## Current State
 
 The latest tagged release is v0.6.0. It includes semantic diffing for local
-OpenAPI 3.0 documents, route-only declared lockfiles and Verify, remote
+OpenAPI 3.0 documents, full-contract v3 declared lockfiles and Verify, remote
 declared Verify, JSON and SARIF output, a reusable GitHub Action, and
 source-building Homebrew and Scoop definitions.
 
@@ -29,9 +29,8 @@ tagged release.
 
 Important limitations remain:
 
-- declared v1 and v2 locks store routes, not complete contracts;
-- declared Verify therefore detects operation drift but not full semantic
-  contract drift;
+- declared v1 and v2 locks remain route-only and need original sources to
+  migrate to full-contract v3;
 - OpenAPI 3.1 and external or multi-file references are not supported;
 - the diff engine has confirmed false-negative and false-positive classes;
 - real-world specification compatibility and binary distribution are
@@ -103,24 +102,23 @@ contract changes APIWatch promises to catch.
    specifications. The measured recommendation is `deduplicated_yaml`; see the
    [human-readable](docs/benchmarks/phase-1-lock-size-report.md) and
    [machine-readable](docs/benchmarks/phase-1-lock-size-report.json) reports.
-2. Design and approve the exact lockfile v3 schema (D-16).
-3. Target a **5 MB default ceiling per upstream API** committed to Git, with
+2. **Completed:** Design and approve the exact lockfile v3 schema (D-16).
+3. **Completed:** Target a **5 MB default ceiling per upstream API** committed to Git, with
    explicit endpoint scoping for larger APIs.
-4. Serialize complete normalized declared contracts with explicit provenance
+4. **Completed:** Serialize complete normalized declared contracts with explicit provenance
    while excluding examples, defaults, credentials, and other sensitive
    source values.
-5. Make declared Verify deserialize the locked contract and call the same
+5. **Completed:** Make declared Verify deserialize the locked contract and call the same
    `diff_contracts` comparison path used by `diff`.
-6. Extend Verify findings with severity and messages matching diff findings.
-7. Update text, JSON, and SARIF renderers plus the reusable Action.
-8. Keep v1 and v2 readable with a clear route-only warning. Require re-locking
+6. **Completed:** Extend Verify findings with severity and messages matching diff findings.
+7. **Completed:** Update text, JSON, and SARIF renderers plus the reusable Action.
+8. **Completed:** Keep v1 and v2 readable with a clear route-only warning. Require re-locking
    from the original source because legacy files cannot reconstruct contract
    data they never stored.
-9. Provide a deliberate migration workflow after the v3 format is approved.
+9. **Completed:** Provide a deliberate migration workflow after the v3 format is approved.
 
-The breaking v3 direction is approved. The exact YAML representation,
-canonical digest format, and endpoint-scoping CLI remain Phase 1 design
-decisions.
+The approved v3 YAML representation, canonical digests, endpoint scoping,
+atomic update workflow, and legacy migration policy are implemented.
 
 ### Excluded From This Phase
 
@@ -130,9 +128,10 @@ decisions.
 
 ### Exit Criterion
 
-The D-16 reproduction—authentication change, parameter rename and retype, and
-successful-response removal—causes declared Verify to exit `1` with four
-correctly classified findings.
+**Met:** the [D-16 fixtures](testdata/openapi/v3_d16_old.yaml) and
+[Verify regression](tests/cli_verify.rs) cover an authentication change,
+parameter rename/retype, and successful-response removal. Declared Verify
+exits `1` with four correctly classified breaking findings.
 
 ## Phase 2 — Make the Comparison Engine Trustworthy
 
