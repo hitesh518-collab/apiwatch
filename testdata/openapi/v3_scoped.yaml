@@ -17,3 +17,8 @@ paths:
       responses:
         "201":
           description: Created
+  /users/{id}:
+    delete:
+      responses:
+        "204":
+          description: Deleted

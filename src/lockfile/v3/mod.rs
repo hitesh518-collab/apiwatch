@@ -1,7 +1,7 @@
 mod canonical;
 mod schema;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -433,7 +433,17 @@ fn validate_scope_contract(scope: &Scope, contract: &Contract) -> Result<()> {
     let Scope::Operations(scope) = scope else {
         return Ok(());
     };
-    if scope.operations.iter().ne(contract.operations.keys()) {
+    let scoped = scope
+        .operations
+        .iter()
+        .map(|selector| crate::lock_size::parse_operation_selector(selector))
+        .collect::<Result<BTreeSet<_>>>()?;
+    let stored = contract
+        .operations
+        .keys()
+        .map(|key| schema::parse_operation_key(key))
+        .collect::<Result<BTreeSet<_>>>()?;
+    if scoped != stored {
         return Err(anyhow!(
             "operation scope does not match the stored contract operations"
         ));
@@ -527,6 +537,7 @@ fn sanitized(value: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod semantic_validation_tests {
     use super::*;
 

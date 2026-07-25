@@ -144,6 +144,32 @@ fn lock_stores_exact_scope_and_rejects_missing_selectors() {
 }
 
 #[test]
+fn lock_accepts_exact_scopes_spanning_multiple_http_methods() {
+    let output = temp_lock_path("multi-method-scope");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/v3_scoped.yaml",
+            "--name",
+            "scoped",
+            "--output",
+            output.to_str().expect("temp path should be valid UTF-8"),
+            "--include-operation",
+            "DELETE /users/{id}",
+            "--include-operation",
+            "GET /users",
+        ])
+        .assert()
+        .success();
+
+    let rendered = fs::read_to_string(&output).expect("scoped lock should be readable");
+    fs::remove_file(output).ok();
+    assert!(rendered.contains("operations:\n      - GET /users\n      - DELETE /users/{id}"));
+}
+
+#[test]
 fn lock_size_failure_preserves_existing_bytes() {
     let output = temp_lock_path("size-failure");
     fs::write(&output, "preserve").expect("existing lock should write");
