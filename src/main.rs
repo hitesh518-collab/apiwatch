@@ -46,12 +46,32 @@ fn run() -> Result<i32> {
             openapi,
             name,
             output,
+            update,
+            include_operations,
+            max_lock_bytes,
         } => {
             let contract = openapi::load_contract(&openapi)?;
-            let lock = lockfile::from_contract(&name, &contract)?;
-            let rendered = lockfile::render(&lock)?;
-            fs::write(&output, rendered)
-                .with_context(|| format!("failed to write lockfile {}", output.display()))?;
+            let scoped = apiwatch::lock_size::scope_contract(&contract, &include_operations)?;
+            let scope = lockfile::scope_from_selectors(&include_operations)?;
+            let entry = lockfile::build_v3_declared(&scoped, scope, max_lock_bytes)?;
+
+            let rendered = if update {
+                if !output.exists() {
+                    anyhow::bail!("--update requires an existing lockfile");
+                }
+                let existing = lockfile::load(&output)?;
+                let updated = lockfile::replace_declared(existing, &name, entry)?;
+                lockfile::render(&updated)?
+            } else {
+                let created = lockfile::new_v3(&name, entry)?;
+                lockfile::render(&created)?
+            };
+
+            if update {
+                lockfile::atomic_replace(&output, rendered.as_bytes())?;
+            } else {
+                lockfile::atomic_write_new(&output, rendered.as_bytes())?;
+            }
             println!("Wrote {}", output.display());
             Ok(0)
         }

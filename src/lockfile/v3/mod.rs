@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::contract::{AuthSchemeKind, SchemaKind};
 
-pub(super) const DEFAULT_MAX_LOCK_BYTES: u64 = 5_242_880;
+pub const DEFAULT_MAX_LOCK_BYTES: u64 = 5_242_880;
 
 pub(super) type Extensions = BTreeMap<String, serde_json::Value>;
 
@@ -20,6 +20,7 @@ pub(super) struct V3Lock {
 }
 
 impl V3Lock {
+    #[cfg(test)]
     pub(super) fn single_declared(name: &str, entry: DeclaredEntry) -> Result<Self> {
         validate_name(name)?;
         Ok(Self {
@@ -28,6 +29,7 @@ impl V3Lock {
         })
     }
 
+    #[cfg(test)]
     pub(super) fn declared(&self, name: &str) -> Option<&DeclaredEntry> {
         match self.apis.get(name) {
             Some(V3Api::Declared(entry)) => Some(entry),
@@ -88,7 +90,7 @@ pub(super) struct ObservedEntry {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub(super) enum Scope {
+pub enum Scope {
     All(AllScope),
     Operations(OperationScope),
 }
@@ -97,17 +99,21 @@ impl Scope {
     pub(super) fn all() -> Self {
         Self::All(AllScope::All)
     }
+
+    pub(super) fn operations(operations: Vec<String>) -> Self {
+        Self::Operations(OperationScope { operations })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) enum AllScope {
+pub enum AllScope {
     #[serde(rename = "all")]
     All,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct OperationScope {
+pub struct OperationScope {
     operations: Vec<String>,
 }
 

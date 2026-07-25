@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 use crate::contract::ApiContract;
 use crate::observed::{apply_map_annotations, merge as merge_shapes, Shape};
 
+mod atomic;
 #[doc(hidden)]
 pub mod v3;
+
+pub const DEFAULT_MAX_LOCK_BYTES: u64 = v3::DEFAULT_MAX_LOCK_BYTES;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiLock {
@@ -212,6 +215,41 @@ pub fn new_v3(name: &str, entry: v3::DeclaredEntry) -> Result<ApiLock> {
         BTreeMap::new(),
     ))?;
     Ok(lock)
+}
+
+pub fn scope_from_selectors(selectors: &[String]) -> Result<v3::Scope> {
+    if selectors.is_empty() {
+        return Ok(v3::Scope::all());
+    }
+    let mut operations = BTreeSet::new();
+    for selector in selectors {
+        let key = crate::lock_size::parse_operation_selector(selector)?;
+        if !operations.insert(key) {
+            return Err(anyhow!("duplicate operation selector"));
+        }
+    }
+    Ok(v3::Scope::operations(
+        operations
+            .into_iter()
+            .map(|key| format!("{} {}", key.method.as_str(), key.path))
+            .collect(),
+    ))
+}
+
+pub fn build_v3_declared(
+    contract: &ApiContract,
+    scope: v3::Scope,
+    max_lock_bytes: u64,
+) -> Result<v3::DeclaredEntry> {
+    v3::build_declared(contract, scope, max_lock_bytes, BTreeMap::new())
+}
+
+pub fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
+    atomic::write_new(path, bytes)
+}
+
+pub fn atomic_replace(path: &Path, bytes: &[u8]) -> Result<()> {
+    atomic::replace(path, bytes)
 }
 
 pub fn replace_declared(

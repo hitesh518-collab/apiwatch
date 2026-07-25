@@ -19,7 +19,7 @@ fn temp_lock_path(name: &str) -> PathBuf {
 }
 
 #[test]
-fn lock_writes_deterministic_single_api_lockfile() {
+fn lock_creates_a_deterministic_v3_file() {
     let output_path = temp_lock_path("single-api");
     let output_arg = output_path
         .to_str()
@@ -29,7 +29,7 @@ fn lock_writes_deterministic_single_api_lockfile() {
     command
         .args([
             "lock",
-            "testdata/openapi/lock_ordering.yaml",
+            "testdata/openapi/verify_matching.yaml",
             "--name",
             "users",
             "--output",
@@ -47,18 +47,128 @@ fn lock_writes_deterministic_single_api_lockfile() {
 
     assert_eq!(
         rendered,
-        "\
-version: 1
-apis:
-  users:
-    source: openapi
-    operations:
-    - method: GET
-      path: /users
-    - method: POST
-      path: /users
-"
+        fs::read_to_string("testdata/lock/v3_users.lock").expect("golden v3 lockfile should exist")
     );
+}
+
+#[test]
+fn lock_requires_update_and_preserves_existing_bytes() {
+    let output = temp_lock_path("requires-update");
+    fs::write(&output, "preserve").expect("existing lock should write");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/verify_matching.yaml",
+            "--name",
+            "users",
+            "--output",
+            output.to_str().expect("temp path should be valid UTF-8"),
+        ])
+        .assert()
+        .code(2);
+
+    assert_eq!(
+        fs::read_to_string(&output).expect("existing lock should remain readable"),
+        "preserve"
+    );
+    fs::remove_file(output).ok();
+}
+
+#[test]
+fn lock_update_preserves_observed_entries() {
+    let output = temp_lock_path("migration");
+    fs::copy("testdata/lock/v2_declared_observed.lock", &output)
+        .expect("migration fixture should copy");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/verify_matching.yaml",
+            "--name",
+            "users",
+            "--output",
+            output.to_str().expect("temp path should be valid UTF-8"),
+            "--update",
+        ])
+        .assert()
+        .success();
+
+    let rendered = fs::read_to_string(&output).expect("updated lock should be readable");
+    fs::remove_file(output).ok();
+    assert!(rendered.starts_with("version: 3\n"));
+    assert!(rendered.contains("provenance: observed"));
+}
+
+#[test]
+fn lock_stores_exact_scope_and_rejects_missing_selectors() {
+    let output = temp_lock_path("scoped");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/v3_scoped.yaml",
+            "--name",
+            "scoped",
+            "--output",
+            output.to_str().expect("temp path should be valid UTF-8"),
+            "--include-operation",
+            "GET /users",
+        ])
+        .assert()
+        .success();
+
+    let rendered = fs::read_to_string(&output).expect("scoped lock should be readable");
+    fs::remove_file(output).ok();
+    assert!(rendered.contains("operations:\n      - GET /users"));
+
+    let missing = temp_lock_path("missing-selector");
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/v3_scoped.yaml",
+            "--name",
+            "scoped",
+            "--output",
+            missing.to_str().expect("temp path should be valid UTF-8"),
+            "--include-operation",
+            "DELETE /missing",
+        ])
+        .assert()
+        .code(2);
+    assert!(!missing.exists());
+}
+
+#[test]
+fn lock_size_failure_preserves_existing_bytes() {
+    let output = temp_lock_path("size-failure");
+    fs::write(&output, "preserve").expect("existing lock should write");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/verify_matching.yaml",
+            "--name",
+            "users",
+            "--output",
+            output.to_str().expect("temp path should be valid UTF-8"),
+            "--max-lock-bytes",
+            "1",
+            "--update",
+        ])
+        .assert()
+        .code(2);
+
+    assert_eq!(
+        fs::read_to_string(&output).expect("existing lock should remain readable"),
+        "preserve"
+    );
+    fs::remove_file(output).ok();
 }
 
 #[test]

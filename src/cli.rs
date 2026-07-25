@@ -39,6 +39,15 @@ pub enum Command {
         /// Lockfile path to write.
         #[arg(long)]
         output: PathBuf,
+        /// Replace a named entry in an existing lockfile.
+        #[arg(long)]
+        update: bool,
+        /// Include only this operation (repeatable METHOD /path).
+        #[arg(long = "include-operation")]
+        include_operations: Vec<String>,
+        /// Maximum serialized contract payload size in bytes.
+        #[arg(long, default_value_t = crate::lockfile::DEFAULT_MAX_LOCK_BYTES)]
+        max_lock_bytes: u64,
     },
     /// Record the observed shape of one JSON body.
     Record {
