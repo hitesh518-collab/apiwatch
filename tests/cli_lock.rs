@@ -18,6 +18,10 @@ fn temp_lock_path(name: &str) -> PathBuf {
     path
 }
 
+fn canonical_lines(value: &str) -> String {
+    value.replace("\r\n", "\n")
+}
+
 #[test]
 fn lock_creates_a_deterministic_v3_file() {
     let output_path = temp_lock_path("single-api");
@@ -47,7 +51,10 @@ fn lock_creates_a_deterministic_v3_file() {
 
     assert_eq!(
         rendered,
-        fs::read_to_string("testdata/lock/v3_users.lock").expect("golden v3 lockfile should exist")
+        canonical_lines(
+            &fs::read_to_string("testdata/lock/v3_users.lock")
+                .expect("golden v3 lockfile should exist")
+        )
     );
 }
 

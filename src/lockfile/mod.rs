@@ -558,6 +558,10 @@ mod tests {
 
     use super::*;
 
+    fn canonical_lines(value: &str) -> String {
+        value.replace("\r\n", "\n")
+    }
+
     fn v3_declared_fixture() -> v3::DeclaredEntry {
         let contract =
             crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
@@ -647,7 +651,10 @@ mod tests {
         let lock =
             load(Path::new("testdata/lock/v3_private.lock")).expect("v3 fixture should load");
 
-        assert_eq!(render(&lock).expect("v3 fixture should render"), expected);
+        assert_eq!(
+            render(&lock).expect("v3 fixture should render"),
+            canonical_lines(&expected)
+        );
     }
 
     #[test]
@@ -1025,8 +1032,10 @@ mod tests {
 
         assert_eq!(
             first,
-            fs::read_to_string("testdata/lock/v3_private.lock")
-                .expect("golden v3 lockfile should exist")
+            canonical_lines(
+                &fs::read_to_string("testdata/lock/v3_private.lock")
+                    .expect("golden v3 lockfile should exist")
+            )
         );
         assert_eq!(first, second);
         assert_eq!(expanded, source);
