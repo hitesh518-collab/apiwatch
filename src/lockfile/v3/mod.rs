@@ -225,6 +225,8 @@ pub(super) fn build_declared(
     validate_scope(&scope)?;
     canonical::validate_extensions(&extensions)?;
     let contract = schema::intern_contract(contract)?;
+    validate_contract_semantics(&contract)?;
+    validate_scope_contract(&scope, &contract)?;
     let contract_bytes =
         u64::try_from(contract_yaml(&contract)?.len()).context("contract size overflow")?;
     if contract_bytes > max_lock_bytes {
@@ -260,6 +262,8 @@ pub(super) fn validate_declared(
     }
     validate_scope(&entry.scope)?;
     canonical::validate_extensions(&entry.extensions)?;
+    validate_scope_contract(&entry.scope, &entry.contract)?;
+    validate_contract_semantics(&entry.contract)?;
     schema::validate_schema_table(&entry.contract)
         .with_context(|| format!("declared api {name} has an invalid schema table"))?;
     let actual_bytes =
@@ -284,10 +288,108 @@ pub(super) fn render(lock: &V3Lock) -> Result<String> {
 }
 
 pub(super) fn load(contents: &str) -> Result<V3Lock> {
-    let lock: V3Lock =
+    let raw: serde_yaml::Value =
         serde_yaml::from_str(contents).context("failed to parse api.lock v3 YAML")?;
+    validate_raw_observed_shapes(&raw)?;
+    let lock: V3Lock = serde_yaml::from_value(raw).context("failed to parse api.lock v3 YAML")?;
     validate_lock(&lock)?;
     Ok(lock)
+}
+
+fn validate_raw_observed_shapes(raw: &serde_yaml::Value) -> Result<()> {
+    let Some(apis) = mapping_value(raw, "apis").and_then(serde_yaml::Value::as_mapping) else {
+        return Ok(());
+    };
+    for api in apis.values().filter_map(serde_yaml::Value::as_mapping) {
+        if string_value(api, "provenance") == Some("observed") {
+            if let Some(shape) = mapping_value_from(api, "shape") {
+                validate_raw_shape(shape)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_raw_shape(value: &serde_yaml::Value) -> Result<()> {
+    let Some(shape) = value.as_mapping() else {
+        return Ok(());
+    };
+    let Some(kind) = string_value(shape, "kind") else {
+        return Ok(());
+    };
+    let allowed: &[&str] = match kind {
+        "object" => &["kind", "observations", "properties"],
+        "map" => &["kind", "values"],
+        "array" => &["kind", "items"],
+        "union" => &["kind", "variants"],
+        _ => &["kind"],
+    };
+    reject_unknown_mapping_keys(shape, allowed)?;
+    match kind {
+        "object" => {
+            if let Some(properties) =
+                mapping_value_from(shape, "properties").and_then(serde_yaml::Value::as_mapping)
+            {
+                for property in properties
+                    .values()
+                    .filter_map(serde_yaml::Value::as_mapping)
+                {
+                    reject_unknown_mapping_keys(property, &["observations", "shape"])?;
+                    if let Some(nested) = mapping_value_from(property, "shape") {
+                        validate_raw_shape(nested)?;
+                    }
+                }
+            }
+        }
+        "map" => {
+            if let Some(values) = mapping_value_from(shape, "values") {
+                validate_raw_shape(values)?;
+            }
+        }
+        "array" => {
+            if let Some(items) = mapping_value_from(shape, "items") {
+                validate_raw_shape(items)?;
+            }
+        }
+        "union" => {
+            if let Some(variants) =
+                mapping_value_from(shape, "variants").and_then(serde_yaml::Value::as_sequence)
+            {
+                for variant in variants {
+                    validate_raw_shape(variant)?;
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn reject_unknown_mapping_keys(mapping: &serde_yaml::Mapping, allowed: &[&str]) -> Result<()> {
+    if mapping
+        .keys()
+        .any(|key| key.as_str().is_some_and(|key| !allowed.contains(&key)))
+    {
+        return Err(anyhow!("unknown field in observed shape"));
+    }
+    Ok(())
+}
+
+fn mapping_value<'a>(value: &'a serde_yaml::Value, key: &str) -> Option<&'a serde_yaml::Value> {
+    value
+        .as_mapping()
+        .and_then(|mapping| mapping_value_from(mapping, key))
+}
+
+fn mapping_value_from<'a>(
+    mapping: &'a serde_yaml::Mapping,
+    key: &str,
+) -> Option<&'a serde_yaml::Value> {
+    mapping.get(serde_yaml::Value::String(key.to_string()))
+}
+
+fn string_value<'a>(mapping: &'a serde_yaml::Mapping, key: &str) -> Option<&'a str> {
+    mapping_value_from(mapping, key).and_then(serde_yaml::Value::as_str)
 }
 
 fn validate_lock(lock: &V3Lock) -> Result<()> {
@@ -313,6 +415,10 @@ fn validate_scope(scope: &Scope) -> Result<()> {
     let mut previous = None;
     for selector in &scope.operations {
         let key = crate::lock_size::parse_operation_selector(selector)?;
+        let canonical = format!("{} {}", key.method.as_str(), key.path);
+        if selector != &canonical {
+            return Err(anyhow!("operation scope selector is not canonical"));
+        }
         if previous.as_ref().is_some_and(|value| value >= &key) {
             return Err(anyhow!(
                 "operation scope must be sorted and contain no duplicates"
@@ -323,9 +429,89 @@ fn validate_scope(scope: &Scope) -> Result<()> {
     Ok(())
 }
 
+fn validate_scope_contract(scope: &Scope, contract: &Contract) -> Result<()> {
+    let Scope::Operations(scope) = scope else {
+        return Ok(());
+    };
+    if scope.operations.iter().ne(contract.operations.keys()) {
+        return Err(anyhow!(
+            "operation scope does not match the stored contract operations"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_contract_semantics(contract: &Contract) -> Result<()> {
+    for (operation_key, operation) in &contract.operations {
+        let parsed = schema::parse_operation_key(operation_key)?;
+        let canonical = format!("{} {}", parsed.method.as_str(), parsed.path);
+        if operation_key != &canonical {
+            return Err(anyhow!("operation key is not canonical"));
+        }
+        for (name, auth) in &operation.auth {
+            validate_wire_string(name, "auth name", false)?;
+            validate_normalized_strings(&auth.scopes, "auth scopes")?;
+        }
+        for parameter_key in operation.parameters.keys() {
+            let parsed = schema::parse_parameter_key(parameter_key)?;
+            let canonical = format!("{}:{}", parsed.location.as_str(), parsed.name);
+            if parameter_key != &canonical {
+                return Err(anyhow!("parameter key is not canonical"));
+            }
+        }
+        if let Some(content) = &operation.request_body {
+            validate_content_types(content)?;
+        }
+        for (status, content) in &operation.responses {
+            validate_wire_string(status, "response status", false)?;
+            validate_content_types(content)?;
+        }
+    }
+    for schema in contract.schemas.values() {
+        if let Some(format) = &schema.format {
+            validate_wire_string(format, "schema format", true)?;
+        }
+        validate_normalized_strings(&schema.enum_values, "schema enum values")?;
+        for property in schema.properties.keys() {
+            validate_wire_string(property, "schema property name", true)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_content_types(content: &BTreeMap<String, String>) -> Result<()> {
+    for content_type in content.keys() {
+        validate_wire_string(content_type, "media type", false)?;
+    }
+    Ok(())
+}
+
+fn validate_normalized_strings(values: &[String], label: &str) -> Result<()> {
+    for value in values {
+        validate_wire_string(value, label, true)?;
+    }
+    if values.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(anyhow!("{label} must be sorted and contain no duplicates"));
+    }
+    Ok(())
+}
+
+fn validate_wire_string(value: &str, label: &str, allow_empty: bool) -> Result<()> {
+    if !allow_empty && value.is_empty() {
+        return Err(anyhow!("{label} cannot be empty"));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(anyhow!("{label} contains a control character"));
+    }
+    Ok(())
+}
+
 fn validate_name(name: &str) -> Result<()> {
     if name.trim().is_empty() {
         return Err(anyhow!("api name cannot be empty"));
+    }
+    if name != name.trim() {
+        return Err(anyhow!("api name has surrounding whitespace"));
     }
     if name.chars().any(char::is_control) {
         return Err(anyhow!("api name contains a control character"));
@@ -338,6 +524,148 @@ fn sanitized(value: &str) -> String {
         .chars()
         .filter(|character| !character.is_control())
         .collect()
+}
+
+#[cfg(test)]
+mod semantic_validation_tests {
+    use super::*;
+
+    fn fixture() -> Contract {
+        let schema = WireSchema {
+            kind: SchemaKind::String,
+            nullable: false,
+            format: Some("uuid".to_string()),
+            enum_values: vec!["a".to_string(), "b".to_string()],
+            properties: BTreeMap::from([(
+                "value".to_string(),
+                WireProperty {
+                    required: true,
+                    schema: "sha256:schema".to_string(),
+                },
+            )]),
+        };
+        Contract {
+            operations: BTreeMap::from([(
+                "GET /users".to_string(),
+                WireOperation {
+                    auth: BTreeMap::from([(
+                        "bearer".to_string(),
+                        WireAuth {
+                            kind: AuthSchemeKind::Bearer,
+                            scopes: vec!["read".to_string(), "write".to_string()],
+                        },
+                    )]),
+                    parameters: BTreeMap::from([(
+                        "query:page".to_string(),
+                        WireParameter {
+                            required: false,
+                            schema: "sha256:schema".to_string(),
+                        },
+                    )]),
+                    request_body: Some(BTreeMap::from([(
+                        "application/json".to_string(),
+                        "sha256:schema".to_string(),
+                    )])),
+                    responses: BTreeMap::from([(
+                        "200".to_string(),
+                        BTreeMap::from([(
+                            "application/json".to_string(),
+                            "sha256:schema".to_string(),
+                        )]),
+                    )]),
+                },
+            )]),
+            schemas: BTreeMap::from([("sha256:schema".to_string(), schema)]),
+        }
+    }
+
+    fn assert_control_rejected(contract: &Contract) {
+        let error = validate_contract_semantics(contract)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("control character"), "{error}");
+        assert!(!error.contains('\u{1b}'), "{error:?}");
+    }
+
+    #[test]
+    fn rejects_control_characters_from_every_wire_string_category() {
+        let mut contract = fixture();
+        let operation = contract.operations.get_mut("GET /users").unwrap();
+        let auth = operation.auth.remove("bearer").unwrap();
+        operation.auth.insert("bearer\u{1b}".to_string(), auth);
+        assert_control_rejected(&contract);
+
+        let mut contract = fixture();
+        contract
+            .operations
+            .get_mut("GET /users")
+            .unwrap()
+            .responses
+            .insert("2\u{1b}00".to_string(), BTreeMap::new());
+        assert_control_rejected(&contract);
+
+        let mut contract = fixture();
+        contract
+            .operations
+            .get_mut("GET /users")
+            .unwrap()
+            .request_body
+            .as_mut()
+            .unwrap()
+            .insert(
+                "application/\u{1b}json".to_string(),
+                "sha256:schema".to_string(),
+            );
+        assert_control_rejected(&contract);
+
+        let mut contract = fixture();
+        contract.schemas.get_mut("sha256:schema").unwrap().format = Some("u\u{1b}uid".to_string());
+        assert_control_rejected(&contract);
+
+        let mut contract = fixture();
+        contract
+            .schemas
+            .get_mut("sha256:schema")
+            .unwrap()
+            .enum_values[0] = "a\u{1b}".to_string();
+        assert_control_rejected(&contract);
+
+        let mut contract = fixture();
+        let schema = contract.schemas.get_mut("sha256:schema").unwrap();
+        let property = schema.properties.remove("value").unwrap();
+        schema
+            .properties
+            .insert("val\u{1b}ue".to_string(), property);
+        assert_control_rejected(&contract);
+    }
+
+    #[test]
+    fn rejects_unsorted_or_duplicate_normalized_arrays() {
+        let mut contract = fixture();
+        contract
+            .operations
+            .get_mut("GET /users")
+            .unwrap()
+            .auth
+            .get_mut("bearer")
+            .unwrap()
+            .scopes = vec!["write".to_string(), "read".to_string()];
+        assert!(validate_contract_semantics(&contract)
+            .unwrap_err()
+            .to_string()
+            .contains("sorted and contain no duplicates"));
+
+        let mut contract = fixture();
+        contract
+            .schemas
+            .get_mut("sha256:schema")
+            .unwrap()
+            .enum_values = vec!["a".to_string(), "a".to_string()];
+        assert!(validate_contract_semantics(&contract)
+            .unwrap_err()
+            .to_string()
+            .contains("sorted and contain no duplicates"));
+    }
 }
 
 #[cfg(test)]

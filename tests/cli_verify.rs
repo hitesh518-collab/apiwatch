@@ -782,7 +782,7 @@ fn verify_sarif_reports_drift_and_exit_one() {
     );
     assert_eq!(
         results[0]["partialFingerprints"]["apiwatch/v1"],
-        "diff:apiwatch/diff-breaking:GET:/users:endpoint removed"
+        "verify:users:apiwatch/diff-breaking:GET:/users:endpoint removed"
     );
     assert_eq!(
         results[2]["message"]["text"],
@@ -791,7 +791,7 @@ fn verify_sarif_reports_drift_and_exit_one() {
     assert_eq!(results[2]["level"], "warning");
     assert_eq!(
         results[2]["partialFingerprints"]["apiwatch/v1"],
-        "diff:apiwatch/diff-warning:POST:/users:endpoint added outside route-only lock"
+        "verify:users:apiwatch/diff-warning:POST:/users:endpoint added outside route-only lock"
     );
 }
 

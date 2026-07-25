@@ -21,11 +21,14 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
                 .auth
                 .iter()
                 .map(|(name, requirement)| {
+                    let mut scopes = requirement.scopes.clone();
+                    scopes.sort();
+                    scopes.dedup();
                     (
                         name.clone(),
                         WireAuth {
                             kind: requirement.kind,
-                            scopes: requirement.scopes.clone(),
+                            scopes,
                         },
                     )
                 })
@@ -99,11 +102,14 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
             ))
         })
         .collect::<Result<_>>()?;
+    let mut enum_values = schema.enum_values.clone();
+    enum_values.sort();
+    enum_values.dedup();
     let wire = WireSchema {
         kind: schema.kind.clone(),
         nullable: schema.nullable,
         format: schema.format.clone(),
-        enum_values: schema.enum_values.clone(),
+        enum_values,
         properties,
     };
     insert_wire_schema(wire, schemas, &canonical::schema_id)
@@ -318,7 +324,7 @@ fn visit_schema(
     Ok(())
 }
 
-fn parse_operation_key(value: &str) -> Result<OperationKey> {
+pub(super) fn parse_operation_key(value: &str) -> Result<OperationKey> {
     let (method, path) = value
         .split_once(' ')
         .ok_or_else(|| anyhow!("invalid v3 operation key"))?;
@@ -348,7 +354,7 @@ fn parse_operation_key(value: &str) -> Result<OperationKey> {
     })
 }
 
-fn parse_parameter_key(value: &str) -> Result<ParameterKey> {
+pub(super) fn parse_parameter_key(value: &str) -> Result<ParameterKey> {
     let (location, name) = value
         .split_once(':')
         .ok_or_else(|| anyhow!("invalid v3 parameter key"))?;

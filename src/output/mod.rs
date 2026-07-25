@@ -351,40 +351,17 @@ pub fn render_verify_changes_json(name: &str, changes: &[VerifyChange]) -> Resul
 }
 
 pub fn render_changes_sarif(artifact_path: &Path, changes: &[Change]) -> Result<String> {
-    render_declared_verify_sarif(artifact_path, "", None, changes)
+    render_sarif(change_sarif_results(artifact_path, "diff", changes))
 }
 
 pub fn render_declared_verify_sarif(
     artifact_path: &Path,
-    _name: &str,
+    name: &str,
     limitation: Option<Limitation>,
     changes: &[Change],
 ) -> Result<String> {
-    let artifact_uri = render_artifact_uri(artifact_path);
-    let results = changes
-        .iter()
-        .map(|change| {
-            let (rule_id, level) = match change.severity {
-                Severity::Breaking => ("apiwatch/diff-breaking", "error"),
-                Severity::Warning => ("apiwatch/diff-warning", "warning"),
-                Severity::NonBreaking => ("apiwatch/diff-non-breaking", "note"),
-            };
-            let method = change.operation.method.as_str();
-            let message = change.message.clone();
-
-            sarif_result(
-                rule_id,
-                level,
-                message.clone(),
-                artifact_uri.clone(),
-                format!(
-                    "diff:{rule_id}:{method}:{}:{message}",
-                    change.operation.path
-                ),
-            )
-        })
-        .collect();
-
+    let fingerprint_context = format!("verify:{name}");
+    let results = change_sarif_results(artifact_path, &fingerprint_context, changes);
     let invocations = limitation
         .into_iter()
         .map(|limitation| match limitation {
@@ -403,6 +380,37 @@ pub fn render_declared_verify_sarif(
         })
         .collect();
     render_sarif_with_invocations(results, invocations)
+}
+
+fn change_sarif_results(
+    artifact_path: &Path,
+    fingerprint_context: &str,
+    changes: &[Change],
+) -> Vec<SarifResult> {
+    let artifact_uri = render_artifact_uri(artifact_path);
+    changes
+        .iter()
+        .map(|change| {
+            let (rule_id, level) = match change.severity {
+                Severity::Breaking => ("apiwatch/diff-breaking", "error"),
+                Severity::Warning => ("apiwatch/diff-warning", "warning"),
+                Severity::NonBreaking => ("apiwatch/diff-non-breaking", "note"),
+            };
+            let method = change.operation.method.as_str();
+            let message = change.message.clone();
+
+            sarif_result(
+                rule_id,
+                level,
+                message.clone(),
+                artifact_uri.clone(),
+                format!(
+                    "{fingerprint_context}:{rule_id}:{method}:{}:{message}",
+                    change.operation.path
+                ),
+            )
+        })
+        .collect()
 }
 
 pub fn render_verify_changes_sarif(
@@ -768,13 +776,39 @@ fn observed_sarif_rules() -> Vec<SarifRule> {
 mod tests {
     use std::path::Path;
 
-    use super::render_artifact_uri;
+    use crate::diff::{Change, Severity};
+
+    use super::{render_artifact_uri, render_declared_verify_sarif};
 
     #[test]
     fn render_artifact_uri_normalizes_backslashes() {
         assert_eq!(
             render_artifact_uri(Path::new(r"testdata\openapi\endpoint_removed_new.yaml")),
             "testdata/openapi/endpoint_removed_new.yaml"
+        );
+    }
+
+    #[test]
+    fn declared_verify_sarif_fingerprints_include_the_api_name() {
+        let changes = vec![Change {
+            severity: Severity::Breaking,
+            operation: crate::lock_size::parse_operation_selector("GET /users").unwrap(),
+            message: "endpoint removed".to_string(),
+        }];
+        let users: serde_json::Value = serde_json::from_str(
+            &render_declared_verify_sarif(Path::new("api.lock"), "users", None, &changes)
+                .expect("users SARIF should render"),
+        )
+        .unwrap();
+        let payments: serde_json::Value = serde_json::from_str(
+            &render_declared_verify_sarif(Path::new("api.lock"), "payments", None, &changes)
+                .expect("payments SARIF should render"),
+        )
+        .unwrap();
+
+        assert_ne!(
+            users["runs"][0]["results"][0]["partialFingerprints"]["apiwatch/v1"],
+            payments["runs"][0]["results"][0]["partialFingerprints"]["apiwatch/v1"]
         );
     }
 }

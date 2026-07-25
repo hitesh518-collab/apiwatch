@@ -295,6 +295,10 @@ pub fn replace_declared(
             .cloned()
             .collect();
         if !remaining.is_empty() {
+            let remaining = remaining
+                .iter()
+                .map(|name| sanitized(name))
+                .collect::<Vec<_>>();
             return Err(anyhow!(
                 "cannot migrate api.lock to v3; migration requires original sources for: {}",
                 remaining.join(", ")
@@ -493,12 +497,22 @@ pub fn scope_current_for_verify(current: &ApiContract, scope: &v3::Scope) -> Res
 }
 
 fn normalized_name(name: &str) -> Result<&str> {
+    if name.chars().any(char::is_control) {
+        return Err(anyhow!("api name contains a control character"));
+    }
     let name = name.trim();
     if name.is_empty() {
         return Err(anyhow!("api name cannot be empty"));
     }
 
     Ok(name)
+}
+
+fn sanitized(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_control())
+        .collect()
 }
 
 fn normalized_locked_operation(operation: &LockedOperation) -> Result<LockedOperation> {
@@ -583,6 +597,36 @@ mod tests {
 
         assert!(error.to_string().contains("requires original sources"));
         assert!(error.to_string().contains("payments"));
+    }
+
+    #[test]
+    fn migration_diagnostics_do_not_echo_control_characters_from_legacy_names() {
+        let lock = ApiLock {
+            version: 2,
+            legacy_declared: BTreeMap::from([
+                (
+                    "users".to_string(),
+                    LockedApi {
+                        source: "openapi".to_string(),
+                        operations: Vec::new(),
+                    },
+                ),
+                (
+                    "payments\u{1b}[31m".to_string(),
+                    LockedApi {
+                        source: "openapi".to_string(),
+                        operations: Vec::new(),
+                    },
+                ),
+            ]),
+            declared: BTreeMap::new(),
+            observed: BTreeMap::new(),
+        };
+
+        let error = replace_declared(lock, "users", v3_declared_fixture())
+            .expect_err("ambiguous migration should fail safely");
+
+        assert!(!error.to_string().contains('\u{1b}'));
     }
 
     #[test]
@@ -866,6 +910,21 @@ mod tests {
     }
 
     #[test]
+    fn v3_rejects_control_characters_in_extension_strings_without_echoing_them() {
+        let extensions = BTreeMap::from([(
+            "x-vendor".to_string(),
+            serde_json::json!({"nested": "unsafe\u{1b}"}),
+        )]);
+
+        let error = super::v3::contract_digest_for_test(&extensions)
+            .expect_err("extension control characters should fail")
+            .to_string();
+
+        assert!(error.contains("control character"), "{error}");
+        assert!(!error.contains('\u{1b}'), "{error:?}");
+    }
+
+    #[test]
     fn v3_interns_repeated_schemas_and_expands_the_original_contract() {
         use crate::contract::{HttpMethod, Operation, OperationKey, Response, Schema, SchemaKind};
 
@@ -1043,5 +1102,74 @@ mod tests {
         assert!(error
             .to_string()
             .contains("failed to parse api.lock v3 YAML"));
+    }
+
+    #[test]
+    fn v3_rejects_api_names_with_surrounding_whitespace() {
+        let rendered = fs::read_to_string("testdata/lock/v3_private.lock")
+            .expect("v3 fixture should be readable")
+            .replace("  private:", "  ' private ':");
+
+        let error = super::v3::load(&rendered).expect_err("noncanonical api name should fail");
+
+        assert!(error.to_string().contains("surrounding whitespace"));
+    }
+
+    #[test]
+    fn v3_rejects_unknown_fields_in_nested_observed_shapes() {
+        let rendered = "\
+version: 3
+apis:
+  portfolio:
+    provenance: observed
+    shape:
+      kind: object
+      observations: 1
+      properties:
+        value:
+          observations: 1
+          shape:
+            kind: string
+            unexpected: true
+";
+
+        let error =
+            super::v3::load(rendered).expect_err("nested observed fields must be strict in v3");
+
+        assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn v3_rejects_noncanonical_stored_scope_selectors() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+
+        let error = super::v3::build_declared(
+            &source,
+            super::v3::Scope::operations(vec!["get /accounts".to_string()]),
+            super::v3::DEFAULT_MAX_LOCK_BYTES,
+            BTreeMap::new(),
+        )
+        .expect_err("stored selectors must use canonical uppercase methods");
+
+        assert!(error.to_string().contains("canonical"));
+    }
+
+    #[test]
+    fn v3_rejects_scope_contract_mismatches() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+
+        let error = super::v3::build_declared(
+            &source,
+            super::v3::Scope::operations(vec!["GET /users".to_string()]),
+            super::v3::DEFAULT_MAX_LOCK_BYTES,
+            BTreeMap::new(),
+        )
+        .expect_err("scope must exactly describe stored operations");
+
+        assert!(error.to_string().contains("does not match"));
     }
 }

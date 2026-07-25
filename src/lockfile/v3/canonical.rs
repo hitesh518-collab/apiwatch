@@ -57,6 +57,37 @@ pub(super) fn validate_extensions(extensions: &Extensions) -> Result<()> {
             sanitized(key)
         ));
     }
+    for (key, value) in extensions {
+        validate_extension_string(key)?;
+        validate_extension_value(value)?;
+    }
+    Ok(())
+}
+
+fn validate_extension_value(value: &Value) -> Result<()> {
+    match value {
+        Value::String(value) => validate_extension_string(value),
+        Value::Array(values) => {
+            for value in values {
+                validate_extension_value(value)?;
+            }
+            Ok(())
+        }
+        Value::Object(values) => {
+            for (key, value) in values {
+                validate_extension_string(key)?;
+                validate_extension_value(value)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_extension_string(value: &str) -> Result<()> {
+    if value.chars().any(char::is_control) {
+        return Err(anyhow!("extension contains a control character"));
+    }
     Ok(())
 }
 
