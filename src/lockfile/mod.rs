@@ -8,12 +8,16 @@ use serde::{Deserialize, Serialize};
 use crate::contract::ApiContract;
 use crate::observed::{apply_map_annotations, merge as merge_shapes, Shape};
 
-mod v3;
+#[doc(hidden)]
+pub mod v3;
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiLock {
     version: u8,
-    apis: BTreeMap<String, LockedApi>,
+    #[serde(rename = "apis")]
+    legacy_declared: BTreeMap<String, LockedApi>,
+    #[serde(skip)]
+    declared: BTreeMap<String, v3::DeclaredEntry>,
     #[serde(skip)]
     observed: BTreeMap<String, Shape>,
 }
@@ -131,7 +135,8 @@ pub fn from_contract(name: &str, contract: &ApiContract) -> Result<ApiLock> {
 
     Ok(ApiLock {
         version: 1,
-        apis,
+        legacy_declared: apis,
+        declared: BTreeMap::new(),
         observed: BTreeMap::new(),
     })
 }
@@ -140,9 +145,15 @@ pub fn render(lock: &ApiLock) -> Result<String> {
     if lock.version == 1 {
         return serde_yaml::to_string(lock).context("failed to serialize lockfile");
     }
+    if lock.version == 3 {
+        return v3::render(&v3::V3Lock::from_parts(
+            lock.declared.clone(),
+            lock.observed.clone(),
+        ));
+    }
 
     let mut apis = BTreeMap::new();
-    for (name, api) in &lock.apis {
+    for (name, api) in &lock.legacy_declared {
         apis.insert(
             name,
             V2RenderedApi::Declared {
@@ -175,8 +186,70 @@ pub fn load(path: &Path) -> Result<ApiLock> {
     match header.version {
         1 => serde_yaml::from_str(&contents).context("failed to parse api.lock YAML"),
         2 => load_v2(&contents),
+        3 => {
+            let (declared, observed) = v3::load(&contents)?.into_parts();
+            Ok(ApiLock {
+                version: 3,
+                legacy_declared: BTreeMap::new(),
+                declared,
+                observed,
+            })
+        }
         version => Err(anyhow!("unsupported api.lock version {version}")),
     }
+}
+
+pub fn new_v3(name: &str, entry: v3::DeclaredEntry) -> Result<ApiLock> {
+    let name = normalized_name(name)?.to_owned();
+    let lock = ApiLock {
+        version: 3,
+        legacy_declared: BTreeMap::new(),
+        declared: BTreeMap::from([(name, entry)]),
+        observed: BTreeMap::new(),
+    };
+    v3::render(&v3::V3Lock::from_parts(
+        lock.declared.clone(),
+        BTreeMap::new(),
+    ))?;
+    Ok(lock)
+}
+
+pub fn replace_declared(
+    mut lock: ApiLock,
+    name: &str,
+    entry: v3::DeclaredEntry,
+) -> Result<ApiLock> {
+    let name = normalized_name(name)?.to_owned();
+    if lock.observed.contains_key(&name) {
+        return Err(anyhow!(
+            "api {name} is observed and cannot be replaced as declared"
+        ));
+    }
+    if lock.version < 3 {
+        if !lock.legacy_declared.contains_key(&name) {
+            return Err(anyhow!("legacy declared api {name} not found"));
+        }
+        let remaining: Vec<_> = lock
+            .legacy_declared
+            .keys()
+            .filter(|candidate| candidate.as_str() != name)
+            .cloned()
+            .collect();
+        if !remaining.is_empty() {
+            return Err(anyhow!(
+                "cannot migrate api.lock to v3; migration requires original sources for: {}",
+                remaining.join(", ")
+            ));
+        }
+        lock.legacy_declared.clear();
+    }
+    lock.version = 3;
+    lock.declared.insert(name, entry);
+    v3::render(&v3::V3Lock::from_parts(
+        lock.declared.clone(),
+        lock.observed.clone(),
+    ))?;
+    Ok(lock)
 }
 
 pub fn record_observed(
@@ -187,7 +260,7 @@ pub fn record_observed(
     map_paths: &[String],
 ) -> Result<()> {
     let name = normalized_name(name)?;
-    if lock.apis.contains_key(name) {
+    if lock.legacy_declared.contains_key(name) || lock.declared.contains_key(name) {
         return Err(anyhow!(
             "api {name} is declared and cannot be recorded as observed"
         ));
@@ -210,7 +283,9 @@ pub fn record_observed(
         }
     }
 
-    lock.version = 2;
+    if lock.version < 3 {
+        lock.version = 2;
+    }
     Ok(())
 }
 
@@ -220,7 +295,8 @@ pub fn load_or_create_for_record(path: &Path) -> Result<ApiLock> {
     } else {
         Ok(ApiLock {
             version: 2,
-            apis: BTreeMap::new(),
+            legacy_declared: BTreeMap::new(),
+            declared: BTreeMap::new(),
             observed: BTreeMap::new(),
         })
     }
@@ -257,7 +333,8 @@ fn load_v2(contents: &str) -> Result<ApiLock> {
 
     Ok(ApiLock {
         version: 2,
-        apis,
+        legacy_declared: apis,
+        declared: BTreeMap::new(),
         observed,
     })
 }
@@ -272,7 +349,7 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
         });
     }
     let api = lock
-        .apis
+        .legacy_declared
         .get(name)
         .ok_or_else(|| anyhow!("api {name} not found in lockfile"))?;
 
@@ -383,11 +460,87 @@ mod tests {
 
     use super::*;
 
+    fn v3_declared_fixture() -> v3::DeclaredEntry {
+        let contract =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        v3::build_declared(
+            &contract,
+            v3::Scope::all(),
+            v3::DEFAULT_MAX_LOCK_BYTES,
+            BTreeMap::new(),
+        )
+        .expect("v3 fixture should build")
+    }
+
+    #[test]
+    fn replaces_the_sole_legacy_declared_entry_and_preserves_observed() {
+        let lock = load(Path::new("testdata/lock/v2_declared_observed.lock"))
+            .expect("v2 fixture should load");
+        let entry = v3_declared_fixture();
+
+        let migrated =
+            replace_declared(lock, "users", entry.clone()).expect("migration should succeed");
+        let rendered = render(&migrated).expect("v3 lock should render");
+
+        assert!(rendered.starts_with("version: 3\n"));
+        assert!(rendered.contains("provenance: declared"));
+        assert!(rendered.contains("provenance: observed"));
+        assert_eq!(migrated.declared["users"], entry);
+    }
+
+    #[test]
+    fn refuses_partial_migration_of_multiple_legacy_entries() {
+        let lock = load(Path::new("testdata/lock/v2_multiple_declared.lock"))
+            .expect("v2 fixture should load");
+
+        let error = replace_declared(lock, "users", v3_declared_fixture())
+            .expect_err("partial migration must fail");
+
+        assert!(error.to_string().contains("requires original sources"));
+        assert!(error.to_string().contains("payments"));
+    }
+
+    #[test]
+    fn refuses_to_replace_an_observed_name() {
+        let lock = load(Path::new("testdata/lock/v2_declared_observed.lock"))
+            .expect("v2 fixture should load");
+
+        let error = replace_declared(lock, "portfolio", v3_declared_fixture())
+            .expect_err("observed entry must not become declared");
+
+        assert!(error.to_string().contains("is observed"));
+    }
+
+    #[test]
+    fn top_level_load_and_render_round_trip_v3() {
+        let expected = fs::read_to_string("testdata/lock/v3_private.lock")
+            .expect("v3 fixture should be readable");
+        let lock =
+            load(Path::new("testdata/lock/v3_private.lock")).expect("v3 fixture should load");
+
+        assert_eq!(render(&lock).expect("v3 fixture should render"), expected);
+    }
+
+    #[test]
+    fn recording_an_observed_entry_preserves_v3() {
+        let mut lock =
+            load(Path::new("testdata/lock/v3_private.lock")).expect("v3 fixture should load");
+
+        record_observed(&mut lock, "portfolio", Shape::String, false, &[])
+            .expect("observed entry should record");
+        let rendered = render(&lock).expect("v3 lock should render");
+
+        assert!(rendered.starts_with("version: 3\n"));
+        assert!(rendered.contains("provenance: declared"));
+        assert!(rendered.contains("provenance: observed"));
+    }
+
     #[test]
     fn compare_verify_target_reports_removed_before_added_in_order() {
         let lock = ApiLock {
             version: 1,
-            apis: BTreeMap::from([(
+            legacy_declared: BTreeMap::from([(
                 "users".to_string(),
                 LockedApi {
                     source: "openapi".to_string(),
@@ -403,6 +556,7 @@ mod tests {
                     ],
                 },
             )]),
+            declared: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
         let current =
@@ -443,7 +597,7 @@ mod tests {
     fn select_verify_target_normalizes_locked_method_case() {
         let lock = ApiLock {
             version: 1,
-            apis: BTreeMap::from([(
+            legacy_declared: BTreeMap::from([(
                 "users".to_string(),
                 LockedApi {
                     source: "openapi".to_string(),
@@ -453,6 +607,7 @@ mod tests {
                     }],
                 },
             )]),
+            declared: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
         let current =
@@ -475,7 +630,7 @@ mod tests {
     fn select_verify_target_rejects_an_unsupported_locked_method() {
         let lock = ApiLock {
             version: 1,
-            apis: BTreeMap::from([(
+            legacy_declared: BTreeMap::from([(
                 "users".to_string(),
                 LockedApi {
                     source: "openapi".to_string(),
@@ -485,6 +640,7 @@ mod tests {
                     }],
                 },
             )]),
+            declared: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
 
@@ -500,7 +656,7 @@ mod tests {
     fn select_verify_target_rejects_a_locked_path_with_a_control_character() {
         let lock = ApiLock {
             version: 1,
-            apis: BTreeMap::from([(
+            legacy_declared: BTreeMap::from([(
                 "users".to_string(),
                 LockedApi {
                     source: "openapi".to_string(),
@@ -510,6 +666,7 @@ mod tests {
                     }],
                 },
             )]),
+            declared: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
 
@@ -529,7 +686,7 @@ mod tests {
         let error = load(Path::new("testdata/lock/verify_unsupported_version.lock"))
             .expect_err("version 3 lockfile should be rejected");
 
-        assert!(error.to_string().contains("unsupported api.lock version 3"));
+        assert!(error.to_string().contains("unsupported api.lock version 4"));
     }
 
     #[test]
@@ -556,7 +713,8 @@ mod tests {
     fn invalid_map_annotation_leaves_an_existing_observed_entry_unchanged() {
         let mut lock = ApiLock {
             version: 2,
-            apis: BTreeMap::new(),
+            legacy_declared: BTreeMap::new(),
+            declared: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
         record_observed(

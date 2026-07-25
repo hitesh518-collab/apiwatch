@@ -1070,7 +1070,7 @@ fn verify_exits_two_for_an_unsupported_lockfile_version() {
     .assert()
     .code(2)
     .stdout(predicate::str::is_empty())
-    .stderr(predicate::str::contains("unsupported api.lock version 3"));
+    .stderr(predicate::str::contains("unsupported api.lock version 4"));
 }
 
 #[test]

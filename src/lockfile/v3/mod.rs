@@ -34,6 +34,43 @@ impl V3Lock {
             _ => None,
         }
     }
+
+    pub(super) fn from_parts(
+        declared: BTreeMap<String, DeclaredEntry>,
+        observed: BTreeMap<String, crate::observed::Shape>,
+    ) -> Self {
+        let mut apis = declared
+            .into_iter()
+            .map(|(name, entry)| (name, V3Api::Declared(entry)))
+            .collect::<BTreeMap<_, _>>();
+        apis.extend(
+            observed
+                .into_iter()
+                .map(|(name, shape)| (name, V3Api::Observed(ObservedEntry { shape }))),
+        );
+        Self { version: 3, apis }
+    }
+
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        BTreeMap<String, DeclaredEntry>,
+        BTreeMap<String, crate::observed::Shape>,
+    ) {
+        let mut declared = BTreeMap::new();
+        let mut observed = BTreeMap::new();
+        for (name, api) in self.apis {
+            match api {
+                V3Api::Declared(entry) => {
+                    declared.insert(name, entry);
+                }
+                V3Api::Observed(entry) => {
+                    observed.insert(name, entry.shape);
+                }
+            }
+        }
+        (declared, observed)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,7 +113,7 @@ pub(super) struct OperationScope {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct DeclaredEntry {
+pub struct DeclaredEntry {
     source: String,
     scope: Scope,
     max_lock_bytes: u64,

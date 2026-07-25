@@ -1,0 +1,12 @@
+version: 2
+apis:
+  portfolio:
+    provenance: observed
+    shape:
+      kind: string
+  users:
+    provenance: declared
+    source: openapi
+    operations:
+      - method: GET
+        path: /users
