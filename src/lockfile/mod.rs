@@ -378,6 +378,7 @@ fn normalized_locked_operation(operation: &LockedOperation) -> Result<LockedOper
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::fs;
     use std::path::Path;
 
     use super::*;
@@ -696,5 +697,109 @@ mod tests {
             .expect_err("different schemas with one digest should fail");
 
         assert!(error.to_string().contains("schema digest collision"));
+    }
+
+    #[test]
+    fn v3_builds_and_round_trips_a_deterministic_declared_entry() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        let entry = super::v3::build_declared(
+            &source,
+            super::v3::Scope::all(),
+            super::v3::DEFAULT_MAX_LOCK_BYTES,
+            BTreeMap::new(),
+        )
+        .expect("entry should build");
+        let lock = super::v3::V3Lock::single_declared("private", entry).expect("lock should build");
+
+        let first = super::v3::render(&lock).expect("lock should render");
+        let parsed = super::v3::load(&first).expect("lock should load");
+        let second = super::v3::render(&parsed).expect("lock should rerender");
+        let expanded = super::v3::validate_declared(
+            "private",
+            parsed.declared("private").expect("entry should exist"),
+        )
+        .expect("entry should validate");
+
+        assert_eq!(
+            first,
+            fs::read_to_string("testdata/lock/v3_private.lock")
+                .expect("golden v3 lockfile should exist")
+        );
+        assert_eq!(first, second);
+        assert_eq!(expanded, source);
+        for sentinel in crate::lock_size::PRIVACY_SENTINELS {
+            assert!(!first.contains(sentinel), "leaked {sentinel}");
+        }
+    }
+
+    #[test]
+    fn v3_enforces_the_exact_contract_byte_limit() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        let measured =
+            super::v3::measured_contract_bytes_for_test(&source).expect("contract should measure");
+
+        assert!(super::v3::build_declared(
+            &source,
+            super::v3::Scope::all(),
+            measured,
+            BTreeMap::new(),
+        )
+        .is_ok());
+        let error = super::v3::build_declared(
+            &source,
+            super::v3::Scope::all(),
+            measured - 1,
+            BTreeMap::new(),
+        )
+        .expect_err("one byte below the payload should fail");
+        assert!(error.to_string().contains("exceeds"));
+    }
+
+    #[test]
+    fn v3_revalidates_contract_bytes_and_digest() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+
+        assert!(super::v3::tampered_contract_bytes_error_for_test(&source)
+            .expect_err("tampered byte count should fail")
+            .to_string()
+            .contains("contract byte count mismatch"));
+        assert!(super::v3::tampered_contract_digest_error_for_test(&source)
+            .expect_err("tampered contract digest should fail")
+            .to_string()
+            .contains("contract digest mismatch"));
+    }
+
+    #[test]
+    fn v3_rejects_unknown_semantic_fields() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        let entry = super::v3::build_declared(
+            &source,
+            super::v3::Scope::all(),
+            super::v3::DEFAULT_MAX_LOCK_BYTES,
+            BTreeMap::new(),
+        )
+        .expect("entry should build");
+        let rendered = super::v3::render(
+            &super::v3::V3Lock::single_declared("private", entry).expect("lock should build"),
+        )
+        .expect("lock should render");
+        let tampered = rendered.replace(
+            "    source: openapi",
+            "    source: openapi\n    unexpected: true",
+        );
+
+        let error = super::v3::load(&tampered).expect_err("unknown field should fail");
+
+        assert!(error
+            .to_string()
+            .contains("failed to parse api.lock v3 YAML"));
     }
 }
