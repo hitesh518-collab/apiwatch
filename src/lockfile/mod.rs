@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::contract::ApiContract;
 use crate::observed::{apply_map_annotations, merge as merge_shapes, Shape};
 
+mod v3;
+
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiLock {
     version: u8,
@@ -577,5 +579,122 @@ mod tests {
 
         assert!(error.to_string().contains("invalid map annotation"));
         assert_eq!(render(&lock).expect("lock should serialize"), before);
+    }
+
+    #[test]
+    fn v3_schema_ids_are_domain_separated_and_stable() {
+        let schema = super::v3::WireSchema::unknown();
+
+        let first = super::v3::schema_id_for_test(&schema).expect("schema should hash");
+        let second = super::v3::schema_id_for_test(&schema).expect("schema should hash");
+
+        assert_eq!(first, second);
+        assert!(first.starts_with("sha256:"));
+        assert_eq!(first.len(), 71);
+    }
+
+    #[test]
+    fn v3_extension_order_does_not_change_contract_digest() {
+        let left = BTreeMap::from([
+            ("x-b".to_string(), serde_json::json!({"z": 2, "a": 1})),
+            ("x-a".to_string(), serde_json::json!(true)),
+        ]);
+        let right = BTreeMap::from([
+            ("x-a".to_string(), serde_json::json!(true)),
+            ("x-b".to_string(), serde_json::json!({"a": 1, "z": 2})),
+        ]);
+
+        assert_eq!(
+            super::v3::contract_digest_for_test(&left).expect("extensions should hash"),
+            super::v3::contract_digest_for_test(&right).expect("extensions should hash")
+        );
+    }
+
+    #[test]
+    fn v3_rejects_extension_keys_without_x_prefix() {
+        let extensions = BTreeMap::from([("vendor".to_string(), serde_json::json!(true))]);
+
+        let error = super::v3::contract_digest_for_test(&extensions)
+            .expect_err("non-prefixed extension should fail");
+
+        assert!(error
+            .to_string()
+            .contains("extension key must start with x-"));
+    }
+
+    #[test]
+    fn v3_interns_repeated_schemas_and_expands_the_original_contract() {
+        use crate::contract::{HttpMethod, Operation, OperationKey, Response, Schema, SchemaKind};
+
+        let schema = Schema {
+            kind: SchemaKind::String,
+            nullable: false,
+            format: Some("uuid".to_string()),
+            enum_values: Vec::new(),
+            properties: BTreeMap::new(),
+        };
+        let operation = |path: &str| {
+            (
+                OperationKey {
+                    method: HttpMethod::Get,
+                    path: path.to_string(),
+                },
+                Operation {
+                    auth: BTreeMap::new(),
+                    parameters: BTreeMap::new(),
+                    request_body: None,
+                    responses: BTreeMap::from([(
+                        "200".to_string(),
+                        Response {
+                            content: BTreeMap::from([(
+                                "application/json".to_string(),
+                                schema.clone(),
+                            )]),
+                        },
+                    )]),
+                },
+            )
+        };
+        let contract = ApiContract {
+            operations: BTreeMap::from([operation("/accounts"), operation("/users")]),
+        };
+
+        let (schema_count, expanded) =
+            super::v3::intern_and_expand_for_test(&contract).expect("contract should round trip");
+
+        assert_eq!(schema_count, 1);
+        assert_eq!(expanded, contract);
+    }
+
+    #[test]
+    fn v3_rejects_a_tampered_schema_digest() {
+        let contract =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+
+        let error = super::v3::tampered_schema_error_for_test(&contract)
+            .expect_err("tampered schema ID should fail");
+
+        assert!(error.to_string().contains("schema digest mismatch"));
+    }
+
+    #[test]
+    fn v3_rejects_an_orphan_schema() {
+        let contract =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+
+        let error = super::v3::orphan_schema_error_for_test(&contract)
+            .expect_err("orphan schema should fail");
+
+        assert!(error.to_string().contains("orphan schema"));
+    }
+
+    #[test]
+    fn v3_rejects_a_forced_schema_digest_collision() {
+        let error = super::v3::forced_collision_error_for_test()
+            .expect_err("different schemas with one digest should fail");
+
+        assert!(error.to_string().contains("schema digest collision"));
     }
 }
