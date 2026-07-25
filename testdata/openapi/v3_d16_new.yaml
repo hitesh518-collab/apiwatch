@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info:
+  title: D-16 new
+  version: 1.0.0
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+paths:
+  /accounts:
+    get:
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: account
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK

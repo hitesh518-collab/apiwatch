@@ -352,6 +352,27 @@ pub fn scope_contract(contract: &ApiContract, selectors: &[String]) -> Result<Ap
     Ok(ApiContract { operations })
 }
 
+pub fn scope_current_for_verify(
+    current: &ApiContract,
+    selectors: &[String],
+) -> Result<ApiContract> {
+    if selectors.is_empty() {
+        return Ok(current.clone());
+    }
+    let keys = selectors
+        .iter()
+        .map(|value| parse_operation_selector(value))
+        .collect::<Result<BTreeSet<_>>>()?;
+    Ok(ApiContract {
+        operations: current
+            .operations
+            .iter()
+            .filter(|(key, _)| keys.contains(*key))
+            .map(|(key, operation)| (key.clone(), operation.clone()))
+            .collect(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;

@@ -99,58 +99,95 @@ fn run() -> Result<i32> {
         } => {
             let lock = lockfile::load(&lock_path)?;
             let target = lockfile::select_verify_target(&lock, &name)?;
-            if let Some(expected) = target.observed_shape() {
-                if openapi.starts_with("http://") || openapi.starts_with("https://") {
-                    anyhow::bail!("observed verification requires a local JSON file");
+            match target.kind() {
+                lockfile::VerifyTargetKind::Observed { shape: expected } => {
+                    if openapi.starts_with("http://") || openapi.starts_with("https://") {
+                        anyhow::bail!("observed verification requires a local JSON file");
+                    }
+                    let current = observed::load_shape(std::path::Path::new(&openapi))?;
+                    let changes = observed::compare(expected, &current);
+                    let has_changes = !changes.is_empty();
+                    let rendered = match format {
+                        OutputFormat::Text if changes.is_empty() => {
+                            format!("Verified {}\n", target.name())
+                        }
+                        OutputFormat::Text => output::render_observed_verify_changes(&changes),
+                        OutputFormat::Json => {
+                            output::render_observed_verify_changes_json(target.name(), &changes)?
+                        }
+                        OutputFormat::Sarif => output::render_observed_verify_changes_sarif(
+                            &lock_path,
+                            target.name(),
+                            &changes,
+                        )?,
+                    };
+                    print!("{rendered}");
+                    Ok(if has_changes { 1 } else { 0 })
                 }
-                let current = observed::load_shape(std::path::Path::new(&openapi))?;
-                let changes = observed::compare(expected, &current);
-                let has_changes = !changes.is_empty();
-                let rendered = match format {
-                    OutputFormat::Text if changes.is_empty() => {
-                        format!("Verified {}\n", target.name())
-                    }
-                    OutputFormat::Text => output::render_observed_verify_changes(&changes),
-                    OutputFormat::Json => {
-                        output::render_observed_verify_changes_json(target.name(), &changes)?
-                    }
-                    OutputFormat::Sarif => output::render_observed_verify_changes_sarif(
-                        &lock_path,
-                        target.name(),
-                        &changes,
-                    )?,
-                };
-                print!("{rendered}");
-                return Ok(if has_changes { 1 } else { 0 });
-            }
-            let contract = openapi::load_contract_input(&openapi)?;
-            let changes = lockfile::compare_verify_target(&target, &contract);
+                lockfile::VerifyTargetKind::FullDeclared {
+                    contract: locked,
+                    scope,
+                } => {
+                    let current = openapi::load_contract_input(&openapi)?;
+                    let current = lockfile::scope_current_for_verify(&current, scope)?;
+                    let changes = diff::diff_contracts(locked, &current);
+                    let rendered = match format {
+                        OutputFormat::Text if changes.is_empty() => {
+                            format!("Verified {}\n", target.name())
+                        }
+                        OutputFormat::Text => output::render_changes(&changes),
+                        OutputFormat::Json => output::render_changes_json(&changes)?,
+                        OutputFormat::Sarif => output::render_changes_sarif(&lock_path, &changes)?,
+                    };
+                    print!("{rendered}");
+                    Ok(
+                        if changes
+                            .iter()
+                            .any(|change| change.severity == Severity::Breaking)
+                        {
+                            1
+                        } else {
+                            0
+                        },
+                    )
+                }
+                lockfile::VerifyTargetKind::LegacyDeclared { .. } => {
+                    let contract = openapi::load_contract_input(&openapi)?;
+                    let changes = lockfile::compare_verify_target(&target, &contract);
 
-            if changes.is_empty() {
-                match format {
-                    OutputFormat::Text => println!("Verified {}", target.name()),
-                    OutputFormat::Json => print!(
-                        "{}",
-                        output::render_verify_changes_json(target.name(), &changes)?
-                    ),
-                    OutputFormat::Sarif => print!(
-                        "{}",
-                        output::render_verify_changes_sarif(&lock_path, target.name(), &changes)?
-                    ),
+                    if changes.is_empty() {
+                        match format {
+                            OutputFormat::Text => println!("Verified {}", target.name()),
+                            OutputFormat::Json => print!(
+                                "{}",
+                                output::render_verify_changes_json(target.name(), &changes)?
+                            ),
+                            OutputFormat::Sarif => print!(
+                                "{}",
+                                output::render_verify_changes_sarif(
+                                    &lock_path,
+                                    target.name(),
+                                    &changes
+                                )?
+                            ),
+                        }
+                        Ok(0)
+                    } else {
+                        let rendered = match format {
+                            OutputFormat::Text => output::render_verify_changes(&changes),
+                            OutputFormat::Json => {
+                                output::render_verify_changes_json(target.name(), &changes)?
+                            }
+                            OutputFormat::Sarif => output::render_verify_changes_sarif(
+                                &lock_path,
+                                target.name(),
+                                &changes,
+                            )?,
+                        };
+                        print!("{rendered}");
+                        Ok(1)
+                    }
                 }
-                Ok(0)
-            } else {
-                let rendered = match format {
-                    OutputFormat::Text => output::render_verify_changes(&changes),
-                    OutputFormat::Json => {
-                        output::render_verify_changes_json(target.name(), &changes)?
-                    }
-                    OutputFormat::Sarif => {
-                        output::render_verify_changes_sarif(&lock_path, target.name(), &changes)?
-                    }
-                };
-                print!("{rendered}");
-                Ok(1)
             }
         }
     }

@@ -136,6 +136,42 @@ fn verify_command(openapi: &str, name: &str, lock: &str) -> Command {
     command
 }
 
+fn lock_from(openapi: &str, name: &str) -> PathBuf {
+    let lock = observed_lock_path();
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            openapi,
+            "--name",
+            name,
+            "--output",
+            lock.to_str().expect("temp path should be valid UTF-8"),
+        ])
+        .assert()
+        .success();
+    lock
+}
+
+fn scoped_lock(selector: &str) -> PathBuf {
+    let lock = observed_lock_path();
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/v3_scoped.yaml",
+            "--name",
+            "scoped",
+            "--output",
+            lock.to_str().expect("temp path should be valid UTF-8"),
+            "--include-operation",
+            selector,
+        ])
+        .assert()
+        .success();
+    lock
+}
+
 fn observed_lock_path() -> PathBuf {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -145,6 +181,94 @@ fn observed_lock_path() -> PathBuf {
         "apiwatch-observed-verify-{}-{suffix}.lock",
         std::process::id()
     ))
+}
+
+#[test]
+fn verify_v3_reports_exact_d16_findings() {
+    let lock = lock_from("testdata/openapi/v3_d16_old.yaml", "d16");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "verify",
+            "testdata/openapi/v3_d16_new.yaml",
+            "--name",
+            "d16",
+            "--lock",
+            lock.to_str().expect("temp path should be valid UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("verify should run");
+    fs::remove_file(lock).ok();
+
+    assert_eq!(output.status.code(), Some(1));
+    let rendered = parse_json_output(&output);
+    assert_eq!(rendered["summary"]["breaking"], 4);
+    assert_eq!(
+        rendered["changes"]
+            .as_array()
+            .expect("changes should be an array")
+            .iter()
+            .map(|change| change["message"]
+                .as_str()
+                .expect("message should be a string"))
+            .collect::<Vec<_>>(),
+        vec![
+            "authentication bearerAuth (bearer) added",
+            "query parameter account_id removed",
+            "query parameter account added as required",
+            "response status 204 removed",
+        ]
+    );
+}
+
+#[test]
+fn verify_v3_scope_ignores_unselected_additions() {
+    let lock = scoped_lock("GET /users");
+
+    verify_command(
+        "testdata/openapi/v3_scoped_added_unrelated.yaml",
+        "scoped",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .success()
+    .stdout("Verified scoped\n");
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_v3_selected_operation_removal_is_breaking() {
+    let lock = scoped_lock("GET /users");
+
+    verify_command(
+        "testdata/openapi/v3_scoped_without_users.yaml",
+        "scoped",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .code(1)
+    .stdout(predicate::str::contains("endpoint removed"));
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn verify_v3_warning_only_change_exits_zero() {
+    let lock = lock_from("testdata/openapi/status_error_added_old.yaml", "users");
+
+    verify_command(
+        "testdata/openapi/status_error_added_new.yaml",
+        "users",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("Warnings"));
+
+    fs::remove_file(lock).ok();
 }
 
 fn record_portfolio(lock: &Path) {

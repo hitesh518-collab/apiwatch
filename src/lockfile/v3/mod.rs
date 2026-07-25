@@ -103,6 +103,13 @@ impl Scope {
     pub(super) fn operations(operations: Vec<String>) -> Self {
         Self::Operations(OperationScope { operations })
     }
+
+    pub(super) fn selectors(&self) -> &[String] {
+        match self {
+            Self::All(_) => &[],
+            Self::Operations(scope) => &scope.operations,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,6 +135,12 @@ pub struct DeclaredEntry {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     extensions: Extensions,
     contract: Contract,
+}
+
+impl DeclaredEntry {
+    pub(super) fn scope(&self) -> &Scope {
+        &self.scope
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

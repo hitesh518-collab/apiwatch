@@ -1,0 +1,18 @@
+openapi: 3.0.3
+info:
+  title: D-16 old
+  version: 1.0.0
+paths:
+  /accounts:
+    get:
+      parameters:
+        - name: account_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "204":
+          description: No Content

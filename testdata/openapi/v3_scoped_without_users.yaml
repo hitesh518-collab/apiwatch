@@ -1,0 +1,10 @@
+openapi: 3.0.3
+info:
+  title: Scoped API without selected operation
+  version: 1.0.0
+paths:
+  /payments:
+    get:
+      responses:
+        "200":
+          description: OK

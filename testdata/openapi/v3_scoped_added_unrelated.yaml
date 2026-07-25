@@ -1,0 +1,15 @@
+openapi: 3.0.3
+info:
+  title: Scoped API with unrelated addition
+  version: 1.0.0
+paths:
+  /reports:
+    get:
+      responses:
+        "200":
+          description: OK
+  /users:
+    get:
+      responses:
+        "200":
+          description: OK

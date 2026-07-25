@@ -71,7 +71,7 @@ struct LockedApi {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-struct LockedOperation {
+pub struct LockedOperation {
     method: String,
     path: String,
 }
@@ -79,8 +79,21 @@ struct LockedOperation {
 #[derive(Debug, PartialEq, Eq)]
 pub struct VerifyTarget {
     name: String,
-    operations: BTreeSet<LockedOperation>,
-    observed_shape: Option<Shape>,
+    kind: VerifyTargetKind,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum VerifyTargetKind {
+    LegacyDeclared {
+        operations: BTreeSet<LockedOperation>,
+    },
+    FullDeclared {
+        contract: ApiContract,
+        scope: v3::Scope,
+    },
+    Observed {
+        shape: Shape,
+    },
 }
 
 impl VerifyTarget {
@@ -89,7 +102,14 @@ impl VerifyTarget {
     }
 
     pub fn observed_shape(&self) -> Option<&Shape> {
-        self.observed_shape.as_ref()
+        match &self.kind {
+            VerifyTargetKind::Observed { shape } => Some(shape),
+            _ => None,
+        }
+    }
+
+    pub fn kind(&self) -> &VerifyTargetKind {
+        &self.kind
     }
 }
 
@@ -382,8 +402,18 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
     if let Some(shape) = lock.observed.get(name) {
         return Ok(VerifyTarget {
             name: name.to_string(),
-            operations: BTreeSet::new(),
-            observed_shape: Some(shape.clone()),
+            kind: VerifyTargetKind::Observed {
+                shape: shape.clone(),
+            },
+        });
+    }
+    if let Some(entry) = lock.declared.get(name) {
+        return Ok(VerifyTarget {
+            name: name.to_string(),
+            kind: VerifyTargetKind::FullDeclared {
+                contract: v3::validate_declared(name, entry)?,
+                scope: entry.scope().clone(),
+            },
         });
     }
     let api = lock
@@ -411,12 +441,17 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
 
     Ok(VerifyTarget {
         name: name.to_string(),
-        operations,
-        observed_shape: None,
+        kind: VerifyTargetKind::LegacyDeclared { operations },
     })
 }
 
 pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Vec<VerifyChange> {
+    let VerifyTargetKind::LegacyDeclared {
+        operations: target_operations,
+    } = &target.kind
+    else {
+        return Vec::new();
+    };
     let current_operations: BTreeSet<_> = current
         .operations
         .keys()
@@ -427,7 +462,7 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Ve
         .collect();
     let mut changes = Vec::new();
 
-    for operation in target.operations.difference(&current_operations) {
+    for operation in target_operations.difference(&current_operations) {
         changes.push(VerifyChange {
             kind: VerifyChangeKind::Removed,
             method: operation.method.clone(),
@@ -435,7 +470,7 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Ve
         });
     }
 
-    for operation in current_operations.difference(&target.operations) {
+    for operation in current_operations.difference(target_operations) {
         changes.push(VerifyChange {
             kind: VerifyChangeKind::Added,
             method: operation.method.clone(),
@@ -444,6 +479,10 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Ve
     }
 
     changes
+}
+
+pub fn scope_current_for_verify(current: &ApiContract, scope: &v3::Scope) -> Result<ApiContract> {
+    crate::lock_size::scope_current_for_verify(current, scope.selectors())
 }
 
 fn normalized_name(name: &str) -> Result<&str> {
