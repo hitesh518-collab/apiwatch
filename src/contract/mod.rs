@@ -125,6 +125,7 @@ pub struct Parameter {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RequestBody {
+    pub required: Option<bool>,
     pub content: BTreeMap<String, Schema>,
 }
 

@@ -705,7 +705,10 @@ fn normalize_request_body_ref(
         );
     }
 
-    Ok(RequestBody { content })
+    Ok(RequestBody {
+        required: Some(request_body.required),
+        content,
+    })
 }
 
 fn normalize_response(

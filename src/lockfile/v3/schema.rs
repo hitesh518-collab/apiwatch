@@ -198,6 +198,7 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                 .as_ref()
                 .map(|content| -> Result<RequestBody> {
                     Ok(RequestBody {
+                        required: None,
                         content: expand_content(content, &contract.schemas)?,
                     })
                 })

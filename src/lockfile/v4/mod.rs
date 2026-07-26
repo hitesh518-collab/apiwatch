@@ -95,8 +95,14 @@ pub(super) struct Contract {
 pub(super) struct WireOperation {
     auth: BTreeMap<String, WireAuth>,
     parameters: BTreeMap<String, WireParameter>,
-    request_body: Option<BTreeMap<String, String>>,
+    request_body: Option<WireRequestBody>,
     responses: BTreeMap<String, BTreeMap<String, String>>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct WireRequestBody {
+    required: bool,
+    content: BTreeMap<String, String>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -377,8 +383,8 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
                 return Err(anyhow!("parameter key is not canonical"));
             }
         }
-        if let Some(content) = &operation.request_body {
-            validate_content_types(content)?;
+        if let Some(body) = &operation.request_body {
+            validate_content_types(&body.content)?;
         }
         for (status, content) in &operation.responses {
             validate_wire_string(status, "response status", false)?;

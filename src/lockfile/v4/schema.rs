@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{anyhow, Result};
 
 use super::{
-    canonical, Contract, WireAuth, WireOperation, WireParameter, WireProperty, WireSchema,
+    canonical, Contract, WireAuth, WireOperation, WireParameter, WireProperty, WireRequestBody,
+    WireSchema,
 };
 use crate::contract::{
     ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey, Parameter, ParameterKey,
@@ -48,7 +49,14 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
             let request_body = operation
                 .request_body
                 .as_ref()
-                .map(|body| intern_content(&body.content, &mut schemas))
+                .map(|body| -> Result<WireRequestBody> {
+                    Ok(WireRequestBody {
+                        required: body
+                            .required
+                            .ok_or_else(|| anyhow!("v4 request body requiredness must be known"))?,
+                        content: intern_content(&body.content, &mut schemas)?,
+                    })
+                })
                 .transpose()?;
             let responses = operation
                 .responses
@@ -158,9 +166,10 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
             let request_body = operation
                 .request_body
                 .as_ref()
-                .map(|content| -> Result<RequestBody> {
+                .map(|body| -> Result<RequestBody> {
                     Ok(RequestBody {
-                        content: expand_content(content, &contract.schemas)?,
+                        required: Some(body.required),
+                        content: expand_content(&body.content, &contract.schemas)?,
                     })
                 })
                 .transpose()?;
@@ -232,8 +241,8 @@ pub(super) fn validate_schema_table(contract: &Contract) -> Result<()> {
                 .values()
                 .map(|parameter| parameter.schema.clone()),
         );
-        if let Some(content) = &operation.request_body {
-            roots.extend(content.values().cloned());
+        if let Some(body) = &operation.request_body {
+            roots.extend(body.content.values().cloned());
         }
         for content in operation.responses.values() {
             roots.extend(content.values().cloned());

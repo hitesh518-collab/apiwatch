@@ -6,6 +6,86 @@ fn parse_json_output(output: &std::process::Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("stdout should be JSON")
 }
 
+#[test]
+fn phase2_d01_diff_reports_request_body_presence_and_requiredness() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d01_request_body_old.yaml",
+            "testdata/openapi/phase2_d01_request_body_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/optional-added",
+                "message": "request body added as optional"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/required-added",
+                "message": "request body added as required"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/requiredness",
+                "message": "request body changed from optional to required"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d01_diff_reports_request_body_removal_and_relaxed_requiredness() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d01_request_body_new.yaml",
+            "testdata/openapi/phase2_d01_request_body_old.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/optional-added",
+                "message": "request body removed"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/required-added",
+                "message": "request body removed"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/requiredness",
+                "message": "request body changed from required to optional"
+            }
+        ])
+    );
+}
+
 fn sarif_rule_ids(rendered: &Value) -> Vec<&str> {
     rendered["runs"][0]["tool"]["driver"]["rules"]
         .as_array()

@@ -297,15 +297,54 @@ fn is_error_status(status: &str) -> bool {
     status.starts_with('4') || status.starts_with('5') || status == "default"
 }
 
-fn diff_request_bodies(
+pub fn diff_request_bodies(
     changes: &mut Vec<Change>,
     operation: &OperationKey,
     old: Option<&RequestBody>,
     new: Option<&RequestBody>,
 ) {
-    let (Some(old), Some(new)) = (old, new) else {
-        return;
+    let (old, new) = match (old, new) {
+        (None, Some(new)) => {
+            let (severity, requiredness) = if new.required == Some(true) {
+                (Severity::Breaking, "required")
+            } else {
+                (Severity::NonBreaking, "optional")
+            };
+            changes.push(Change {
+                severity,
+                operation: operation.clone(),
+                message: format!("request body added as {requiredness}"),
+            });
+            return;
+        }
+        (Some(_), None) => {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: "request body removed".to_string(),
+            });
+            return;
+        }
+        (None, None) => return,
+        (Some(old), Some(new)) => (old, new),
     };
+
+    if let (Some(old_required), Some(new_required)) = (old.required, new.required) {
+        if old_required != new_required {
+            let (severity, old_requiredness, new_requiredness) = if new_required {
+                (Severity::Breaking, "optional", "required")
+            } else {
+                (Severity::NonBreaking, "required", "optional")
+            };
+            changes.push(Change {
+                severity,
+                operation: operation.clone(),
+                message: format!(
+                    "request body changed from {old_requiredness} to {new_requiredness}"
+                ),
+            });
+        }
+    }
 
     for (content_type, old_schema) in &old.content {
         let Some(new_schema) = new.content.get(content_type) else {
