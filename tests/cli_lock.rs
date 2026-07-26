@@ -23,7 +23,28 @@ fn canonical_lines(value: &str) -> String {
 }
 
 #[test]
-fn lock_creates_a_deterministic_v3_file() {
+fn lock_writes_version_four() {
+    let output = temp_lock_path("v4-create");
+    Command::cargo_bin("apiwatch")
+        .unwrap()
+        .args([
+            "lock",
+            "testdata/openapi/verify_matching.yaml",
+            "--name",
+            "users",
+            "--output",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert!(fs::read_to_string(&output)
+        .unwrap()
+        .starts_with("version: 4\n"));
+    fs::remove_file(output).ok();
+}
+
+#[test]
+fn lock_creates_a_deterministic_v4_file() {
     let output_path = temp_lock_path("single-api");
     let output_arg = output_path
         .to_str()
@@ -52,8 +73,8 @@ fn lock_creates_a_deterministic_v3_file() {
     assert_eq!(
         rendered,
         canonical_lines(
-            &fs::read_to_string("testdata/lock/v3_users.lock")
-                .expect("golden v3 lockfile should exist")
+            &fs::read_to_string("testdata/lock/v4_users.lock")
+                .expect("golden v4 lockfile should exist")
         )
     );
 }
@@ -84,10 +105,23 @@ fn lock_requires_update_and_preserves_existing_bytes() {
 }
 
 #[test]
-fn lock_update_preserves_observed_entries() {
+fn lock_update_migrates_a_sole_v3_entry_and_preserves_observed_entries() {
     let output = temp_lock_path("migration");
-    fs::copy("testdata/lock/v2_declared_observed.lock", &output)
-        .expect("migration fixture should copy");
+    fs::copy("testdata/lock/v3_users.lock", &output).expect("migration fixture should copy");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--name",
+            "portfolio",
+            "--output",
+            output.to_str().expect("temp path should be valid UTF-8"),
+        ])
+        .assert()
+        .success();
 
     Command::cargo_bin("apiwatch")
         .expect("binary should build")
@@ -105,8 +139,72 @@ fn lock_update_preserves_observed_entries() {
 
     let rendered = fs::read_to_string(&output).expect("updated lock should be readable");
     fs::remove_file(output).ok();
-    assert!(rendered.starts_with("version: 3\n"));
+    assert!(rendered.starts_with("version: 4\n"));
     assert!(rendered.contains("provenance: observed"));
+}
+
+#[test]
+fn lock_update_rejects_a_v3_file_with_another_declared_entry_without_writing() {
+    let output = temp_lock_path("multiple-v3");
+    let users = canonical_lines(
+        &fs::read_to_string("testdata/lock/v3_users.lock").expect("v3 fixture should be readable"),
+    )
+    .strip_prefix("version: 3\napis:\n")
+    .expect("fixture should be a v3 lock")
+    .to_owned();
+    let payments = users.replacen("  users:", "  payments:", 1);
+    let original = format!("version: 3\napis:\n{users}{payments}");
+    fs::write(&output, &original).expect("multi-entry v3 lock should write");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/verify_matching.yaml",
+            "--name",
+            "users",
+            "--output",
+            output.to_str().expect("temp path should be valid UTF-8"),
+            "--update",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "cannot migrate api.lock to v4; migration requires original sources for: payments",
+        ));
+
+    assert_eq!(
+        canonical_lines(&fs::read_to_string(&output).unwrap()),
+        original
+    );
+    fs::remove_file(output).ok();
+}
+
+#[test]
+fn lock_writes_the_v4_private_golden_with_lf_terminator() {
+    let output = temp_lock_path("v4-private");
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/privacy_sentinels.yaml",
+            "--name",
+            "private",
+            "--output",
+            output.to_str().expect("temp path should be valid UTF-8"),
+        ])
+        .assert()
+        .success();
+    let rendered = fs::read_to_string(&output).expect("lockfile should be written");
+    fs::remove_file(output).ok();
+    assert!(rendered.ends_with('\n'));
+    assert_eq!(
+        rendered,
+        canonical_lines(
+            &fs::read_to_string("testdata/lock/v4_private.lock")
+                .expect("golden v4 lockfile should exist")
+        )
+    );
 }
 
 #[test]

@@ -6,54 +6,35 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
-pub use super::Scope;
 use crate::contract::{AuthSchemeKind, SchemaKind};
+use crate::lockfile::Scope;
 
 pub const DEFAULT_MAX_LOCK_BYTES: u64 = 5_242_880;
-
 pub(super) type Extensions = BTreeMap<String, serde_json::Value>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct V3Lock {
+pub(super) struct V4Lock {
     version: u8,
-    apis: BTreeMap<String, V3Api>,
+    apis: BTreeMap<String, V4Api>,
 }
 
-impl V3Lock {
-    #[cfg(test)]
-    pub(super) fn single_declared(name: &str, entry: DeclaredEntry) -> Result<Self> {
-        validate_name(name)?;
-        Ok(Self {
-            version: 3,
-            apis: BTreeMap::from([(name.to_string(), V3Api::Declared(entry))]),
-        })
-    }
-
-    #[cfg(test)]
-    pub(super) fn declared(&self, name: &str) -> Option<&DeclaredEntry> {
-        match self.apis.get(name) {
-            Some(V3Api::Declared(entry)) => Some(entry),
-            _ => None,
-        }
-    }
-
+impl V4Lock {
     pub(super) fn from_parts(
         declared: BTreeMap<String, DeclaredEntry>,
         observed: BTreeMap<String, crate::observed::Shape>,
     ) -> Self {
         let mut apis = declared
             .into_iter()
-            .map(|(name, entry)| (name, V3Api::Declared(entry)))
+            .map(|(name, entry)| (name, V4Api::Declared(entry)))
             .collect::<BTreeMap<_, _>>();
         apis.extend(
             observed
                 .into_iter()
-                .map(|(name, shape)| (name, V3Api::Observed(ObservedEntry { shape }))),
+                .map(|(name, shape)| (name, V4Api::Observed(ObservedEntry { shape }))),
         );
-        Self { version: 3, apis }
+        Self { version: 4, apis }
     }
-
     pub(super) fn into_parts(
         self,
     ) -> (
@@ -64,10 +45,10 @@ impl V3Lock {
         let mut observed = BTreeMap::new();
         for (name, api) in self.apis {
             match api {
-                V3Api::Declared(entry) => {
+                V4Api::Declared(entry) => {
                     declared.insert(name, entry);
                 }
-                V3Api::Observed(entry) => {
+                V4Api::Observed(entry) => {
                     observed.insert(name, entry.shape);
                 }
             }
@@ -75,20 +56,17 @@ impl V3Lock {
         (declared, observed)
     }
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "provenance", rename_all = "snake_case")]
-pub(super) enum V3Api {
+pub(super) enum V4Api {
     Declared(DeclaredEntry),
     Observed(ObservedEntry),
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ObservedEntry {
     shape: crate::observed::Shape,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeclaredEntry {
@@ -101,43 +79,37 @@ pub struct DeclaredEntry {
     extensions: Extensions,
     contract: Contract,
 }
-
 impl DeclaredEntry {
     pub(super) fn scope(&self) -> &Scope {
         &self.scope
     }
 }
-
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Contract {
     operations: BTreeMap<String, WireOperation>,
     schemas: BTreeMap<String, WireSchema>,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireOperation {
+pub(super) struct WireOperation {
     auth: BTreeMap<String, WireAuth>,
     parameters: BTreeMap<String, WireParameter>,
     request_body: Option<BTreeMap<String, String>>,
     responses: BTreeMap<String, BTreeMap<String, String>>,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireAuth {
+pub(super) struct WireAuth {
     kind: AuthSchemeKind,
     scopes: Vec<String>,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireParameter {
+pub(super) struct WireParameter {
     required: bool,
     schema: String,
 }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct WireSchema {
@@ -147,37 +119,22 @@ pub(super) struct WireSchema {
     enum_values: Vec<String>,
     properties: BTreeMap<String, WireProperty>,
 }
-
-impl WireSchema {
-    #[cfg(test)]
-    pub(super) fn unknown() -> Self {
-        Self {
-            kind: SchemaKind::Unknown,
-            nullable: false,
-            format: None,
-            enum_values: Vec::new(),
-            properties: BTreeMap::new(),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireProperty {
+pub(super) struct WireProperty {
     required: bool,
     schema: String,
 }
 
-pub(super) fn contract_yaml(contract: &Contract) -> Result<Vec<u8>> {
+fn contract_yaml(contract: &Contract) -> Result<Vec<u8>> {
     let mut bytes = serde_yaml::to_string(contract)
-        .context("failed to serialize v3 declared contract")?
+        .context("failed to serialize v4 declared contract")?
         .into_bytes();
     if !bytes.ends_with(b"\n") {
         bytes.push(b'\n');
     }
     Ok(bytes)
 }
-
 pub(super) fn build_declared(
     contract: &crate::contract::ApiContract,
     scope: Scope,
@@ -210,7 +167,6 @@ pub(super) fn build_declared(
         contract,
     })
 }
-
 pub(super) fn validate_declared(
     name: &str,
     entry: &DeclaredEntry,
@@ -238,29 +194,38 @@ pub(super) fn validate_declared(
     }
     canonical::validate_digest(&entry.contract_digest)
         .with_context(|| format!("declared api {name} has an invalid contract digest"))?;
-    let actual_digest =
-        canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?;
-    if actual_digest != entry.contract_digest {
+    if canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?
+        != entry.contract_digest
+    {
         return Err(anyhow!("declared api {name} contract digest mismatch"));
     }
     schema::expand_contract(&entry.contract)
         .with_context(|| format!("failed to reconstruct declared api {name}"))
 }
-
-pub(super) fn render(lock: &V3Lock) -> Result<String> {
+pub(super) fn render(lock: &V4Lock) -> Result<String> {
     validate_lock(lock)?;
-    serde_yaml::to_string(lock).context("failed to serialize api.lock v3")
+    serde_yaml::to_string(lock).context("failed to serialize api.lock v4")
 }
-
-pub(super) fn load(contents: &str) -> Result<V3Lock> {
+pub(super) fn load(contents: &str) -> Result<V4Lock> {
     let raw: serde_yaml::Value =
-        serde_yaml::from_str(contents).context("failed to parse api.lock v3 YAML")?;
+        serde_yaml::from_str(contents).context("failed to parse api.lock v4 YAML")?;
     validate_raw_observed_shapes(&raw)?;
-    let lock: V3Lock = serde_yaml::from_value(raw).context("failed to parse api.lock v3 YAML")?;
+    let lock = serde_yaml::from_value(raw).context("failed to parse api.lock v4 YAML")?;
     validate_lock(&lock)?;
     Ok(lock)
 }
-
+fn validate_lock(lock: &V4Lock) -> Result<()> {
+    if lock.version != 4 {
+        return Err(anyhow!("unsupported api.lock version {}", lock.version));
+    }
+    for (name, api) in &lock.apis {
+        validate_name(name)?;
+        if let V4Api::Declared(entry) = api {
+            validate_declared(name, entry)?;
+        }
+    }
+    Ok(())
+}
 fn validate_raw_observed_shapes(raw: &serde_yaml::Value) -> Result<()> {
     let Some(apis) = mapping_value(raw, "apis").and_then(serde_yaml::Value::as_mapping) else {
         return Ok(());
@@ -274,7 +239,6 @@ fn validate_raw_observed_shapes(raw: &serde_yaml::Value) -> Result<()> {
     }
     Ok(())
 }
-
 fn validate_raw_shape(value: &serde_yaml::Value) -> Result<()> {
     let Some(shape) = value.as_mapping() else {
         return Ok(());
@@ -289,7 +253,12 @@ fn validate_raw_shape(value: &serde_yaml::Value) -> Result<()> {
         "union" => &["kind", "variants"],
         _ => &["kind"],
     };
-    reject_unknown_mapping_keys(shape, allowed)?;
+    if shape
+        .keys()
+        .any(|key| key.as_str().is_some_and(|key| !allowed.contains(&key)))
+    {
+        return Err(anyhow!("unknown field in observed shape"));
+    }
     match kind {
         "object" => {
             if let Some(properties) =
@@ -299,7 +268,12 @@ fn validate_raw_shape(value: &serde_yaml::Value) -> Result<()> {
                     .values()
                     .filter_map(serde_yaml::Value::as_mapping)
                 {
-                    reject_unknown_mapping_keys(property, &["observations", "shape"])?;
+                    if property.keys().any(|key| {
+                        key.as_str()
+                            .is_some_and(|key| !["observations", "shape"].contains(&key))
+                    }) {
+                        return Err(anyhow!("unknown field in observed shape"));
+                    }
                     if let Some(nested) = mapping_value_from(property, "shape") {
                         validate_raw_shape(nested)?;
                     }
@@ -326,59 +300,32 @@ fn validate_raw_shape(value: &serde_yaml::Value) -> Result<()> {
             }
         }
         _ => {}
-    }
+    };
     Ok(())
 }
-
-fn reject_unknown_mapping_keys(mapping: &serde_yaml::Mapping, allowed: &[&str]) -> Result<()> {
-    if mapping
-        .keys()
-        .any(|key| key.as_str().is_some_and(|key| !allowed.contains(&key)))
-    {
-        return Err(anyhow!("unknown field in observed shape"));
-    }
-    Ok(())
-}
-
 fn mapping_value<'a>(value: &'a serde_yaml::Value, key: &str) -> Option<&'a serde_yaml::Value> {
     value
         .as_mapping()
         .and_then(|mapping| mapping_value_from(mapping, key))
 }
-
 fn mapping_value_from<'a>(
     mapping: &'a serde_yaml::Mapping,
     key: &str,
 ) -> Option<&'a serde_yaml::Value> {
     mapping.get(serde_yaml::Value::String(key.to_string()))
 }
-
 fn string_value<'a>(mapping: &'a serde_yaml::Mapping, key: &str) -> Option<&'a str> {
     mapping_value_from(mapping, key).and_then(serde_yaml::Value::as_str)
 }
-
-fn validate_lock(lock: &V3Lock) -> Result<()> {
-    if lock.version != 3 {
-        return Err(anyhow!("unsupported api.lock version {}", lock.version));
-    }
-    for (name, api) in &lock.apis {
-        validate_name(name)?;
-        if let V3Api::Declared(entry) = api {
-            validate_declared(name, entry)?;
-        }
-    }
-    Ok(())
-}
-
 fn validate_scope(scope: &Scope) -> Result<()> {
-    let Scope::Operations(scope) = scope else {
+    let Scope::Operations(_) = scope else {
         return Ok(());
     };
-    if scope.operations.is_empty() {
+    if scope.selectors().is_empty() {
         return Err(anyhow!("operation scope cannot be empty"));
     }
     let mut previous = None;
-    for selector in &scope.operations {
+    for selector in scope.selectors() {
         let key = crate::lock_size::parse_operation_selector(selector)?;
         let canonical = format!("{} {}", key.method.as_str(), key.path);
         if selector != &canonical {
@@ -393,13 +340,12 @@ fn validate_scope(scope: &Scope) -> Result<()> {
     }
     Ok(())
 }
-
 fn validate_scope_contract(scope: &Scope, contract: &Contract) -> Result<()> {
-    let Scope::Operations(scope) = scope else {
+    let Scope::Operations(_) = scope else {
         return Ok(());
     };
     let scoped = scope
-        .operations
+        .selectors()
         .iter()
         .map(|selector| crate::lock_size::parse_operation_selector(selector))
         .collect::<Result<BTreeSet<_>>>()?;
@@ -415,12 +361,10 @@ fn validate_scope_contract(scope: &Scope, contract: &Contract) -> Result<()> {
     }
     Ok(())
 }
-
 fn validate_contract_semantics(contract: &Contract) -> Result<()> {
     for (operation_key, operation) in &contract.operations {
         let parsed = schema::parse_operation_key(operation_key)?;
-        let canonical = format!("{} {}", parsed.method.as_str(), parsed.path);
-        if operation_key != &canonical {
+        if operation_key != &format!("{} {}", parsed.method.as_str(), parsed.path) {
             return Err(anyhow!("operation key is not canonical"));
         }
         for (name, auth) in &operation.auth {
@@ -429,8 +373,7 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
         }
         for parameter_key in operation.parameters.keys() {
             let parsed = schema::parse_parameter_key(parameter_key)?;
-            let canonical = format!("{}:{}", parsed.location.as_str(), parsed.name);
-            if parameter_key != &canonical {
+            if parameter_key != &format!("{}:{}", parsed.location.as_str(), parsed.name) {
                 return Err(anyhow!("parameter key is not canonical"));
             }
         }
@@ -453,14 +396,12 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
     }
     Ok(())
 }
-
 fn validate_content_types(content: &BTreeMap<String, String>) -> Result<()> {
     for content_type in content.keys() {
         validate_wire_string(content_type, "media type", false)?;
     }
     Ok(())
 }
-
 fn validate_normalized_strings(values: &[String], label: &str) -> Result<()> {
     for value in values {
         validate_wire_string(value, label, true)?;
@@ -470,7 +411,6 @@ fn validate_normalized_strings(values: &[String], label: &str) -> Result<()> {
     }
     Ok(())
 }
-
 fn validate_wire_string(value: &str, label: &str, allow_empty: bool) -> Result<()> {
     if !allow_empty && value.is_empty() {
         return Err(anyhow!("{label} cannot be empty"));
@@ -480,7 +420,6 @@ fn validate_wire_string(value: &str, label: &str, allow_empty: bool) -> Result<(
     }
     Ok(())
 }
-
 fn validate_name(name: &str) -> Result<()> {
     if name.trim().is_empty() {
         return Err(anyhow!("api name cannot be empty"));
@@ -493,228 +432,9 @@ fn validate_name(name: &str) -> Result<()> {
     }
     Ok(())
 }
-
 fn sanitized(value: &str) -> String {
     value
         .chars()
         .filter(|character| !character.is_control())
         .collect()
-}
-
-#[cfg(test)]
-#[allow(clippy::items_after_test_module)]
-mod semantic_validation_tests {
-    use super::*;
-
-    fn fixture() -> Contract {
-        let schema = WireSchema {
-            kind: SchemaKind::String,
-            nullable: false,
-            format: Some("uuid".to_string()),
-            enum_values: vec!["a".to_string(), "b".to_string()],
-            properties: BTreeMap::from([(
-                "value".to_string(),
-                WireProperty {
-                    required: true,
-                    schema: "sha256:schema".to_string(),
-                },
-            )]),
-        };
-        Contract {
-            operations: BTreeMap::from([(
-                "GET /users".to_string(),
-                WireOperation {
-                    auth: BTreeMap::from([(
-                        "bearer".to_string(),
-                        WireAuth {
-                            kind: AuthSchemeKind::Bearer,
-                            scopes: vec!["read".to_string(), "write".to_string()],
-                        },
-                    )]),
-                    parameters: BTreeMap::from([(
-                        "query:page".to_string(),
-                        WireParameter {
-                            required: false,
-                            schema: "sha256:schema".to_string(),
-                        },
-                    )]),
-                    request_body: Some(BTreeMap::from([(
-                        "application/json".to_string(),
-                        "sha256:schema".to_string(),
-                    )])),
-                    responses: BTreeMap::from([(
-                        "200".to_string(),
-                        BTreeMap::from([(
-                            "application/json".to_string(),
-                            "sha256:schema".to_string(),
-                        )]),
-                    )]),
-                },
-            )]),
-            schemas: BTreeMap::from([("sha256:schema".to_string(), schema)]),
-        }
-    }
-
-    fn assert_control_rejected(contract: &Contract) {
-        let error = validate_contract_semantics(contract)
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("control character"), "{error}");
-        assert!(!error.contains('\u{1b}'), "{error:?}");
-    }
-
-    #[test]
-    fn rejects_control_characters_from_every_wire_string_category() {
-        let mut contract = fixture();
-        let operation = contract.operations.get_mut("GET /users").unwrap();
-        let auth = operation.auth.remove("bearer").unwrap();
-        operation.auth.insert("bearer\u{1b}".to_string(), auth);
-        assert_control_rejected(&contract);
-
-        let mut contract = fixture();
-        contract
-            .operations
-            .get_mut("GET /users")
-            .unwrap()
-            .responses
-            .insert("2\u{1b}00".to_string(), BTreeMap::new());
-        assert_control_rejected(&contract);
-
-        let mut contract = fixture();
-        contract
-            .operations
-            .get_mut("GET /users")
-            .unwrap()
-            .request_body
-            .as_mut()
-            .unwrap()
-            .insert(
-                "application/\u{1b}json".to_string(),
-                "sha256:schema".to_string(),
-            );
-        assert_control_rejected(&contract);
-
-        let mut contract = fixture();
-        contract.schemas.get_mut("sha256:schema").unwrap().format = Some("u\u{1b}uid".to_string());
-        assert_control_rejected(&contract);
-
-        let mut contract = fixture();
-        contract
-            .schemas
-            .get_mut("sha256:schema")
-            .unwrap()
-            .enum_values[0] = "a\u{1b}".to_string();
-        assert_control_rejected(&contract);
-
-        let mut contract = fixture();
-        let schema = contract.schemas.get_mut("sha256:schema").unwrap();
-        let property = schema.properties.remove("value").unwrap();
-        schema
-            .properties
-            .insert("val\u{1b}ue".to_string(), property);
-        assert_control_rejected(&contract);
-    }
-
-    #[test]
-    fn rejects_unsorted_or_duplicate_normalized_arrays() {
-        let mut contract = fixture();
-        contract
-            .operations
-            .get_mut("GET /users")
-            .unwrap()
-            .auth
-            .get_mut("bearer")
-            .unwrap()
-            .scopes = vec!["write".to_string(), "read".to_string()];
-        assert!(validate_contract_semantics(&contract)
-            .unwrap_err()
-            .to_string()
-            .contains("sorted and contain no duplicates"));
-
-        let mut contract = fixture();
-        contract
-            .schemas
-            .get_mut("sha256:schema")
-            .unwrap()
-            .enum_values = vec!["a".to_string(), "a".to_string()];
-        assert!(validate_contract_semantics(&contract)
-            .unwrap_err()
-            .to_string()
-            .contains("sorted and contain no duplicates"));
-    }
-}
-
-#[cfg(test)]
-pub(super) fn schema_id_for_test(schema: &WireSchema) -> anyhow::Result<String> {
-    canonical::schema_id(schema)
-}
-
-#[cfg(test)]
-pub(super) fn contract_digest_for_test(extensions: &Extensions) -> anyhow::Result<String> {
-    canonical::contract_digest(&Scope::all(), &Contract::default(), extensions)
-}
-
-#[cfg(test)]
-pub(super) fn intern_and_expand_for_test(
-    contract: &crate::contract::ApiContract,
-) -> anyhow::Result<(usize, crate::contract::ApiContract)> {
-    let wire = schema::intern_contract(contract)?;
-    let count = wire.schemas.len();
-    let expanded = schema::expand_contract(&wire)?;
-    Ok((count, expanded))
-}
-
-#[cfg(test)]
-pub(super) fn tampered_schema_error_for_test(
-    contract: &crate::contract::ApiContract,
-) -> anyhow::Result<()> {
-    let mut wire = schema::intern_contract(contract)?;
-    let (id, mut schema) = wire
-        .schemas
-        .pop_first()
-        .ok_or_else(|| anyhow::anyhow!("test contract has no schemas"))?;
-    schema.nullable = !schema.nullable;
-    wire.schemas.insert(id, schema);
-    schema::validate_schema_table(&wire)
-}
-
-#[cfg(test)]
-pub(super) fn orphan_schema_error_for_test(
-    contract: &crate::contract::ApiContract,
-) -> anyhow::Result<()> {
-    let mut wire = schema::intern_contract(contract)?;
-    let orphan = WireSchema::unknown();
-    wire.schemas.insert(canonical::schema_id(&orphan)?, orphan);
-    schema::validate_schema_table(&wire)
-}
-
-#[cfg(test)]
-pub(super) fn forced_collision_error_for_test() -> anyhow::Result<()> {
-    schema::forced_collision_error()
-}
-
-#[cfg(test)]
-pub(super) fn measured_contract_bytes_for_test(
-    contract: &crate::contract::ApiContract,
-) -> anyhow::Result<u64> {
-    let wire = schema::intern_contract(contract)?;
-    u64::try_from(contract_yaml(&wire)?.len()).context("contract size overflow")
-}
-
-#[cfg(test)]
-pub(super) fn tampered_contract_bytes_error_for_test(
-    contract: &crate::contract::ApiContract,
-) -> anyhow::Result<()> {
-    let mut entry = build_declared(contract, Scope::all(), u64::MAX, BTreeMap::new())?;
-    entry.contract_bytes += 1;
-    validate_declared("test", &entry).map(|_| ())
-}
-
-#[cfg(test)]
-pub(super) fn tampered_contract_digest_error_for_test(
-    contract: &crate::contract::ApiContract,
-) -> anyhow::Result<()> {
-    let mut entry = build_declared(contract, Scope::all(), u64::MAX, BTreeMap::new())?;
-    entry.contract_digest = format!("sha256:{}", "0".repeat(64));
-    validate_declared("test", &entry).map(|_| ())
 }

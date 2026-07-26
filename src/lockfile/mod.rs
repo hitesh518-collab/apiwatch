@@ -12,8 +12,46 @@ use crate::observed::{apply_map_annotations, merge as merge_shapes, Shape};
 mod atomic;
 #[doc(hidden)]
 pub mod v3;
+#[doc(hidden)]
+pub mod v4;
 
 pub const DEFAULT_MAX_LOCK_BYTES: u64 = v3::DEFAULT_MAX_LOCK_BYTES;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Scope {
+    All(AllScope),
+    Operations(OperationScope),
+}
+
+impl Scope {
+    pub(crate) fn all() -> Self {
+        Self::All(AllScope::All)
+    }
+
+    pub(crate) fn operations(operations: Vec<String>) -> Self {
+        Self::Operations(OperationScope { operations })
+    }
+
+    pub(crate) fn selectors(&self) -> &[String] {
+        match self {
+            Self::All(_) => &[],
+            Self::Operations(scope) => &scope.operations,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AllScope {
+    #[serde(rename = "all")]
+    All,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperationScope {
+    operations: Vec<String>,
+}
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiLock {
@@ -21,7 +59,9 @@ pub struct ApiLock {
     #[serde(rename = "apis")]
     legacy_declared: BTreeMap<String, LockedApi>,
     #[serde(skip)]
-    declared: BTreeMap<String, v3::DeclaredEntry>,
+    declared_v3: BTreeMap<String, v3::DeclaredEntry>,
+    #[serde(skip)]
+    declared_v4: BTreeMap<String, v4::DeclaredEntry>,
     #[serde(skip)]
     observed: BTreeMap<String, Shape>,
 }
@@ -88,13 +128,20 @@ pub enum VerifyTargetKind {
     LegacyDeclared {
         operations: BTreeSet<LockedOperation>,
     },
-    FullDeclared {
+    Declared {
         contract: ApiContract,
-        scope: v3::Scope,
+        scope: Scope,
+        coverage: DeclaredCoverage,
     },
     Observed {
         shape: Shape,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclaredCoverage {
+    PartialV3,
+    FullV4,
 }
 
 impl VerifyTarget {
@@ -160,7 +207,8 @@ pub fn from_contract(name: &str, contract: &ApiContract) -> Result<ApiLock> {
     Ok(ApiLock {
         version: 1,
         legacy_declared: apis,
-        declared: BTreeMap::new(),
+        declared_v3: BTreeMap::new(),
+        declared_v4: BTreeMap::new(),
         observed: BTreeMap::new(),
     })
 }
@@ -171,7 +219,13 @@ pub fn render(lock: &ApiLock) -> Result<String> {
     }
     if lock.version == 3 {
         return v3::render(&v3::V3Lock::from_parts(
-            lock.declared.clone(),
+            lock.declared_v3.clone(),
+            lock.observed.clone(),
+        ));
+    }
+    if lock.version == 4 {
+        return v4::render(&v4::V4Lock::from_parts(
+            lock.declared_v4.clone(),
             lock.observed.clone(),
         ));
     }
@@ -215,7 +269,18 @@ pub fn load(path: &Path) -> Result<ApiLock> {
             Ok(ApiLock {
                 version: 3,
                 legacy_declared: BTreeMap::new(),
-                declared,
+                declared_v3: declared,
+                declared_v4: BTreeMap::new(),
+                observed,
+            })
+        }
+        4 => {
+            let (declared_v4, observed) = v4::load(&contents)?.into_parts();
+            Ok(ApiLock {
+                version: 4,
+                legacy_declared: BTreeMap::new(),
+                declared_v3: BTreeMap::new(),
+                declared_v4,
                 observed,
             })
         }
@@ -228,19 +293,20 @@ pub fn new_v3(name: &str, entry: v3::DeclaredEntry) -> Result<ApiLock> {
     let lock = ApiLock {
         version: 3,
         legacy_declared: BTreeMap::new(),
-        declared: BTreeMap::from([(name, entry)]),
+        declared_v3: BTreeMap::from([(name, entry)]),
+        declared_v4: BTreeMap::new(),
         observed: BTreeMap::new(),
     };
     v3::render(&v3::V3Lock::from_parts(
-        lock.declared.clone(),
+        lock.declared_v3.clone(),
         BTreeMap::new(),
     ))?;
     Ok(lock)
 }
 
-pub fn scope_from_selectors(selectors: &[String]) -> Result<v3::Scope> {
+pub fn scope_from_selectors(selectors: &[String]) -> Result<Scope> {
     if selectors.is_empty() {
-        return Ok(v3::Scope::all());
+        return Ok(Scope::all());
     }
     let mut operations = BTreeSet::new();
     for selector in selectors {
@@ -249,7 +315,7 @@ pub fn scope_from_selectors(selectors: &[String]) -> Result<v3::Scope> {
             return Err(anyhow!("duplicate operation selector"));
         }
     }
-    Ok(v3::Scope::operations(
+    Ok(Scope::operations(
         operations
             .into_iter()
             .map(|key| format!("{} {}", key.method.as_str(), key.path))
@@ -259,10 +325,34 @@ pub fn scope_from_selectors(selectors: &[String]) -> Result<v3::Scope> {
 
 pub fn build_v3_declared(
     contract: &ApiContract,
-    scope: v3::Scope,
+    scope: Scope,
     max_lock_bytes: u64,
 ) -> Result<v3::DeclaredEntry> {
     v3::build_declared(contract, scope, max_lock_bytes, BTreeMap::new())
+}
+
+pub fn new_v4(name: &str, entry: v4::DeclaredEntry) -> Result<ApiLock> {
+    let name = normalized_name(name)?.to_owned();
+    let lock = ApiLock {
+        version: 4,
+        legacy_declared: BTreeMap::new(),
+        declared_v3: BTreeMap::new(),
+        declared_v4: BTreeMap::from([(name, entry)]),
+        observed: BTreeMap::new(),
+    };
+    v4::render(&v4::V4Lock::from_parts(
+        lock.declared_v4.clone(),
+        BTreeMap::new(),
+    ))?;
+    Ok(lock)
+}
+
+pub fn build_v4_declared(
+    contract: &ApiContract,
+    scope: Scope,
+    max_lock_bytes: u64,
+) -> Result<v4::DeclaredEntry> {
+    v4::build_declared(contract, scope, max_lock_bytes, BTreeMap::new())
 }
 
 pub fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -307,9 +397,52 @@ pub fn replace_declared(
         lock.legacy_declared.clear();
     }
     lock.version = 3;
-    lock.declared.insert(name, entry);
+    lock.declared_v3.insert(name, entry);
     v3::render(&v3::V3Lock::from_parts(
-        lock.declared.clone(),
+        lock.declared_v3.clone(),
+        lock.observed.clone(),
+    ))?;
+    Ok(lock)
+}
+
+pub fn replace_declared_v4(
+    mut lock: ApiLock,
+    name: &str,
+    entry: v4::DeclaredEntry,
+) -> Result<ApiLock> {
+    let name = normalized_name(name)?.to_owned();
+    if lock.observed.contains_key(&name) {
+        return Err(anyhow!(
+            "api {name} is observed and cannot be replaced as declared"
+        ));
+    }
+    if lock.version < 4 {
+        let named_old_entry =
+            lock.legacy_declared.contains_key(&name) || lock.declared_v3.contains_key(&name);
+        if !named_old_entry {
+            return Err(anyhow!("declared api {name} not found"));
+        }
+        let mut remaining = lock
+            .legacy_declared
+            .keys()
+            .chain(lock.declared_v3.keys())
+            .filter(|candidate| candidate.as_str() != name)
+            .map(|name| sanitized(name))
+            .collect::<Vec<_>>();
+        remaining.sort();
+        if !remaining.is_empty() {
+            return Err(anyhow!(
+                "cannot migrate api.lock to v4; migration requires original sources for: {}",
+                remaining.join(", ")
+            ));
+        }
+        lock.legacy_declared.clear();
+        lock.declared_v3.clear();
+        lock.version = 4;
+    }
+    lock.declared_v4.insert(name, entry);
+    v4::render(&v4::V4Lock::from_parts(
+        lock.declared_v4.clone(),
         lock.observed.clone(),
     ))?;
     Ok(lock)
@@ -323,7 +456,10 @@ pub fn record_observed(
     map_paths: &[String],
 ) -> Result<()> {
     let name = normalized_name(name)?;
-    if lock.legacy_declared.contains_key(name) || lock.declared.contains_key(name) {
+    if lock.legacy_declared.contains_key(name)
+        || lock.declared_v3.contains_key(name)
+        || lock.declared_v4.contains_key(name)
+    {
         return Err(anyhow!(
             "api {name} is declared and cannot be recorded as observed"
         ));
@@ -359,7 +495,8 @@ pub fn load_or_create_for_record(path: &Path) -> Result<ApiLock> {
         Ok(ApiLock {
             version: 2,
             legacy_declared: BTreeMap::new(),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         })
     }
@@ -397,7 +534,8 @@ fn load_v2(contents: &str) -> Result<ApiLock> {
     Ok(ApiLock {
         version: 2,
         legacy_declared: apis,
-        declared: BTreeMap::new(),
+        declared_v3: BTreeMap::new(),
+        declared_v4: BTreeMap::new(),
         observed,
     })
 }
@@ -412,12 +550,23 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
             },
         });
     }
-    if let Some(entry) = lock.declared.get(name) {
+    if let Some(entry) = lock.declared_v4.get(name) {
         return Ok(VerifyTarget {
             name: name.to_string(),
-            kind: VerifyTargetKind::FullDeclared {
+            kind: VerifyTargetKind::Declared {
+                contract: v4::validate_declared(name, entry)?,
+                scope: entry.scope().clone(),
+                coverage: DeclaredCoverage::FullV4,
+            },
+        });
+    }
+    if let Some(entry) = lock.declared_v3.get(name) {
+        return Ok(VerifyTarget {
+            name: name.to_string(),
+            kind: VerifyTargetKind::Declared {
                 contract: v3::validate_declared(name, entry)?,
                 scope: entry.scope().clone(),
+                coverage: DeclaredCoverage::PartialV3,
             },
         });
     }
@@ -492,7 +641,7 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Re
     Ok(changes)
 }
 
-pub fn scope_current_for_verify(current: &ApiContract, scope: &v3::Scope) -> Result<ApiContract> {
+pub fn scope_current_for_verify(current: &ApiContract, scope: &Scope) -> Result<ApiContract> {
     crate::lock_size::scope_current_for_verify(current, scope.selectors())
 }
 
@@ -588,7 +737,7 @@ mod tests {
         assert!(rendered.starts_with("version: 3\n"));
         assert!(rendered.contains("provenance: declared"));
         assert!(rendered.contains("provenance: observed"));
-        assert_eq!(migrated.declared["users"], entry);
+        assert_eq!(migrated.declared_v3["users"], entry);
     }
 
     #[test]
@@ -623,7 +772,8 @@ mod tests {
                     },
                 ),
             ]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
 
@@ -691,7 +841,8 @@ mod tests {
                     ],
                 },
             )]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
         let current =
@@ -742,7 +893,8 @@ mod tests {
                     }],
                 },
             )]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
         let current =
@@ -775,7 +927,8 @@ mod tests {
                     }],
                 },
             )]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
 
@@ -801,7 +954,8 @@ mod tests {
                     }],
                 },
             )]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
 
@@ -817,11 +971,13 @@ mod tests {
     }
 
     #[test]
-    fn load_rejects_an_unsupported_lockfile_version() {
+    fn load_rejects_an_invalid_v4_lockfile() {
         let error = load(Path::new("testdata/lock/verify_unsupported_version.lock"))
-            .expect_err("version 3 lockfile should be rejected");
+            .expect_err("invalid version 4 lockfile should be rejected");
 
-        assert!(error.to_string().contains("unsupported api.lock version 4"));
+        assert!(error
+            .to_string()
+            .contains("failed to parse api.lock v4 YAML"));
     }
 
     #[test]
@@ -849,7 +1005,8 @@ mod tests {
         let mut lock = ApiLock {
             version: 2,
             legacy_declared: BTreeMap::new(),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
         record_observed(

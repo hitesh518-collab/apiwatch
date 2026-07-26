@@ -34,6 +34,7 @@ struct DiffJsonChange<'a> {
 #[derive(Clone, Copy)]
 pub enum Coverage {
     Full,
+    Partial,
     Routes,
 }
 
@@ -41,6 +42,7 @@ impl Coverage {
     fn as_str(self) -> &'static str {
         match self {
             Self::Full => "full",
+            Self::Partial => "partial",
             Self::Routes => "routes",
         }
     }
@@ -49,6 +51,7 @@ impl Coverage {
 #[derive(Clone, Copy)]
 pub enum Limitation {
     RouteOnlyLock,
+    Phase2RelockRequired,
 }
 
 #[derive(Serialize)]
@@ -308,6 +311,10 @@ fn limitation_json(limitation: Limitation) -> LimitationJson {
             message:
                 "api.lock v1/v2 declared entry is route-only; full contract changes are not verified",
         },
+        Limitation::Phase2RelockRequired => LimitationJson {
+            code: "phase2_relock_required",
+            message: "api.lock v3 lacks Phase 2 contract fields; re-lock from the original OpenAPI source for full coverage",
+        },
     }
 }
 
@@ -364,19 +371,25 @@ pub fn render_declared_verify_sarif(
     let results = change_sarif_results(artifact_path, &fingerprint_context, changes);
     let invocations = limitation
         .into_iter()
-        .map(|limitation| match limitation {
-            Limitation::RouteOnlyLock => SarifInvocation {
+        .map(|limitation| {
+            let (id, message) = match limitation {
+                Limitation::RouteOnlyLock => (
+                    "apiwatch/route-only-lock",
+                    "api.lock v1/v2 declared entry is route-only; full contract changes are not verified",
+                ),
+                Limitation::Phase2RelockRequired => (
+                    "apiwatch/phase2-relock-required",
+                    "api.lock v3 lacks Phase 2 contract fields; re-lock from the original OpenAPI source for full coverage",
+                ),
+            };
+            SarifInvocation {
                 execution_successful: true,
                 tool_execution_notifications: vec![SarifNotification {
-                    descriptor: SarifDescriptor {
-                        id: "apiwatch/route-only-lock".to_string(),
-                    },
+                    descriptor: SarifDescriptor { id: id.to_string() },
                     level: "warning".to_string(),
-                    message: SarifMessage {
-                        text: "api.lock v1/v2 declared entry is route-only; full contract changes are not verified".to_string(),
-                    },
+                    message: SarifMessage { text: message.to_string() },
                 }],
-            },
+            }
         })
         .collect();
     render_sarif_with_invocations(results, invocations)

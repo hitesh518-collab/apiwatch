@@ -1,0 +1,24 @@
+version: 4
+apis:
+  users:
+    provenance: declared
+    source: openapi
+    scope: all
+    max_lock_bytes: 5242880
+    contract_bytes: 223
+    contract_digest: sha256:fdab0823f9820031697a00b3e55c4886d751a7c67d7953cbfb78e8dede50fb11
+    contract:
+      operations:
+        GET /users:
+          auth: {}
+          parameters: {}
+          request_body: null
+          responses:
+            '200': {}
+        GET /zeta:
+          auth: {}
+          parameters: {}
+          request_body: null
+          responses:
+            '200': {}
+      schemas: {}

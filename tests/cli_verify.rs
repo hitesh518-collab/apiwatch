@@ -184,6 +184,48 @@ fn observed_lock_path() -> PathBuf {
 }
 
 #[test]
+fn verify_v3_json_reports_partial_phase_two_coverage() {
+    let output = verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/v3_users.lock",
+    )
+    .args(["--format", "json"])
+    .output()
+    .unwrap();
+    let rendered: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rendered["coverage"], "partial");
+    assert_eq!(rendered["limitations"][0]["code"], "phase2_relock_required");
+}
+
+#[test]
+fn verify_v3_text_and_sarif_report_the_phase_two_relock_limitation() {
+    verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/v3_users.lock",
+    )
+    .assert()
+    .stderr(predicate::str::contains(
+        "api.lock v3 lacks Phase 2 contract fields; re-lock from the original OpenAPI source for full coverage",
+    ));
+
+    let output = verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/v3_users.lock",
+    )
+    .args(["--format", "sarif"])
+    .output()
+    .unwrap();
+    let rendered: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        rendered["runs"][0]["invocations"][0]["toolExecutionNotifications"][0]["descriptor"]["id"],
+        "apiwatch/phase2-relock-required"
+    );
+}
+
+#[test]
 fn verify_v3_d16_reports_four_breaking_findings() {
     let lock = lock_from("testdata/openapi/v3_d16_old.yaml", "d16");
     let output = Command::cargo_bin("apiwatch")
@@ -272,7 +314,7 @@ fn verify_v3_warning_only_change_exits_zero() {
 }
 
 #[test]
-fn verify_v3_json_uses_full_coverage_and_diff_findings() {
+fn verify_v4_json_uses_full_coverage_and_diff_findings() {
     let lock = lock_from("testdata/openapi/v3_d16_old.yaml", "d16");
     let output = Command::cargo_bin("apiwatch")
         .expect("binary should build")
@@ -1284,7 +1326,7 @@ fn verify_exits_two_for_invalid_openapi_input() {
 }
 
 #[test]
-fn verify_exits_two_for_an_unsupported_lockfile_version() {
+fn verify_exits_two_for_an_invalid_v4_lockfile() {
     verify_command(
         "testdata/openapi/verify_matching.yaml",
         "users",
@@ -1293,7 +1335,7 @@ fn verify_exits_two_for_an_unsupported_lockfile_version() {
     .assert()
     .code(2)
     .stdout(predicate::str::is_empty())
-    .stderr(predicate::str::contains("unsupported api.lock version 4"));
+    .stderr(predicate::str::contains("failed to parse api.lock v4 YAML"));
 }
 
 #[test]
