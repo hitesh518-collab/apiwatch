@@ -136,7 +136,7 @@ fn verify_command(openapi: &str, name: &str, lock: &str) -> Command {
     command
 }
 
-fn lock_from(openapi: &str, name: &str) -> PathBuf {
+fn lock_from_v4(openapi: &str, name: &str) -> PathBuf {
     let lock = observed_lock_path();
     Command::cargo_bin("apiwatch")
         .expect("binary should build")
@@ -153,22 +153,48 @@ fn lock_from(openapi: &str, name: &str) -> PathBuf {
     lock
 }
 
-fn scoped_lock(selector: &str) -> PathBuf {
+fn lock_from_v3(openapi: &str, name: &str) -> PathBuf {
     let lock = observed_lock_path();
-    Command::cargo_bin("apiwatch")
-        .expect("binary should build")
-        .args([
-            "lock",
-            "testdata/openapi/v3_scoped.yaml",
-            "--name",
-            "scoped",
-            "--output",
-            lock.to_str().expect("temp path should be valid UTF-8"),
-            "--include-operation",
-            selector,
-        ])
-        .assert()
-        .success();
+    let contract = apiwatch::openapi::load_contract(Path::new(openapi))
+        .expect("v3 fixture contract should load");
+    let scope = apiwatch::lockfile::scope_from_selectors(&[]).expect("full v3 scope should build");
+    let entry = apiwatch::lockfile::build_v3_declared(
+        &contract,
+        scope,
+        apiwatch::lockfile::DEFAULT_MAX_LOCK_BYTES,
+    )
+    .expect("v3 declared entry should build");
+    let lockfile = apiwatch::lockfile::new_v3(name, entry).expect("v3 lock should build");
+    fs::write(
+        &lock,
+        apiwatch::lockfile::render(&lockfile).expect("v3 lock should render"),
+    )
+    .expect("v3 lock should write");
+    lock
+}
+
+fn scoped_lock_v3(selector: &str) -> PathBuf {
+    let lock = observed_lock_path();
+    let selectors = vec![selector.to_owned()];
+    let contract = apiwatch::openapi::load_contract(Path::new("testdata/openapi/v3_scoped.yaml"))
+        .expect("scoped v3 fixture contract should load");
+    let scoped = apiwatch::lock_size::scope_contract(&contract, &selectors)
+        .expect("scoped v3 contract should build");
+    let scope =
+        apiwatch::lockfile::scope_from_selectors(&selectors).expect("scoped v3 scope should build");
+    let entry = apiwatch::lockfile::build_v3_declared(
+        &scoped,
+        scope,
+        apiwatch::lockfile::DEFAULT_MAX_LOCK_BYTES,
+    )
+    .expect("scoped v3 declared entry should build");
+    let lockfile =
+        apiwatch::lockfile::new_v3("scoped", entry).expect("scoped v3 lock should build");
+    fs::write(
+        &lock,
+        apiwatch::lockfile::render(&lockfile).expect("scoped v3 lock should render"),
+    )
+    .expect("scoped v3 lock should write");
     lock
 }
 
@@ -227,7 +253,7 @@ fn verify_v3_text_and_sarif_report_the_phase_two_relock_limitation() {
 
 #[test]
 fn verify_v3_d16_reports_four_breaking_findings() {
-    let lock = lock_from("testdata/openapi/v3_d16_old.yaml", "d16");
+    let lock = lock_from_v3("testdata/openapi/v3_d16_old.yaml", "d16");
     let output = Command::cargo_bin("apiwatch")
         .expect("binary should build")
         .args([
@@ -267,7 +293,7 @@ fn verify_v3_d16_reports_four_breaking_findings() {
 
 #[test]
 fn verify_v3_scope_ignores_unselected_additions() {
-    let lock = scoped_lock("GET /users");
+    let lock = scoped_lock_v3("GET /users");
 
     verify_command(
         "testdata/openapi/v3_scoped_added_unrelated.yaml",
@@ -283,7 +309,7 @@ fn verify_v3_scope_ignores_unselected_additions() {
 
 #[test]
 fn verify_v3_selected_operation_removal_is_breaking() {
-    let lock = scoped_lock("GET /users");
+    let lock = scoped_lock_v3("GET /users");
 
     verify_command(
         "testdata/openapi/v3_scoped_without_users.yaml",
@@ -299,7 +325,7 @@ fn verify_v3_selected_operation_removal_is_breaking() {
 
 #[test]
 fn verify_v3_warning_only_change_exits_zero() {
-    let lock = lock_from("testdata/openapi/status_error_added_old.yaml", "users");
+    let lock = lock_from_v3("testdata/openapi/status_error_added_old.yaml", "users");
 
     verify_command(
         "testdata/openapi/status_error_added_new.yaml",
@@ -315,7 +341,7 @@ fn verify_v3_warning_only_change_exits_zero() {
 
 #[test]
 fn verify_v4_json_uses_full_coverage_and_diff_findings() {
-    let lock = lock_from("testdata/openapi/v3_d16_old.yaml", "d16");
+    let lock = lock_from_v4("testdata/openapi/v3_d16_old.yaml", "d16");
     let output = Command::cargo_bin("apiwatch")
         .expect("binary should build")
         .args([
