@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info: { title: D-04, version: '1' }
+paths:
+  /request-narrowed:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses: { '204': { description: ok } }
+  /request-broadened:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses: { '204': { description: ok } }
+  /response-broadened:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /response-narrowed:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: false }
+  /typed-map:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: { type: integer }
+      responses: { '204': { description: ok } }

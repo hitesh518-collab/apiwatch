@@ -5,8 +5,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::contract::{
-    ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey, ParameterKey, Schema,
-    SchemaKind,
+    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey,
+    ParameterKey, Schema, SchemaKind,
 };
 
 pub const PRIVACY_SENTINELS: &[&str] = &[
@@ -71,6 +71,16 @@ struct WireSchema {
     format: Option<String>,
     enum_values: Vec<String>,
     properties: BTreeMap<String, WireProperty>,
+    additional_properties: WireAdditionalProperties,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum WireAdditionalProperties {
+    Unknown,
+    Forbidden,
+    Any,
+    Schema { schema: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -103,12 +113,21 @@ where
             },
         );
     }
+    let additional_properties = match &schema.additional_properties {
+        AdditionalProperties::Unknown => WireAdditionalProperties::Unknown,
+        AdditionalProperties::Forbidden => WireAdditionalProperties::Forbidden,
+        AdditionalProperties::Any => WireAdditionalProperties::Any,
+        AdditionalProperties::Schema(schema) => WireAdditionalProperties::Schema {
+            schema: intern_schema(schema, schemas, canonical, digest)?,
+        },
+    };
     let wire = WireSchema {
         kind: schema.kind.clone(),
         nullable: schema.nullable,
         format: schema.format.clone(),
         enum_values: schema.enum_values.clone(),
         properties,
+        additional_properties,
     };
     let bytes = serde_json::to_vec(&wire).context("failed to canonicalize schema")?;
     let id = digest(&bytes);
@@ -383,7 +402,7 @@ mod tests {
         intern_schemas_for_test, parse_operation_selector, recommend, scope_contract, sha256_id,
         CandidateMeasurement, ContractMeasurement, Recommendation, PRIVACY_SENTINELS,
     };
-    use crate::contract::{HttpMethod, Schema, SchemaKind};
+    use crate::contract::{AdditionalProperties, HttpMethod, Schema, SchemaKind};
     use crate::openapi::load_contract;
 
     #[test]
@@ -481,6 +500,7 @@ mod tests {
             format: None,
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            additional_properties: AdditionalProperties::Forbidden,
         };
         let second = Schema {
             kind: SchemaKind::Boolean,
@@ -488,6 +508,7 @@ mod tests {
             format: None,
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            additional_properties: AdditionalProperties::Forbidden,
         };
         let error =
             intern_schemas_for_test(&[first, second], |_| "sha256:forced".into()).unwrap_err();

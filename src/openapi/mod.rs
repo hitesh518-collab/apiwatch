@@ -6,16 +6,18 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use openapiv3::{
-    Components, IntegerFormat, MediaType, NumberFormat, OpenAPI, Operation as OpenApiOperation,
-    Parameter as OpenApiParameter, ParameterData, ParameterSchemaOrContent, PathItem, ReferenceOr,
+    AdditionalProperties as OpenApiAdditionalProperties, Components, IntegerFormat, MediaType,
+    NumberFormat, OpenAPI, Operation as OpenApiOperation, Parameter as OpenApiParameter,
+    ParameterData, ParameterSchemaOrContent, PathItem, ReferenceOr,
     RequestBody as OpenApiRequestBody, Response as OpenApiResponse, Schema as OpenApiSchema,
     SchemaKind as OpenApiSchemaKind, SecurityRequirement, SecurityScheme as OpenApiSecurityScheme,
     StatusCode, StringFormat, Type, VariantOrUnknownOrEmpty,
 };
 
 use crate::contract::{
-    ApiContract, AuthRequirement, AuthSchemeKind, HttpMethod, Operation, OperationKey, Parameter,
-    ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema, SchemaKind,
+    AdditionalProperties, ApiContract, AuthRequirement, AuthSchemeKind, HttpMethod, Operation,
+    OperationKey, Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response,
+    Schema, SchemaKind,
 };
 
 pub fn load_contract(path: &Path) -> Result<ApiContract> {
@@ -786,6 +788,17 @@ fn normalize_schema(
     match &schema.schema_kind {
         OpenApiSchemaKind::Type(Type::Object(object)) => {
             normalized.kind = SchemaKind::Object;
+            normalized.additional_properties = match &object.additional_properties {
+                None | Some(OpenApiAdditionalProperties::Any(true)) => AdditionalProperties::Any,
+                Some(OpenApiAdditionalProperties::Any(false)) => AdditionalProperties::Forbidden,
+                Some(OpenApiAdditionalProperties::Schema(schema)) => {
+                    AdditionalProperties::Schema(Box::new(normalize_schema_ref(
+                        schema.as_ref(),
+                        schema_resolver,
+                        visiting,
+                    )?))
+                }
+            };
             normalized.properties = object
                 .properties
                 .iter()
@@ -928,6 +941,7 @@ fn unknown_schema() -> Schema {
         format: None,
         enum_values: Vec::new(),
         properties: BTreeMap::new(),
+        additional_properties: AdditionalProperties::Forbidden,
     }
 }
 

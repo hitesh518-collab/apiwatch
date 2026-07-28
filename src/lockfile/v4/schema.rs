@@ -3,12 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{anyhow, Result};
 
 use super::{
-    canonical, Contract, WireAuth, WireOperation, WireParameter, WireProperty, WireRequestBody,
-    WireSchema,
+    canonical, Contract, WireAdditionalProperties, WireAuth, WireOperation, WireParameter,
+    WireProperty, WireRequestBody, WireSchema,
 };
 use crate::contract::{
-    ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey, Parameter, ParameterKey,
-    ParameterLocation, Property, RequestBody, Response, Schema,
+    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey,
+    Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema,
 };
 use crate::openapi::identity::canonical_media_type;
 
@@ -100,6 +100,9 @@ fn intern_content(
         .collect()
 }
 fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) -> Result<String> {
+    if matches!(&schema.additional_properties, AdditionalProperties::Unknown) {
+        return Err(anyhow!("v4 additionalProperties policy must be known"));
+    }
     let properties = schema
         .properties
         .iter()
@@ -116,12 +119,21 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
     let mut enum_values = schema.enum_values.clone();
     enum_values.sort();
     enum_values.dedup();
+    let additional_properties = match &schema.additional_properties {
+        AdditionalProperties::Unknown => unreachable!("v4 rejects unknown policies before hashing"),
+        AdditionalProperties::Forbidden => WireAdditionalProperties::Forbidden,
+        AdditionalProperties::Any => WireAdditionalProperties::Any,
+        AdditionalProperties::Schema(schema) => WireAdditionalProperties::Schema {
+            schema: intern_schema(schema, schemas)?,
+        },
+    };
     let wire = WireSchema {
         kind: schema.kind.clone(),
         nullable: schema.nullable,
         format: schema.format.clone(),
         enum_values,
         properties,
+        additional_properties,
     };
     let id = canonical::schema_id(&wire)?;
     if let Some(existing) = schemas.get(&id) {
@@ -236,6 +248,13 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
         format: wire.format.clone(),
         enum_values: wire.enum_values.clone(),
         properties,
+        additional_properties: match &wire.additional_properties {
+            WireAdditionalProperties::Forbidden => AdditionalProperties::Forbidden,
+            WireAdditionalProperties::Any => AdditionalProperties::Any,
+            WireAdditionalProperties::Schema { schema } => {
+                AdditionalProperties::Schema(Box::new(expand_schema(schema, schemas)?))
+            }
+        },
     })
 }
 pub(super) fn validate_schema_table(contract: &Contract) -> Result<()> {
@@ -285,6 +304,9 @@ fn visit_schema(
     }
     for property in schema.properties.values() {
         visit_schema(&property.schema, schemas, visiting, reachable)?;
+    }
+    if let WireAdditionalProperties::Schema { schema } = &schema.additional_properties {
+        visit_schema(schema, schemas, visiting, reachable)?;
     }
     visiting.remove(id);
     reachable.insert(id.to_string());

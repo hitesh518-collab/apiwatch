@@ -1,6 +1,6 @@
 use crate::contract::{
-    ApiContract, AuthRequirement, OperationKey, Parameter, ParameterKey, RequestBody, Response,
-    Schema, SchemaKind,
+    AdditionalProperties, ApiContract, AuthRequirement, OperationKey, Parameter, ParameterKey,
+    RequestBody, Response, Schema, SchemaKind,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -526,6 +526,65 @@ fn diff_schema(
             &new_property.schema,
         );
     }
+
+    diff_additional_properties(changes, operation, usage, context, path, old, new);
+}
+
+fn diff_additional_properties(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    usage: SchemaUsage,
+    context: &str,
+    path: &str,
+    old: &Schema,
+    new: &Schema,
+) {
+    use AdditionalProperties::{Any, Forbidden, Schema, Unknown};
+
+    if matches!(old.additional_properties, Unknown) || matches!(new.additional_properties, Unknown)
+    {
+        return;
+    }
+
+    match (&old.additional_properties, &new.additional_properties) {
+        (Schema(old_schema), Schema(new_schema)) => {
+            let path = field_path(path, "additionalProperties");
+            diff_schema(
+                changes, operation, usage, context, &path, old_schema, new_schema,
+            );
+        }
+        (old_policy, new_policy) if old_policy == new_policy => {}
+        (old_policy, new_policy) => {
+            let narrowing = matches!(
+                (old_policy, new_policy),
+                (Any, Forbidden) | (Any, Schema(_)) | (Schema(_), Forbidden)
+            );
+            let severity = match (usage, narrowing) {
+                (SchemaUsage::Request, true) | (SchemaUsage::Response, false) => Severity::Breaking,
+                (SchemaUsage::Request, false) | (SchemaUsage::Response, true) => {
+                    Severity::NonBreaking
+                }
+            };
+            changes.push(Change {
+                severity,
+                operation: operation.clone(),
+                message: format!(
+                    "{context} additionalProperties changed from {} to {}",
+                    additional_properties_name(old_policy),
+                    additional_properties_name(new_policy)
+                ),
+            });
+        }
+    }
+}
+
+fn additional_properties_name(policy: &AdditionalProperties) -> &'static str {
+    match policy {
+        AdditionalProperties::Unknown => "unknown",
+        AdditionalProperties::Forbidden => "forbidden",
+        AdditionalProperties::Any => "any",
+        AdditionalProperties::Schema(_) => "schema",
+    }
 }
 
 fn diff_requiredness(
@@ -646,6 +705,8 @@ fn required_name(required: bool) -> &'static str {
 fn schema_target(path: &str) -> String {
     if path.is_empty() {
         "schema".to_string()
+    } else if path == "additionalProperties" {
+        path.to_string()
     } else {
         format!("field {path}")
     }

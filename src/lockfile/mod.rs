@@ -706,9 +706,35 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::contract::Schema;
 
     fn canonical_lines(value: &str) -> String {
         value.replace("\r\n", "\n")
+    }
+
+    fn with_unknown_additional_properties(contract: &mut ApiContract) {
+        for operation in contract.operations.values_mut() {
+            for parameter in operation.parameters.values_mut() {
+                mark_schema_additional_properties_unknown(&mut parameter.schema);
+            }
+            if let Some(request_body) = &mut operation.request_body {
+                for schema in request_body.content.values_mut() {
+                    mark_schema_additional_properties_unknown(schema);
+                }
+            }
+            for response in operation.responses.values_mut() {
+                for schema in response.content.values_mut() {
+                    mark_schema_additional_properties_unknown(schema);
+                }
+            }
+        }
+    }
+
+    fn mark_schema_additional_properties_unknown(schema: &mut Schema) {
+        schema.additional_properties = crate::contract::AdditionalProperties::Unknown;
+        for property in schema.properties.values_mut() {
+            mark_schema_additional_properties_unknown(&mut property.schema);
+        }
     }
 
     fn v3_declared_fixture() -> v3::DeclaredEntry {
@@ -1090,7 +1116,9 @@ mod tests {
 
     #[test]
     fn v3_interns_repeated_schemas_and_expands_the_original_contract() {
-        use crate::contract::{HttpMethod, Operation, OperationKey, Response, Schema, SchemaKind};
+        use crate::contract::{
+            AdditionalProperties, HttpMethod, Operation, OperationKey, Response, Schema, SchemaKind,
+        };
 
         let schema = Schema {
             kind: SchemaKind::String,
@@ -1098,6 +1126,7 @@ mod tests {
             format: Some("uuid".to_string()),
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            additional_properties: AdditionalProperties::Unknown,
         };
         let operation = |path: &str| {
             (
@@ -1130,6 +1159,65 @@ mod tests {
 
         assert_eq!(schema_count, 1);
         assert_eq!(expanded, contract);
+    }
+
+    #[test]
+    fn v4_round_trips_schema_valued_additional_properties() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        ))
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let lock = new_v4("d04", entry).expect("v4 lock should build");
+        let rendered = render(&lock).expect("v4 lock should render");
+
+        assert!(
+            rendered.contains("additional_properties:\n            kind: schema"),
+            "schema-valued additionalProperties must be represented on the v4 wire"
+        );
+
+        let path = std::env::temp_dir().join(format!("apiwatch-d04-{}.lock", std::process::id()));
+        fs::write(&path, &rendered).expect("v4 lock should write");
+        let parsed = load(&path).expect("v4 lock should load");
+        fs::remove_file(path).ok();
+        let target = select_verify_target(&parsed, "d04").expect("target should select");
+
+        assert_eq!(
+            target.kind(),
+            &VerifyTargetKind::Declared {
+                contract: source,
+                scope: Scope::all(),
+                coverage: DeclaredCoverage::FullV4,
+            }
+        );
+    }
+
+    #[test]
+    fn v4_rejects_a_tampered_schema_valued_additional_properties_reference() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        ))
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("d04", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        let marker = "additional_properties:\n            kind: schema\n            schema: ";
+        assert!(
+            rendered.contains(marker),
+            "schema-valued additionalProperties must be represented on the v4 wire"
+        );
+        let tampered = rendered.replacen(marker, &format!("{marker}sha256:tampered"), 1);
+        let path =
+            std::env::temp_dir().join(format!("apiwatch-d04-tampered-{}.lock", std::process::id()));
+        fs::write(&path, tampered).expect("tampered v4 lock should write");
+        let error = load(&path).expect_err("tampered nested schema reference should fail");
+        fs::remove_file(path).ok();
+
+        assert!(error
+            .chain()
+            .any(|cause| cause.to_string().contains("schema digest mismatch")));
     }
 
     #[test]
@@ -1195,7 +1283,9 @@ mod tests {
             )
         );
         assert_eq!(first, second);
-        assert_eq!(expanded, source);
+        let mut expected = source;
+        with_unknown_additional_properties(&mut expected);
+        assert_eq!(expanded, expected);
         for sentinel in crate::lock_size::PRIVACY_SENTINELS {
             assert!(!first.contains(sentinel), "leaked {sentinel}");
         }

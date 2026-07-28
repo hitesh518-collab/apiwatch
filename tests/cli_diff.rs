@@ -201,6 +201,58 @@ fn phase2_d03_diff_reports_response_requiredness_symmetrically() {
 }
 
 #[test]
+fn phase2_d04_diff_reports_additional_properties_direction_and_schema_changes() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+            "testdata/openapi/phase2_d04_additional_properties_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/response-broadened",
+                "message": "response 200 application/json additionalProperties changed from forbidden to any"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "GET",
+                "path": "/response-narrowed",
+                "message": "response 200 application/json additionalProperties changed from any to forbidden"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/request-broadened",
+                "message": "request application/json additionalProperties changed from forbidden to any"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/request-narrowed",
+                "message": "request application/json additionalProperties changed from any to forbidden"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/typed-map",
+                "message": "request application/json additionalProperties type changed from string to integer"
+            }
+        ])
+    );
+}
+
+#[test]
 fn phase2_d05_diff_reports_schema_format_changes_as_warnings() {
     let output = Command::cargo_bin("apiwatch")
         .expect("binary should build")

@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{anyhow, Result};
 
 use crate::contract::{
-    ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey, Parameter, ParameterKey,
-    ParameterLocation, Property, RequestBody, Response, Schema,
+    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey,
+    Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema,
 };
 use crate::openapi::identity::canonical_media_type;
 
@@ -268,6 +268,7 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
         format: wire.format.clone(),
         enum_values: wire.enum_values.clone(),
         properties,
+        additional_properties: AdditionalProperties::Unknown,
     })
 }
 

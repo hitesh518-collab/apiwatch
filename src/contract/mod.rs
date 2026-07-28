@@ -141,6 +141,15 @@ pub struct Schema {
     pub format: Option<String>,
     pub enum_values: Vec<String>,
     pub properties: BTreeMap<String, Property>,
+    pub additional_properties: AdditionalProperties,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum AdditionalProperties {
+    Unknown,
+    Forbidden,
+    Any,
+    Schema(Box<Schema>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
