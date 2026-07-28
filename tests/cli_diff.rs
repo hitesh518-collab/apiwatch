@@ -76,6 +76,48 @@ fn phase2_d06_redacts_entire_query_values_that_mix_variables_and_literals() {
 }
 
 #[test]
+fn phase2_d06_treats_percent_encoded_braces_as_literal_query_data() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let old = phase2_d06_source("https://api.example.com/v1?token=%7Bliteral-secret%7D");
+    let new = phase2_d06_source("https://api.example.com/v1?token=%7Bcounterpart-secret%7D");
+    let lock = directory.path().join("encoded-braces.lock");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            "--name",
+            "encoded-braces",
+            "--output",
+            lock.to_str().expect("temporary path should be UTF-8"),
+        ])
+        .assert()
+        .success();
+    let lock_bytes = std::fs::read(&lock).expect("lock should be readable");
+    let rendered_lock = String::from_utf8_lossy(&lock_bytes);
+    assert!(rendered_lock.contains("token={redacted}"));
+
+    let diff = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    assert_eq!(diff.status.code(), Some(0));
+    let findings = String::from_utf8_lossy(&diff.stdout);
+    for secret in ["literal-secret", "counterpart-secret"] {
+        assert!(!rendered_lock.contains(secret), "lock leaked {secret}");
+        assert!(!findings.contains(secret), "finding leaked {secret}");
+    }
+}
+
+#[test]
 fn phase2_d06_keeps_query_placeholder_identity_while_redacting_literal_portions() {
     let old = phase2_d06_source("https://api.example.com/v1?tenant={tenant}");
     let new = phase2_d06_source("https://api.example.com/v1?tenant={organization}");

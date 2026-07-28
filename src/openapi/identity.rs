@@ -149,9 +149,8 @@ fn canonical_query(query: &str) -> String {
         .filter(|pair| !pair.is_empty())
         .map(|pair| {
             let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-            let key = decode_query_component(key, true);
-            let value = decode_query_component(value, false);
-            (encode_query_key(&key), redact_query_value(&value))
+            let key = decode_query_key(key);
+            (encode_query_key(&key), redact_query_value(value))
         })
         .collect::<Vec<_>>();
     pairs.sort();
@@ -162,20 +161,12 @@ fn canonical_query(query: &str) -> String {
         .join("&")
 }
 
-fn decode_query_component(value: &str, is_key: bool) -> String {
-    let encoded = if is_key {
-        format!("{value}=")
-    } else {
-        format!("value={value}")
-    };
-    let (key, value) = url::form_urlencoded::parse(encoded.as_bytes())
+fn decode_query_key(value: &str) -> String {
+    let encoded = format!("{value}=");
+    let (key, _) = url::form_urlencoded::parse(encoded.as_bytes())
         .next()
         .expect("constructed query pair should parse");
-    if is_key {
-        key.into_owned()
-    } else {
-        value.into_owned()
-    }
+    key.into_owned()
 }
 
 fn redact_query_value(value: &str) -> String {
