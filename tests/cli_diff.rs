@@ -200,6 +200,46 @@ fn phase2_d03_diff_reports_response_requiredness_symmetrically() {
     );
 }
 
+#[test]
+fn phase2_d05_diff_reports_schema_format_changes_as_warnings() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d05_format_old.yaml",
+            "testdata/openapi/phase2_d05_format_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "warning",
+                "method": "GET",
+                "path": "/events",
+                "message": "response 200 application/json field created_at format changed from date to date-time"
+            },
+            {
+                "severity": "warning",
+                "method": "POST",
+                "path": "/users",
+                "message": "request application/json field count format changed from int32 to int64"
+            },
+            {
+                "severity": "warning",
+                "method": "POST",
+                "path": "/users",
+                "message": "request application/json field id format changed from none to uuid"
+            }
+        ])
+    );
+}
+
 fn sarif_rule_ids(rendered: &Value) -> Vec<&str> {
     rendered["runs"][0]["tool"]["driver"]["rules"]
         .as_array()

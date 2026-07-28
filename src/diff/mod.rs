@@ -445,6 +445,19 @@ fn diff_schema(
         });
     }
 
+    if old.format != new.format {
+        changes.push(Change {
+            severity: Severity::Warning,
+            operation: operation.clone(),
+            message: format!(
+                "{context} {} format changed from {} to {}",
+                schema_target(path),
+                format_name(old.format.as_deref()),
+                format_name(new.format.as_deref())
+            ),
+        });
+    }
+
     for value in &new.enum_values {
         if !old.enum_values.contains(value) {
             changes.push(Change {
@@ -636,6 +649,10 @@ fn schema_target(path: &str) -> String {
     } else {
         format!("field {path}")
     }
+}
+
+fn format_name(format: Option<&str>) -> &str {
+    format.unwrap_or("none")
 }
 
 fn schema_kind_name(kind: &SchemaKind) -> &'static str {
