@@ -143,15 +143,6 @@ fn diff_auth_requirements(
             continue;
         }
         let Some(new_requirement) = new.get(name).filter(|_| !matched_new.contains(name)) else {
-            changes.push(Change {
-                severity: Severity::NonBreaking,
-                operation: operation.clone(),
-                message: format!(
-                    "authentication {} ({}) removed",
-                    old_requirement.name,
-                    old_requirement.kind.as_str()
-                ),
-            });
             continue;
         };
 
@@ -181,6 +172,21 @@ fn diff_auth_requirements(
         }
 
         diff_auth_scopes(changes, operation, old_requirement, new_requirement);
+    }
+
+    for (name, old_requirement) in old {
+        if matched_old.contains(name) {
+            continue;
+        }
+        changes.push(Change {
+            severity: Severity::NonBreaking,
+            operation: operation.clone(),
+            message: format!(
+                "authentication {} ({}) removed",
+                old_requirement.name,
+                old_requirement.kind.as_str()
+            ),
+        });
     }
 
     for (name, new_requirement) in new {
@@ -913,9 +919,11 @@ fn schema_kind_name(kind: &SchemaKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::path::Path;
 
-    use super::{diff_contracts, Severity};
+    use super::{diff_auth_requirements, diff_contracts, Severity};
+    use crate::contract::{AuthRequirement, AuthSchemeKind, HttpMethod, OperationKey};
     use crate::openapi::load_contract;
 
     #[test]
@@ -948,5 +956,46 @@ mod tests {
         assert_eq!(changes[0].operation.method.as_str(), "GET");
         assert_eq!(changes[0].operation.path, "/teams");
         assert_eq!(changes[0].message, "endpoint added");
+    }
+
+    #[test]
+    fn authentication_fallback_pairs_precede_removals_and_additions() {
+        let requirement = |name: &str, scopes: Vec<&str>| AuthRequirement {
+            name: name.to_string(),
+            kind: AuthSchemeKind::Unknown,
+            identity: None,
+            scopes: scopes.into_iter().map(str::to_string).collect(),
+        };
+        let old = BTreeMap::from([
+            ("removed".to_string(), requirement("removed", vec![])),
+            ("stable".to_string(), requirement("stable", vec!["write"])),
+        ]);
+        let new = BTreeMap::from([
+            ("added".to_string(), requirement("added", vec![])),
+            ("stable".to_string(), requirement("stable", vec![])),
+        ]);
+        let mut changes = Vec::new();
+
+        diff_auth_requirements(
+            &mut changes,
+            &OperationKey {
+                method: HttpMethod::Get,
+                path: "/users".to_string(),
+            },
+            &old,
+            &new,
+        );
+
+        assert_eq!(
+            changes
+                .into_iter()
+                .map(|change| change.message)
+                .collect::<Vec<_>>(),
+            vec![
+                "authentication stable scope write removed",
+                "authentication removed (unknown) removed",
+                "authentication added (unknown) added",
+            ]
+        );
     }
 }

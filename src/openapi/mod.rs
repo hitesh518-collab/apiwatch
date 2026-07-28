@@ -593,12 +593,12 @@ fn normalize_auth_requirements(
         return Ok(auth);
     }
 
-    let mut identities = BTreeSet::new();
-
     for requirement in requirements {
+        let mut identities = BTreeSet::new();
         for (name, scopes) in requirement {
             let mut scopes = scopes.clone();
             scopes.sort();
+            scopes.dedup();
 
             let scheme = security_schemes.get(name);
             let identity = scheme.map(|scheme| scheme.identity.clone());

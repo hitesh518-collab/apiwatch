@@ -1405,6 +1405,63 @@ mod tests {
     }
 
     #[test]
+    fn v4_rejects_authentication_kind_that_disagrees_with_its_identity_before_digest_checks() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("private", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        let tampered = rendered.replacen("kind: bearer", "kind: basic", 1);
+        let path = std::env::temp_dir().join(format!(
+            "apiwatch-d08-auth-kind-{}.lock",
+            std::process::id()
+        ));
+        fs::write(&path, tampered).expect("tampered v4 lock should write");
+        let error = load(&path).expect_err("inconsistent authentication kind should fail");
+        fs::remove_file(path).ok();
+
+        assert!(error
+            .to_string()
+            .contains("authentication kind does not match identity"));
+    }
+
+    #[test]
+    fn v4_rejects_duplicate_oauth_flow_kinds_even_when_endpoints_differ() {
+        let source = crate::openapi::load_contract_text(
+            "openapi: 3.0.3\ninfo: { title: D-08 OAuth, version: '1' }\ncomponents:\n  securitySchemes:\n    oauth:\n      type: oauth2\n      flows:\n        password:\n          tokenUrl: https://auth.example.test/token\n          scopes: {}\npaths:\n  /users:\n    get:\n      security:\n        - oauth: []\n      responses: { '200': { description: OK } }\n",
+            false,
+            "D-08 OAuth fixture",
+        )
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("oauth", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        let marker = "flows:\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/token\n                  refresh: null";
+        assert!(
+            rendered.contains(marker),
+            "fixture should store the OAuth flow"
+        );
+        let replacement = format!(
+            "flows:\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/alternate\n                  refresh: null\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/token\n                  refresh: null"
+        );
+        let tampered = rendered.replacen(marker, &replacement, 1);
+        let path = std::env::temp_dir().join(format!(
+            "apiwatch-d08-oauth-flow-{}.lock",
+            std::process::id()
+        ));
+        fs::write(&path, tampered).expect("tampered v4 lock should write");
+        let error = load(&path).expect_err("duplicate OAuth flow kinds should fail");
+        fs::remove_file(path).ok();
+
+        assert!(error
+            .to_string()
+            .contains("OAuth authentication flows contain duplicate kinds"));
+    }
+
+    #[test]
     fn v3_rejects_a_tampered_schema_digest() {
         let contract =
             crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))

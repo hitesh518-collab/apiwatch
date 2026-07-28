@@ -210,6 +210,109 @@ fn phase2_d08_v3_verify_retains_label_based_authentication_matching() {
     fs::remove_file(lock).ok();
 }
 
+#[test]
+fn phase2_d08_v4_allows_distinct_unresolved_authentication_labels() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    fs::write(
+        document.path(),
+        "openapi: 3.0.3\ninfo: { title: D-08 unresolved, version: '1' }\npaths:\n  /users:\n    get:\n      security:\n        - firstUnknown: []\n          secondUnknown: []\n      responses: { '200': { description: OK } }\n",
+    )
+    .expect("temporary OpenAPI document should be written");
+    let lock = observed_lock_path();
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            document
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--name",
+            "unresolved",
+            "--output",
+            lock.to_str().expect("temporary path should be UTF-8"),
+        ])
+        .assert()
+        .success();
+
+    verify_command(
+        document
+            .path()
+            .to_str()
+            .expect("temporary path should be UTF-8"),
+        "unresolved",
+        lock.to_str().expect("temporary path should be UTF-8"),
+    )
+    .assert()
+    .success();
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d08_v4_verify_deduplicates_source_authentication_scopes() {
+    let old = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("old OpenAPI document should be created");
+    let new = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("new OpenAPI document should be created");
+    let template = |scopes: &str| {
+        format!(
+        "openapi: 3.0.3\ninfo: {{ title: D-08 scopes, version: '1' }}\ncomponents:\n  securitySchemes:\n    oauth:\n      type: oauth2\n      flows:\n        password:\n          tokenUrl: https://auth.example.test/token\n          scopes: {{ read: read, write: write }}\npaths:\n  /users:\n    get:\n      security:\n        - oauth: [{scopes}]\n      responses: {{ '200': {{ description: OK }} }}\n"
+    )
+    };
+    fs::write(old.path(), template("write, read, write")).expect("old document should write");
+    fs::write(new.path(), template("read")).expect("new document should write");
+    let lock = lock_from_v4(
+        old.path().to_str().expect("old path should be UTF-8"),
+        "scopes",
+    );
+
+    let diff = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("old path should be UTF-8"),
+            new.path().to_str().expect("new path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+    let verify = verify_command(
+        new.path().to_str().expect("new path should be UTF-8"),
+        "scopes",
+        lock.to_str().expect("lock path should be UTF-8"),
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("verify command should run");
+    fs::remove_file(lock).ok();
+
+    assert_eq!(diff.status.code(), Some(0));
+    assert_eq!(verify.status.code(), Some(0));
+    assert_eq!(
+        parse_json_output(&diff)["changes"],
+        json!([{
+            "severity": "non_breaking",
+            "method": "GET",
+            "path": "/users",
+            "message": "authentication oauth scope write removed"
+        }])
+    );
+    assert_eq!(
+        parse_json_output(&verify)["changes"],
+        parse_json_output(&diff)["changes"]
+    );
+}
+
 fn scoped_lock_v3(selector: &str) -> PathBuf {
     let lock = observed_lock_path();
     let selectors = vec![selector.to_owned()];

@@ -486,11 +486,13 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
         for (name, auth) in &operation.auth {
             validate_wire_string(name, "auth name", false)?;
             validate_normalized_strings(&auth.scopes, "auth scopes")?;
-            validate_auth_identity(&auth.identity)?;
+            validate_auth_identity(&auth.identity, auth.kind)?;
         }
         let mut identities = BTreeSet::new();
         for auth in operation.auth.values() {
-            if !identities.insert(&auth.identity) {
+            if !matches!(auth.identity, WireAuthIdentity::Unknown { .. })
+                && !identities.insert(&auth.identity)
+            {
                 return Err(anyhow!("duplicate authentication identity"));
             }
         }
@@ -547,9 +549,12 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
     Ok(())
 }
 
-fn validate_auth_identity(identity: &WireAuthIdentity) -> Result<()> {
+fn validate_auth_identity(identity: &WireAuthIdentity, kind: AuthSchemeKind) -> Result<()> {
     match identity {
         WireAuthIdentity::ApiKey { location, name } => {
+            if kind != AuthSchemeKind::ApiKey {
+                return Err(anyhow!("authentication kind does not match identity"));
+            }
             if matches!(location, ParameterLocation::Path) {
                 return Err(anyhow!("invalid api key authentication location"));
             }
@@ -560,14 +565,31 @@ fn validate_auth_identity(identity: &WireAuthIdentity) -> Result<()> {
             if scheme != &scheme.to_ascii_lowercase() {
                 return Err(anyhow!("http authentication scheme is not canonical"));
             }
+            let expected = match scheme.as_str() {
+                "bearer" => AuthSchemeKind::Bearer,
+                "basic" => AuthSchemeKind::Basic,
+                _ => AuthSchemeKind::Http,
+            };
+            if kind != expected {
+                return Err(anyhow!("authentication kind does not match identity"));
+            }
         }
         WireAuthIdentity::OAuth2 { flows } => {
+            if kind != AuthSchemeKind::OAuth2 {
+                return Err(anyhow!("authentication kind does not match identity"));
+            }
             if flows.is_empty() || flows.windows(2).any(|pair| pair[0] >= pair[1]) {
                 return Err(anyhow!(
                     "OAuth authentication flows must be sorted and contain no duplicates"
                 ));
             }
+            let mut flow_kinds = BTreeSet::new();
             for flow in flows {
+                if !flow_kinds.insert(flow.kind) {
+                    return Err(anyhow!(
+                        "OAuth authentication flows contain duplicate kinds"
+                    ));
+                }
                 let expected = match flow.kind {
                     WireOAuthFlowKind::Implicit => (true, false),
                     WireOAuthFlowKind::Password | WireOAuthFlowKind::ClientCredentials => {
@@ -586,8 +608,19 @@ fn validate_auth_identity(identity: &WireAuthIdentity) -> Result<()> {
                 }
             }
         }
-        WireAuthIdentity::OpenIdConnect { discovery } => validate_auth_endpoint(discovery)?,
-        WireAuthIdentity::Unknown { .. } => {}
+        WireAuthIdentity::OpenIdConnect { discovery } => {
+            if kind != AuthSchemeKind::OpenIdConnect {
+                return Err(anyhow!("authentication kind does not match identity"));
+            }
+            validate_auth_endpoint(discovery)?
+        }
+        WireAuthIdentity::Unknown {
+            kind: identity_kind,
+        } => {
+            if kind != *identity_kind {
+                return Err(anyhow!("authentication kind does not match identity"));
+            }
+        }
     }
     Ok(())
 }
