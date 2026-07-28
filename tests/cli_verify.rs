@@ -254,6 +254,51 @@ fn phase2_d08_v4_allows_distinct_unresolved_authentication_labels() {
 }
 
 #[test]
+fn phase2_d08_rejects_known_identity_duplicates_across_security_alternatives() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    fs::write(
+        document.path(),
+        "openapi: 3.0.3\ninfo: { title: D-08 alternatives, version: '1' }\ncomponents:\n  securitySchemes:\n    readOAuth:\n      type: oauth2\n      flows:\n        password:\n          tokenUrl: https://auth.example.test/token\n          scopes: { read: read, write: write }\n    writeOAuth:\n      type: oauth2\n      flows:\n        password:\n          tokenUrl: https://auth.example.test/token\n          scopes: { read: read, write: write }\npaths:\n  /users:\n    get:\n      security:\n        - readOAuth: [read]\n        - writeOAuth: [write]\n      responses: { '200': { description: OK } }\n",
+    )
+    .expect("temporary OpenAPI document should be written");
+    let input = document
+        .path()
+        .to_str()
+        .expect("temporary path should be UTF-8");
+    let lock = observed_lock_path();
+    let lock_path = lock.to_str().expect("temporary lock path should be UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["diff", input, input])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "duplicate authentication identity",
+        ));
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            input,
+            "--name",
+            "alternatives",
+            "--output",
+            lock_path,
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "duplicate authentication identity",
+        ));
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
 fn phase2_d08_v4_verify_deduplicates_source_authentication_scopes() {
     let old = tempfile::Builder::new()
         .suffix(".yaml")

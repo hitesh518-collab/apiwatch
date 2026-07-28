@@ -593,8 +593,9 @@ fn normalize_auth_requirements(
         return Ok(auth);
     }
 
+    let mut identities = BTreeSet::new();
+
     for requirement in requirements {
-        let mut identities = BTreeSet::new();
         for (name, scopes) in requirement {
             let mut scopes = scopes.clone();
             scopes.sort();
@@ -603,7 +604,9 @@ fn normalize_auth_requirements(
             let scheme = security_schemes.get(name);
             let identity = scheme.map(|scheme| scheme.identity.clone());
             if let Some(identity) = &identity {
-                if !identities.insert(identity.clone()) {
+                if !matches!(identity, AuthIdentity::Unknown { .. })
+                    && !identities.insert(identity.clone())
+                {
                     return Err(anyhow!("duplicate authentication identity"));
                 }
             }
