@@ -1136,6 +1136,7 @@ mod tests {
                 },
                 Operation {
                     auth: BTreeMap::new(),
+                    servers: None,
                     parameters: BTreeMap::new(),
                     request_body: None,
                     responses: BTreeMap::from([(
@@ -1324,6 +1325,9 @@ mod tests {
         assert_eq!(first, second);
         let mut expected = source;
         with_unknown_additional_properties(&mut expected);
+        for operation in expected.operations.values_mut() {
+            operation.servers = None;
+        }
         assert_eq!(expanded, expected);
         for sentinel in crate::lock_size::PRIVACY_SENTINELS {
             assert!(!first.contains(sentinel), "leaked {sentinel}");

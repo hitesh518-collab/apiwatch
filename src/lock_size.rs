@@ -52,6 +52,7 @@ struct DeduplicatedContract {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 struct DeduplicatedOperation {
     auth: BTreeMap<String, AuthRequirement>,
+    servers: Option<std::collections::BTreeSet<crate::contract::ServerTemplate>>,
     parameters: BTreeMap<ParameterKey, WireParameter>,
     request_body: Option<BTreeMap<String, String>>,
     responses: BTreeMap<String, BTreeMap<String, String>>,
@@ -200,6 +201,7 @@ where
         .collect::<Result<_>>()?;
     Ok(DeduplicatedOperation {
         auth: operation.auth.clone(),
+        servers: operation.servers.clone(),
         parameters,
         request_body,
         responses,

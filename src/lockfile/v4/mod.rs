@@ -95,6 +95,7 @@ pub(super) struct Contract {
 #[serde(deny_unknown_fields)]
 pub(super) struct WireOperation {
     auth: BTreeMap<String, WireAuth>,
+    servers: Vec<String>,
     parameters: BTreeMap<String, WireParameter>,
     request_body: Option<WireRequestBody>,
     responses: BTreeMap<String, BTreeMap<String, String>>,
@@ -433,6 +434,12 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
         for (name, auth) in &operation.auth {
             validate_wire_string(name, "auth name", false)?;
             validate_normalized_strings(&auth.scopes, "auth scopes")?;
+        }
+        validate_normalized_strings(&operation.servers, "servers")?;
+        for server in &operation.servers {
+            if crate::openapi::identity::canonical_server_template(server)?.0 != *server {
+                return Err(anyhow!("server template is not canonical"));
+            }
         }
         for parameter_key in operation.parameters.keys() {
             let parsed = schema::parse_parameter_key(parameter_key)?;

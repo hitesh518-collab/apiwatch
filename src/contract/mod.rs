@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,7 @@ impl HttpMethod {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Operation {
     pub auth: BTreeMap<String, AuthRequirement>,
+    pub servers: Option<BTreeSet<ServerTemplate>>,
     pub parameters: BTreeMap<ParameterKey, Parameter>,
     pub request_body: Option<RequestBody>,
     pub responses: BTreeMap<String, Response>,
@@ -128,6 +129,9 @@ pub struct RequestBody {
     pub required: Option<bool>,
     pub content: BTreeMap<String, Schema>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct ServerTemplate(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Response {

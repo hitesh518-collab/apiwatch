@@ -2,6 +2,83 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{json, Value};
 
+#[test]
+fn phase2_d06_diff_reports_effective_server_changes_without_leaking_values() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d06_servers_old.yaml",
+            "testdata/openapi/phase2_d06_servers_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/removed",
+                "message": "server https://api.example.com/v1 removed"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "GET",
+                "path": "/added",
+                "message": "server https://backup.example.com/v1 added"
+            }
+        ])
+    );
+    let rendered = String::from_utf8_lossy(&output.stdout);
+    assert!(!rendered.contains("tenant=old"));
+    assert!(!rendered.contains("tenant=new"));
+}
+
+#[test]
+fn phase2_d06_rejects_server_credentials_without_echoing_them() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let source = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary source should be created");
+    std::fs::write(
+        source.path(),
+        "openapi: 3.0.3\ninfo: { title: Private, version: '1' }\nservers:\n  - url: https://user:secret@example.com/v1\npaths:\n  /users:\n    get:\n      responses: { '204': { description: ok } }\n",
+    )
+    .expect("temporary source should be written");
+    let lock = directory.path().join("private.lock");
+
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            source
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--name",
+            "private",
+            "--output",
+            lock.to_str().expect("temporary path should be UTF-8"),
+        ])
+        .output()
+        .expect("Lock command should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("credentials"));
+    assert!(!stderr.contains("secret"));
+    assert!(!std::fs::read(&lock)
+        .unwrap_or_default()
+        .windows(b"secret".len())
+        .any(|bytes| bytes == b"secret"));
+}
+
 fn parse_json_output(output: &std::process::Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("stdout should be JSON")
 }

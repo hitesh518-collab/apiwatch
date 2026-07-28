@@ -220,6 +220,7 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                 key,
                 Operation {
                     auth,
+                    servers: None,
                     parameters,
                     request_body,
                     responses,

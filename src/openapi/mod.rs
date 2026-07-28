@@ -11,7 +11,7 @@ use openapiv3::{
     ParameterData, ParameterSchemaOrContent, PathItem, ReferenceOr,
     RequestBody as OpenApiRequestBody, Response as OpenApiResponse, Schema as OpenApiSchema,
     SchemaKind as OpenApiSchemaKind, SecurityRequirement, SecurityScheme as OpenApiSecurityScheme,
-    StatusCode, StringFormat, Type, VariantOrUnknownOrEmpty,
+    Server, StatusCode, StringFormat, Type, VariantOrUnknownOrEmpty,
 };
 
 use crate::contract::{
@@ -135,10 +135,12 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
     let schema_resolver = SchemaResolver::from_components(document.components.as_ref());
     let security_schemes = normalize_security_schemes(document.components.as_ref())?;
     let global_security = document.security.clone().unwrap_or_default();
+    let root_servers = document.servers.clone();
     let context = OperationNormalizeContext {
         security_schemes: &security_schemes,
         schema_resolver: &schema_resolver,
         global_security: &global_security,
+        root_servers: &root_servers,
     };
     let path_items = document
         .paths
@@ -155,6 +157,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Get,
             &context,
+            &item.servers,
             &item.parameters,
             item.get.as_ref(),
         )?;
@@ -163,6 +166,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Post,
             &context,
+            &item.servers,
             &item.parameters,
             item.post.as_ref(),
         )?;
@@ -171,6 +175,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Put,
             &context,
+            &item.servers,
             &item.parameters,
             item.put.as_ref(),
         )?;
@@ -179,6 +184,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Patch,
             &context,
+            &item.servers,
             &item.parameters,
             item.patch.as_ref(),
         )?;
@@ -187,6 +193,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Delete,
             &context,
+            &item.servers,
             &item.parameters,
             item.delete.as_ref(),
         )?;
@@ -195,6 +202,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Options,
             &context,
+            &item.servers,
             &item.parameters,
             item.options.as_ref(),
         )?;
@@ -203,6 +211,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Head,
             &context,
+            &item.servers,
             &item.parameters,
             item.head.as_ref(),
         )?;
@@ -211,6 +220,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Trace,
             &context,
+            &item.servers,
             &item.parameters,
             item.trace.as_ref(),
         )?;
@@ -239,6 +249,7 @@ struct OperationNormalizeContext<'a> {
     security_schemes: &'a BTreeMap<String, AuthSchemeKind>,
     schema_resolver: &'a SchemaResolver,
     global_security: &'a [SecurityRequirement],
+    root_servers: &'a [Server],
 }
 
 fn resolve_path_item(
@@ -275,6 +286,7 @@ fn insert_operation(
     path: &str,
     method: HttpMethod,
     context: &OperationNormalizeContext<'_>,
+    path_servers: &[Server],
     path_parameters: &[ReferenceOr<OpenApiParameter>],
     operation: Option<&OpenApiOperation>,
 ) -> Result<()> {
@@ -289,6 +301,23 @@ fn insert_operation(
             .unwrap_or(context.global_security),
         context.security_schemes,
     );
+    let server_sources = if !operation.servers.is_empty() {
+        &operation.servers
+    } else if !path_servers.is_empty() {
+        path_servers
+    } else if !context.root_servers.is_empty() {
+        context.root_servers
+    } else {
+        &[]
+    };
+    let servers = if server_sources.is_empty() {
+        std::iter::once(identity::canonical_server_template("/")?).collect()
+    } else {
+        server_sources
+            .iter()
+            .map(|server| identity::canonical_server_template(&server.url))
+            .collect::<Result<_>>()?
+    };
 
     let parameters = normalize_parameters(
         context.schema_resolver,
@@ -316,6 +345,7 @@ fn insert_operation(
         },
         Operation {
             auth,
+            servers: Some(servers),
             parameters,
             request_body,
             responses,

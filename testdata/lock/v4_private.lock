@@ -5,8 +5,8 @@ apis:
     source: openapi
     scope: all
     max_lock_bytes: 5242880
-    contract_bytes: 824
-    contract_digest: sha256:c985a4c1aa27fc7f6595865b94264a93b4445da3028344049a6491f2b455597a
+    contract_bytes: 845
+    contract_digest: sha256:6bd080663ba45b97cd8736321f343c29f59065cfb3567e3ac569df55eb2b7d8c
     contract:
       operations:
         GET /accounts:
@@ -14,6 +14,8 @@ apis:
             bearerAuth:
               kind: bearer
               scopes: []
+          servers:
+          - /
           parameters: {}
           request_body: null
           responses:

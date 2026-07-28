@@ -19,6 +19,7 @@ pub struct Change {
 
 pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
     let mut changes = Vec::new();
+    let mut server_changes = Vec::new();
 
     for key in old.operations.keys() {
         if !new.operations.contains_key(key) {
@@ -43,6 +44,12 @@ pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
     for (key, old_operation) in &old.operations {
         if let Some(new_operation) = new.operations.get(key) {
             diff_auth_requirements(&mut changes, key, &old_operation.auth, &new_operation.auth);
+            diff_servers(
+                &mut server_changes,
+                key,
+                old_operation.servers.as_ref(),
+                new_operation.servers.as_ref(),
+            );
             diff_parameters(
                 &mut changes,
                 key,
@@ -64,7 +71,44 @@ pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
         }
     }
 
+    server_changes.sort_by(|left, right| {
+        let severity = |change: &Change| match change.severity {
+            Severity::Breaking => 0,
+            Severity::Warning => 1,
+            Severity::NonBreaking => 2,
+        };
+        severity(left)
+            .cmp(&severity(right))
+            .then_with(|| left.operation.cmp(&right.operation))
+            .then_with(|| left.message.cmp(&right.message))
+    });
+    changes.extend(server_changes);
     changes
+}
+
+fn diff_servers(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    old: Option<&std::collections::BTreeSet<crate::contract::ServerTemplate>>,
+    new: Option<&std::collections::BTreeSet<crate::contract::ServerTemplate>>,
+) {
+    let (Some(old), Some(new)) = (old, new) else {
+        return;
+    };
+    for server in old.difference(new) {
+        changes.push(Change {
+            severity: Severity::Breaking,
+            operation: operation.clone(),
+            message: format!("server {} removed", server.0),
+        });
+    }
+    for server in new.difference(old) {
+        changes.push(Change {
+            severity: Severity::NonBreaking,
+            operation: operation.clone(),
+            message: format!("server {} added", server.0),
+        });
+    }
 }
 
 fn diff_auth_requirements(

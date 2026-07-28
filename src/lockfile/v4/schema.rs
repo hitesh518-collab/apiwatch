@@ -34,6 +34,13 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
                     )
                 })
                 .collect();
+            let servers = operation
+                .servers
+                .as_ref()
+                .ok_or_else(|| anyhow!("v4 server data must be known"))?
+                .iter()
+                .map(|server| server.0.clone())
+                .collect();
             let parameters = operation
                 .parameters
                 .iter()
@@ -73,6 +80,7 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
                 format!("{} {}", key.method.as_str(), key.path),
                 WireOperation {
                     auth,
+                    servers,
                     parameters,
                     request_body,
                     responses,
@@ -207,6 +215,13 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                 key,
                 Operation {
                     auth,
+                    servers: Some(
+                        operation
+                            .servers
+                            .iter()
+                            .map(|server| Ok(crate::contract::ServerTemplate(server.clone())))
+                            .collect::<Result<_>>()?,
+                    ),
                     parameters,
                     request_body,
                     responses,
