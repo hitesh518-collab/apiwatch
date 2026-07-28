@@ -210,6 +210,11 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
             ))
         })
         .collect::<Result<_>>()?;
+    let items = schema
+        .items
+        .as_ref()
+        .map(|items| intern_schema(items, schemas))
+        .transpose()?;
     if !matches!(
         schema.kind,
         crate::contract::SchemaKind::OneOf | crate::contract::SchemaKind::AnyOf
@@ -243,6 +248,7 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
         format: schema.format.clone(),
         enum_values,
         properties,
+        items,
         additional_properties,
         branches,
     };
@@ -372,6 +378,11 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
             ))
         })
         .collect::<Result<_>>()?;
+    let items = wire
+        .items
+        .as_ref()
+        .map(|items| expand_schema(items, schemas).map(Box::new))
+        .transpose()?;
     if !matches!(
         wire.kind,
         crate::contract::SchemaKind::OneOf | crate::contract::SchemaKind::AnyOf
@@ -394,6 +405,7 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
         format: wire.format.clone(),
         enum_values: wire.enum_values.clone(),
         properties,
+        items,
         additional_properties: match &wire.additional_properties {
             WireAdditionalProperties::Forbidden => AdditionalProperties::Forbidden,
             WireAdditionalProperties::Any => AdditionalProperties::Any,
@@ -451,6 +463,9 @@ fn visit_schema(
     }
     for property in schema.properties.values() {
         visit_schema(&property.schema, schemas, visiting, reachable)?;
+    }
+    if let Some(items) = &schema.items {
+        visit_schema(items, schemas, visiting, reachable)?;
     }
     for branch in &schema.branches {
         visit_schema(branch, schemas, visiting, reachable)?;

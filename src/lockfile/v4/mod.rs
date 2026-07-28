@@ -169,6 +169,8 @@ pub(super) struct WireSchema {
     format: Option<String>,
     enum_values: Vec<String>,
     properties: BTreeMap<String, WireProperty>,
+    #[serde(default)]
+    items: Option<String>,
     additional_properties: WireAdditionalProperties,
     #[serde(default)]
     branches: Vec<String>,

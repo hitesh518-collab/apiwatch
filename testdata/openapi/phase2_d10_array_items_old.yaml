@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info: { title: D-10 arrays, version: '1' }
+paths:
+  /users:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [name]
+                  properties:
+                    name: { type: string }
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+      responses: { '200': { description: OK } }
+  /nested:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: array
+                  items: { type: string, format: uuid }

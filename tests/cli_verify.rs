@@ -597,6 +597,41 @@ fn phase2_d09_verify_v4_and_v3_preserve_composition_findings() {
 }
 
 #[test]
+fn phase2_d10_verify_v4_and_v3_preserve_array_item_findings() {
+    let expected = [
+        "GET /users: response 200 application/json field items.name removed",
+        "POST /users: request application/json field items.email added as required",
+        "GET /nested: response 200 application/json field items.items format changed from uuid to date-time",
+    ];
+    for (name, lock) in [
+        (
+            "d10-v4",
+            lock_from_v4("testdata/openapi/phase2_d10_array_items_old.yaml", "d10-v4"),
+        ),
+        (
+            "d10-v3",
+            lock_from_v3("testdata/openapi/phase2_d10_array_items_old.yaml", "d10-v3"),
+        ),
+    ] {
+        let output = verify_command(
+            "testdata/openapi/phase2_d10_array_items_new.yaml",
+            name,
+            lock.to_str().expect("temp path should be valid UTF-8"),
+        )
+        .assert()
+        .code(1)
+        .get_output()
+        .stdout
+        .clone();
+        let text = String::from_utf8(output).expect("verify output should be UTF-8");
+        for finding in expected {
+            assert!(text.contains(finding), "missing {finding}: {text}");
+        }
+        fs::remove_file(lock).ok();
+    }
+}
+
+#[test]
 fn phase2_d02_verify_v4_matches_diff_content_type_findings() {
     let lock = lock_from_v4("testdata/openapi/phase2_d02_content_type_old.yaml", "d02");
     let lock = lock.to_str().expect("temp path should be valid UTF-8");

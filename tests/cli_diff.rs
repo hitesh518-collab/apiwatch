@@ -5,6 +5,28 @@ use serde_json::{json, Value};
 const PHASE2_D07_COLLIDING_PATHS: &str = "openapi: 3.0.3\ninfo: { title: D-07 collision, version: '1' }\npaths:\n  /users/{id}:\n    get:\n      parameters:\n        - { name: id, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n  /users/{name}:\n    get:\n      parameters:\n        - { name: name, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n";
 
 #[test]
+fn phase2_d10_compares_first_class_array_items_directionally() {
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d10_array_items_old.yaml",
+            "testdata/openapi/phase2_d10_array_items_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "GET /users: response 200 application/json field items.name removed",
+        ))
+        .stdout(predicate::str::contains(
+            "POST /users: request application/json field items.email added as required",
+        ))
+        .stdout(predicate::str::contains(
+            "GET /nested: response 200 application/json field items.items format changed from uuid to date-time",
+        ));
+}
+
+#[test]
 fn phase2_d08_matches_authentication_by_wire_identity() {
     Command::cargo_bin("apiwatch")
         .expect("binary should build")

@@ -72,6 +72,7 @@ struct WireSchema {
     format: Option<String>,
     enum_values: Vec<String>,
     properties: BTreeMap<String, WireProperty>,
+    items: Option<String>,
     additional_properties: WireAdditionalProperties,
     branches: Vec<String>,
 }
@@ -123,6 +124,11 @@ where
             schema: intern_schema(schema, schemas, canonical, digest)?,
         },
     };
+    let items = schema
+        .items
+        .as_ref()
+        .map(|items| intern_schema(items, schemas, canonical, digest))
+        .transpose()?;
     let mut branches = schema
         .branches
         .iter()
@@ -136,6 +142,7 @@ where
         format: schema.format.clone(),
         enum_values: schema.enum_values.clone(),
         properties,
+        items,
         additional_properties,
         branches,
     };
@@ -509,6 +516,7 @@ mod tests {
             format: None,
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            items: None,
             additional_properties: AdditionalProperties::Forbidden,
             branches: Vec::new(),
         };
@@ -518,6 +526,7 @@ mod tests {
             format: None,
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            items: None,
             additional_properties: AdditionalProperties::Forbidden,
             branches: Vec::new(),
         };

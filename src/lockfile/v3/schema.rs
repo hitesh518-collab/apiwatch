@@ -115,6 +115,15 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
             ))
         })
         .collect::<Result<_>>()?;
+    if let Some(items) = &schema.items {
+        properties.insert(
+            "items".to_string(),
+            WireProperty {
+                required: true,
+                schema: intern_schema(items, schemas)?,
+            },
+        );
+    }
     if matches!(
         schema.kind,
         crate::contract::SchemaKind::OneOf | crate::contract::SchemaKind::AnyOf
@@ -375,6 +384,7 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
                     format: merged.format,
                     enum_values: merged.enum_values,
                     properties,
+                    items: merged.items,
                     additional_properties: merged.additional_properties,
                     branches: Vec::new(),
                 });
@@ -382,12 +392,18 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
         }
         _ => Vec::new(),
     };
+    let items = if matches!(wire.kind, crate::contract::SchemaKind::Array) {
+        properties.remove("items").map(|property| property.schema)
+    } else {
+        None
+    };
     Ok(Schema {
         kind: wire.kind.clone(),
         nullable: wire.nullable,
         format: wire.format.clone(),
         enum_values: wire.enum_values.clone(),
         properties,
+        items,
         additional_properties: AdditionalProperties::Unknown,
         branches,
     })

@@ -1174,6 +1174,7 @@ mod tests {
             format: Some("uuid".to_string()),
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            items: None,
             additional_properties: AdditionalProperties::Unknown,
             branches: Vec::new(),
         };
@@ -1228,6 +1229,7 @@ mod tests {
             format: None,
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            items: None,
             additional_properties: AdditionalProperties::Unknown,
             branches: Vec::new(),
         };
@@ -1243,6 +1245,7 @@ mod tests {
                     schema: Box::new(branch),
                 },
             )]),
+            items: None,
             additional_properties: AdditionalProperties::Unknown,
             branches: Vec::new(),
         };

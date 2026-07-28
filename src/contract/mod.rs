@@ -190,6 +190,7 @@ pub struct Schema {
     pub format: Option<String>,
     pub enum_values: Vec<String>,
     pub properties: BTreeMap<String, Property>,
+    pub items: Option<Box<Schema>>,
     pub additional_properties: AdditionalProperties,
     pub branches: Vec<Schema>,
 }
@@ -217,6 +218,13 @@ impl Schema {
             encode_field(encoded, if property.required { "1" } else { "0" });
             property.schema.encode_structural(encoded);
         }
+        match &self.items {
+            Some(items) => {
+                encode_field(encoded, "items");
+                items.encode_structural(encoded);
+            }
+            None => encode_field(encoded, ""),
+        }
         encode_additional_properties(encoded, &self.additional_properties);
         let mut branch_keys = self
             .branches
@@ -237,6 +245,10 @@ impl Schema {
         for (name, property) in &self.properties {
             encode_field(encoded, name);
             property.schema.encode_topology(encoded);
+        }
+        if let Some(items) = &self.items {
+            encode_field(encoded, "items");
+            items.encode_topology(encoded);
         }
         for branch in &self.branches {
             branch.encode_topology(encoded);

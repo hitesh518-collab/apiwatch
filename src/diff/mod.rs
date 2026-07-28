@@ -618,6 +618,29 @@ fn diff_schema(
         );
     }
 
+    match (&old.items, &new.items) {
+        (Some(old_items), Some(new_items)) => diff_schema(
+            changes,
+            operation,
+            usage,
+            context,
+            &field_path(path, "items"),
+            old_items,
+            new_items,
+        ),
+        (Some(_), None) => changes.push(Change {
+            severity: field_removed_severity(usage),
+            operation: operation.clone(),
+            message: format!("{context} field {} removed", field_path(path, "items")),
+        }),
+        (None, Some(_)) => changes.push(Change {
+            severity: field_added_severity(usage, true),
+            operation: operation.clone(),
+            message: field_added_message(context, path, "items", usage, true),
+        }),
+        (None, None) => {}
+    }
+
     diff_additional_properties(changes, operation, usage, context, path, old, new);
 }
 

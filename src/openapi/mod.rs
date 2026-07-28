@@ -1021,17 +1021,11 @@ fn normalize_schema(
         OpenApiSchemaKind::Type(Type::Array(array)) => {
             normalized.kind = SchemaKind::Array;
             if let Some(items) = &array.items {
-                normalized.properties.insert(
-                    "items".to_string(),
-                    Property {
-                        required: true,
-                        schema: Box::new(normalize_boxed_schema_ref(
-                            items,
-                            schema_resolver,
-                            visiting,
-                        )?),
-                    },
-                );
+                normalized.items = Some(Box::new(normalize_boxed_schema_ref(
+                    items,
+                    schema_resolver,
+                    visiting,
+                )?));
             }
         }
         OpenApiSchemaKind::OneOf { one_of } => {
@@ -1140,6 +1134,13 @@ fn intersect_schema(mut left: Schema, right: Schema) -> Result<Schema> {
             left.properties.insert(name, right_property);
         }
     }
+    left.items = match (left.items.take(), right.items) {
+        (Some(left_items), Some(right_items)) => {
+            Some(Box::new(intersect_schema(*left_items, *right_items)?))
+        }
+        (Some(items), None) | (None, Some(items)) => Some(items),
+        (None, None) => None,
+    };
     left.additional_properties = match (left_was_unknown, right_was_unknown) {
         (true, false) => right.additional_properties,
         (false, true) => left.additional_properties,
@@ -1220,6 +1221,7 @@ fn unknown_schema() -> Schema {
         format: None,
         enum_values: Vec::new(),
         properties: BTreeMap::new(),
+        items: None,
         additional_properties: AdditionalProperties::Forbidden,
         branches: Vec::new(),
     }
@@ -1242,6 +1244,7 @@ mod tests {
             format: None,
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            items: None,
             additional_properties: AdditionalProperties::Any,
             branches: Vec::new(),
         }
@@ -1317,6 +1320,29 @@ mod tests {
             .get(key)
             .expect("operation should exist");
         assert!(operation.responses.contains_key("200"));
+    }
+
+    #[test]
+    fn normalizes_array_items_as_first_class_schema() {
+        let contract = load_contract(Path::new(
+            "testdata/openapi/phase2_d10_array_items_old.yaml",
+        ))
+        .expect("fixture should parse");
+        let schema = &contract
+            .operations
+            .values()
+            .find(|operation| {
+                operation.key.path == "/users" && operation.key.method == HttpMethod::Get
+            })
+            .expect("GET /users should exist")
+            .responses["200"]
+            .content["application/json"];
+
+        assert!(
+            schema.items.is_some(),
+            "array items should be normalized directly"
+        );
+        assert!(!schema.properties.contains_key("items"));
     }
 
     #[test]
