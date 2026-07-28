@@ -649,8 +649,12 @@ fn phase2_d10_verify_v4_and_v3_preserve_array_item_findings() {
 fn phase2_d11_verify_v4_and_v3_match_directional_enum_findings() {
     let expected = json!([
         { "severity": "breaking", "method": "GET", "path": "/response-added", "message": "response 200 application/json field response_added enum value current added" },
+        { "severity": "breaking", "method": "GET", "path": "/response-added", "message": "response 200 application/json field response_boolean_added enum value true added" },
+        { "severity": "non_breaking", "method": "GET", "path": "/response-removed", "message": "response 200 application/json field response_boolean_removed enum value true removed" },
         { "severity": "non_breaking", "method": "GET", "path": "/response-removed", "message": "response 200 application/json field response_removed enum value legacy removed" },
         { "severity": "non_breaking", "method": "POST", "path": "/request-added", "message": "request application/json field request_added enum value current added" },
+        { "severity": "non_breaking", "method": "POST", "path": "/request-added", "message": "request application/json field request_boolean_added enum value true added" },
+        { "severity": "breaking", "method": "POST", "path": "/request-removed", "message": "request application/json field request_boolean_removed enum value true removed" },
         { "severity": "breaking", "method": "POST", "path": "/request-removed", "message": "request application/json field request_removed enum value legacy removed" },
     ]);
 

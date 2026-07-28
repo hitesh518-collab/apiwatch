@@ -1072,8 +1072,14 @@ fn normalize_schema(
                 .map(|value| value.to_string())
                 .collect();
         }
-        OpenApiSchemaKind::Type(Type::Boolean(_)) => {
+        OpenApiSchemaKind::Type(Type::Boolean(boolean)) => {
             normalized.kind = SchemaKind::Boolean;
+            normalized.enum_values = boolean
+                .enumeration
+                .iter()
+                .flatten()
+                .map(|value| value.to_string())
+                .collect();
         }
         _ => {
             normalized.kind = SchemaKind::Unknown;

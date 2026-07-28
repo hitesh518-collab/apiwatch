@@ -11,6 +11,7 @@ paths:
               type: object
               properties:
                 request_added: { type: string, enum: [stable] }
+                request_boolean_added: { type: boolean, enum: [false] }
       responses: { '200': { description: OK } }
   /request-removed:
     post:
@@ -22,6 +23,7 @@ paths:
               type: object
               properties:
                 request_removed: { type: string, enum: [stable, legacy] }
+                request_boolean_removed: { type: boolean, enum: [false, true] }
       responses: { '200': { description: OK } }
   /response-added:
     get:
@@ -34,6 +36,7 @@ paths:
                 type: object
                 properties:
                   response_added: { type: string, enum: [stable] }
+                  response_boolean_added: { type: boolean, enum: [false] }
   /response-removed:
     get:
       responses:
@@ -45,3 +48,4 @@ paths:
                 type: object
                 properties:
                   response_removed: { type: string, enum: [stable, legacy] }
+                  response_boolean_removed: { type: boolean, enum: [false, true] }
