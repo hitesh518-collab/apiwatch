@@ -598,11 +598,25 @@ fn phase2_d09_verify_v4_and_v3_preserve_composition_findings() {
 
 #[test]
 fn phase2_d10_verify_v4_and_v3_preserve_array_item_findings() {
-    let expected = [
-        "GET /users: response 200 application/json field items.name removed",
-        "POST /users: request application/json field items.email added as required",
-        "GET /nested: response 200 application/json field items.items format changed from uuid to date-time",
-    ];
+    let diff = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d10_array_items_old.yaml",
+            "testdata/openapi/phase2_d10_array_items_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+    assert_eq!(diff.status.code(), Some(1));
+    let expected = json!([
+        { "severity": "warning", "method": "GET", "path": "/nested", "message": "response 200 application/json field items.items format changed from uuid to date-time" },
+        { "severity": "breaking", "method": "GET", "path": "/users", "message": "response 200 application/json field items.name removed" },
+        { "severity": "breaking", "method": "POST", "path": "/users", "message": "request application/json field items.email added as required" }
+    ]);
+    assert_eq!(parse_json_output(&diff)["changes"], expected);
+
     for (name, lock) in [
         (
             "d10-v4",
@@ -618,17 +632,28 @@ fn phase2_d10_verify_v4_and_v3_preserve_array_item_findings() {
             name,
             lock.to_str().expect("temp path should be valid UTF-8"),
         )
-        .assert()
-        .code(1)
-        .get_output()
-        .stdout
-        .clone();
-        let text = String::from_utf8(output).expect("verify output should be UTF-8");
-        for finding in expected {
-            assert!(text.contains(finding), "missing {finding}: {text}");
-        }
+        .args(["--format", "json"])
+        .output()
+        .expect("verify command should run");
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(parse_json_output(&output)["changes"], expected);
+        assert_eq!(
+            parse_json_output(&output)["changes"],
+            parse_json_output(&diff)["changes"]
+        );
         fs::remove_file(lock).ok();
     }
+}
+
+#[test]
+fn phase2_d10_loads_and_verifies_pre_task_v4_lock() {
+    verify_command(
+        "testdata/openapi/privacy_sentinels.yaml",
+        "private",
+        "testdata/lock/v4_private.lock",
+    )
+    .assert()
+    .success();
 }
 
 #[test]

@@ -4,26 +4,63 @@ use serde_json::{json, Value};
 
 const PHASE2_D07_COLLIDING_PATHS: &str = "openapi: 3.0.3\ninfo: { title: D-07 collision, version: '1' }\npaths:\n  /users/{id}:\n    get:\n      parameters:\n        - { name: id, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n  /users/{name}:\n    get:\n      parameters:\n        - { name: name, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n";
 
+const PHASE2_D10_ITEM_DIRECTION_OLD: &str = "openapi: 3.0.3\ninfo: { title: D-10 directions, version: '1' }\npaths:\n  /request-add:\n    post:\n      requestBody: { content: { application/json: { schema: { type: array } } } }\n      responses: { '200': { description: OK } }\n  /request-remove:\n    post:\n      requestBody: { content: { application/json: { schema: { type: array, items: { type: string } } } } }\n      responses: { '200': { description: OK } }\n  /response-add:\n    get:\n      responses: { '200': { description: OK, content: { application/json: { schema: { type: array } } } } }\n  /response-remove:\n    get:\n      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: string } } } } } }\n";
+const PHASE2_D10_ITEM_DIRECTION_NEW: &str = "openapi: 3.0.3\ninfo: { title: D-10 directions, version: '2' }\npaths:\n  /request-add:\n    post:\n      requestBody: { content: { application/json: { schema: { type: array, items: { type: string } } } } }\n      responses: { '200': { description: OK } }\n  /request-remove:\n    post:\n      requestBody: { content: { application/json: { schema: { type: array } } } }\n      responses: { '200': { description: OK } }\n  /response-add:\n    get:\n      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: string } } } } } }\n  /response-remove:\n    get:\n      responses: { '200': { description: OK, content: { application/json: { schema: { type: array } } } } }\n";
+
+#[test]
+fn phase2_d10_classifies_array_item_presence_directionally() {
+    let old = tempfile::NamedTempFile::new().expect("old document should be created");
+    let new = tempfile::NamedTempFile::new().expect("new document should be created");
+    std::fs::write(old.path(), PHASE2_D10_ITEM_DIRECTION_OLD).expect("old document should write");
+    std::fs::write(new.path(), PHASE2_D10_ITEM_DIRECTION_NEW).expect("new document should write");
+
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("old path should be UTF-8"),
+            new.path().to_str().expect("new path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            { "severity": "non_breaking", "method": "GET", "path": "/response-add", "message": "response 200 application/json field items added" },
+            { "severity": "breaking", "method": "GET", "path": "/response-remove", "message": "response 200 application/json field items removed" },
+            { "severity": "breaking", "method": "POST", "path": "/request-add", "message": "request application/json field items added as required" },
+            { "severity": "non_breaking", "method": "POST", "path": "/request-remove", "message": "request application/json field items removed" },
+        ])
+    );
+}
+
 #[test]
 fn phase2_d10_compares_first_class_array_items_directionally() {
-    Command::cargo_bin("apiwatch")
+    let output = Command::cargo_bin("apiwatch")
         .expect("binary should build")
         .args([
             "diff",
             "testdata/openapi/phase2_d10_array_items_old.yaml",
             "testdata/openapi/phase2_d10_array_items_new.yaml",
+            "--format",
+            "json",
         ])
-        .assert()
-        .code(1)
-        .stdout(predicate::str::contains(
-            "GET /users: response 200 application/json field items.name removed",
-        ))
-        .stdout(predicate::str::contains(
-            "POST /users: request application/json field items.email added as required",
-        ))
-        .stdout(predicate::str::contains(
-            "GET /nested: response 200 application/json field items.items format changed from uuid to date-time",
-        ));
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            { "severity": "warning", "method": "GET", "path": "/nested", "message": "response 200 application/json field items.items format changed from uuid to date-time" },
+            { "severity": "breaking", "method": "GET", "path": "/users", "message": "response 200 application/json field items.name removed" },
+            { "severity": "breaking", "method": "POST", "path": "/users", "message": "request application/json field items.email added as required" }
+        ])
+    );
 }
 
 #[test]

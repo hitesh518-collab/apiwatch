@@ -629,7 +629,7 @@ fn diff_schema(
             new_items,
         ),
         (Some(_), None) => changes.push(Change {
-            severity: field_removed_severity(usage),
+            severity: item_removed_severity(usage),
             operation: operation.clone(),
             message: format!("{context} field {} removed", field_path(path, "items")),
         }),
@@ -863,6 +863,13 @@ fn enum_value_removed_severity(usage: SchemaUsage) -> Severity {
 
 fn field_removed_severity(_usage: SchemaUsage) -> Severity {
     Severity::Breaking
+}
+
+fn item_removed_severity(usage: SchemaUsage) -> Severity {
+    match usage {
+        SchemaUsage::Request => Severity::NonBreaking,
+        SchemaUsage::Response => Severity::Breaking,
+    }
 }
 
 fn field_added_severity(usage: SchemaUsage, required: bool) -> Severity {

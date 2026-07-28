@@ -5,8 +5,8 @@ apis:
     source: openapi
     scope: all
     max_lock_bytes: 5242880
-    contract_bytes: 1003
-    contract_digest: sha256:e0f37bff88bff12cc645742cd974084a5b4d1152b8105a2efffce97bbcac6eae
+    contract_bytes: 971
+    contract_digest: sha256:9a477890c1c486b217a893eb0a7c0459b7e23d58a08145f32d982b3ac15f5968
     contract:
       operations:
         GET /accounts:
@@ -24,19 +24,9 @@ apis:
           request_body: null
           responses:
             '200':
-              application/json: sha256:90f1838197a620b8f0a8a98f4fd6f0120ffcca0f0fc3495046744057811e5440
+              application/json: sha256:49330b89bad120f5928c12e372d2f71598f9e496dd95d03c5977ff999a62eb08
       schemas:
-        sha256:3eeec21283a5994398f2fd309b600bc3fe2c43f8f775a75c5322eefb0ab819fb:
-          kind: string
-          nullable: false
-          format: null
-          enum_values: []
-          properties: {}
-          items: null
-          additional_properties:
-            kind: forbidden
-          branches: []
-        sha256:90f1838197a620b8f0a8a98f4fd6f0120ffcca0f0fc3495046744057811e5440:
+        sha256:49330b89bad120f5928c12e372d2f71598f9e496dd95d03c5977ff999a62eb08:
           kind: object
           nullable: false
           format: null
@@ -44,8 +34,16 @@ apis:
           properties:
             token:
               required: false
-              schema: sha256:3eeec21283a5994398f2fd309b600bc3fe2c43f8f775a75c5322eefb0ab819fb
-          items: null
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
           additional_properties:
             kind: any
+          branches: []
+        sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90:
+          kind: string
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
           branches: []

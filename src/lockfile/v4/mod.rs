@@ -169,7 +169,7 @@ pub(super) struct WireSchema {
     format: Option<String>,
     enum_values: Vec<String>,
     properties: BTreeMap<String, WireProperty>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     items: Option<String>,
     additional_properties: WireAdditionalProperties,
     #[serde(default)]
@@ -532,6 +532,9 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
         }
     }
     for schema in contract.schemas.values() {
+        if schema.items.is_some() && !matches!(schema.kind, SchemaKind::Array) {
+            return Err(anyhow!("schema items are only valid for arrays"));
+        }
         if let Some(format) = &schema.format {
             validate_wire_string(format, "schema format", true)?;
         }
@@ -678,4 +681,69 @@ fn sanitized(value: &str) -> String {
         .chars()
         .filter(|character| !character.is_control())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{
+        build_declared, canonical, contract_yaml, validate_declared, DEFAULT_MAX_LOCK_BYTES,
+    };
+    use crate::lockfile::Scope;
+
+    #[test]
+    fn rejects_items_on_a_non_array_schema_after_recomputing_all_digests() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        let mut entry = build_declared(
+            &source,
+            Scope::all(),
+            DEFAULT_MAX_LOCK_BYTES,
+            Default::default(),
+        )
+        .expect("v4 entry should build");
+        let operation = entry
+            .contract
+            .operations
+            .values_mut()
+            .next()
+            .expect("fixture should have an operation");
+        let root_id = operation.responses["200"]["application/json"].clone();
+        let item_id = entry.contract.schemas[&root_id].properties["token"]
+            .schema
+            .clone();
+        let mut root = entry
+            .contract
+            .schemas
+            .remove(&root_id)
+            .expect("root schema should exist");
+        root.items = Some(item_id);
+        let tampered_root_id = canonical::schema_id(&root).expect("tampered schema should digest");
+        entry
+            .contract
+            .schemas
+            .insert(tampered_root_id.clone(), root);
+        operation
+            .responses
+            .get_mut("200")
+            .expect("response should exist")
+            .insert("application/json".to_string(), tampered_root_id);
+        entry.contract_bytes = u64::try_from(
+            contract_yaml(&entry.contract)
+                .expect("tampered contract should serialize")
+                .len(),
+        )
+        .expect("contract byte count should fit");
+        entry.contract_digest =
+            canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)
+                .expect("tampered contract should digest");
+
+        let error = validate_declared("private", &entry)
+            .expect_err("non-array items must be rejected after re-signing the lock");
+        assert!(error
+            .to_string()
+            .contains("schema items are only valid for arrays"));
+    }
 }
