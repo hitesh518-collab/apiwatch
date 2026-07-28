@@ -1164,6 +1164,69 @@ mod tests {
     }
 
     #[test]
+    fn v3_expands_synthetic_allof_with_outer_nullability() {
+        use crate::contract::{
+            AdditionalProperties, HttpMethod, Operation, OperationKey, Property, Response,
+            SchemaKind,
+        };
+
+        let branch = Schema {
+            kind: SchemaKind::Object,
+            nullable: true,
+            format: None,
+            enum_values: Vec::new(),
+            properties: BTreeMap::new(),
+            additional_properties: AdditionalProperties::Unknown,
+            branches: Vec::new(),
+        };
+        let schema = Schema {
+            kind: SchemaKind::AllOf,
+            nullable: false,
+            format: None,
+            enum_values: Vec::new(),
+            properties: BTreeMap::from([(
+                "allOf[0]".to_string(),
+                Property {
+                    required: true,
+                    schema: Box::new(branch),
+                },
+            )]),
+            additional_properties: AdditionalProperties::Unknown,
+            branches: Vec::new(),
+        };
+        let contract = ApiContract {
+            operations: BTreeMap::from([(
+                OperationKey {
+                    method: HttpMethod::Get,
+                    path: "/allof".to_string(),
+                },
+                Operation {
+                    auth: BTreeMap::new(),
+                    servers: None,
+                    parameters: BTreeMap::new(),
+                    request_body: None,
+                    responses: BTreeMap::from([(
+                        "200".to_string(),
+                        Response {
+                            content: BTreeMap::from([("application/json".to_string(), schema)]),
+                        },
+                    )]),
+                },
+            )]),
+        };
+
+        let (_, expanded) =
+            super::v3::intern_and_expand_for_test(&contract).expect("legacy v3 should expand");
+        let expanded = &expanded.operations.values().next().unwrap().responses["200"].content
+            ["application/json"];
+
+        assert!(
+            !expanded.nullable,
+            "outer allOf nullability must constrain branches"
+        );
+    }
+
+    #[test]
     fn v4_round_trips_schema_valued_additional_properties() {
         let source = crate::openapi::load_contract(Path::new(
             "testdata/openapi/phase2_d04_additional_properties_old.yaml",

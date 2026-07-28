@@ -82,3 +82,27 @@ paths:
                   - type: object
                     properties:
                       age: { type: integer }
+  /allof-empty-neutral:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {}
+                  - type: object
+                    properties:
+                      name: { type: string }
+  /enum-branch-dedup:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: string
+                    enum: [alpha, beta]

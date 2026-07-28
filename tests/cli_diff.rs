@@ -1736,7 +1736,7 @@ fn diff_detects_anyof_branch_field_type_change() {
         .code(1)
         .stdout(predicate::str::contains("Breaking changes"))
         .stdout(predicate::str::contains(
-            "GET /search: response 200 application/json field anyOf[0].result type changed from string to integer",
+            "GET /search: response 200 application/json field anyOf[1].result type changed from string to integer",
         ));
 }
 
@@ -1762,8 +1762,10 @@ fn phase2_d09_compares_composition_branches_semantically() {
             "GET /allof-required-change: response 200 application/json field name changed from required to optional",
         ))
         .stdout(predicate::str::contains("GET /allof-reordered").not())
+        .stdout(predicate::str::contains("GET /allof-empty-neutral").not())
         .stdout(predicate::str::contains("GET /oneof-reordered").not())
-        .stdout(predicate::str::contains("GET /anyof-reordered").not());
+        .stdout(predicate::str::contains("GET /anyof-reordered").not())
+        .stdout(predicate::str::contains("GET /enum-branch-dedup").not());
 }
 
 #[test]

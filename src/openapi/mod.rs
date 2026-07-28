@@ -941,6 +941,8 @@ pub fn merge_all_of(mut schemas: Vec<Schema>) -> Result<Schema> {
 }
 
 fn intersect_schema(mut left: Schema, right: Schema) -> Result<Schema> {
+    let left_was_unknown = matches!(left.kind, SchemaKind::Unknown);
+    let right_was_unknown = matches!(right.kind, SchemaKind::Unknown);
     left.kind = match (&left.kind, &right.kind) {
         (SchemaKind::Unknown, kind) => kind.clone(),
         (kind, SchemaKind::Unknown) => kind.clone(),
@@ -965,8 +967,14 @@ fn intersect_schema(mut left: Schema, right: Schema) -> Result<Schema> {
             left.properties.insert(name, right_property);
         }
     }
-    left.additional_properties =
-        intersect_additional_properties(left.additional_properties, right.additional_properties)?;
+    left.additional_properties = match (left_was_unknown, right_was_unknown) {
+        (true, false) => right.additional_properties,
+        (false, true) => left.additional_properties,
+        _ => intersect_additional_properties(
+            left.additional_properties,
+            right.additional_properties,
+        )?,
+    };
     if !left.branches.is_empty() || !right.branches.is_empty() {
         return Err(anyhow!("allOf branches must be merged before intersection"));
     }

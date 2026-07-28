@@ -325,7 +325,8 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
                     .into_iter()
                     .map(|(_, branch)| branch)
                     .collect::<Vec<_>>();
-                let merged = merge_all_of(std::mem::take(&mut branches))?;
+                let mut merged = merge_all_of(std::mem::take(&mut branches))?;
+                merged.nullable &= wire.nullable;
                 properties.extend(merged.properties);
                 return Ok(Schema {
                     kind: merged.kind,

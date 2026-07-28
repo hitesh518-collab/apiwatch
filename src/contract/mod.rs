@@ -174,9 +174,14 @@ impl Schema {
             property.schema.encode_structural(encoded);
         }
         encode_additional_properties(encoded, &self.additional_properties);
-        for branch in &self.branches {
-            branch.encode_structural(encoded);
-        }
+        let mut branch_keys = self
+            .branches
+            .iter()
+            .map(Self::structural_key)
+            .collect::<Vec<_>>();
+        branch_keys.sort();
+        branch_keys.dedup();
+        encode_values(encoded, &branch_keys);
     }
 
     fn encode_shape(&self, encoded: &mut String) {
@@ -205,8 +210,11 @@ fn encode_option(encoded: &mut String, value: Option<&str>) {
     encode_field(encoded, value.unwrap_or(""));
 }
 fn encode_values(encoded: &mut String, values: &[String]) {
+    let mut values = values.to_vec();
+    values.sort();
+    values.dedup();
     encode_field(encoded, &values.len().to_string());
-    for value in values {
+    for value in &values {
         encode_field(encoded, value);
     }
 }
@@ -221,7 +229,9 @@ fn encode_additional_properties(encoded: &mut String, policy: &AdditionalPropert
 }
 fn additional_properties_tag(policy: &AdditionalProperties) -> &'static str {
     match policy {
-        AdditionalProperties::Unknown => "unknown",
+        // V3 cannot preserve this policy; diffing treats it as unconstrained, so it
+        // must not perturb canonical branch ordering relative to the v4 default.
+        AdditionalProperties::Unknown => "forbidden",
         AdditionalProperties::Forbidden => "forbidden",
         AdditionalProperties::Any => "any",
         AdditionalProperties::Schema(_) => "schema",

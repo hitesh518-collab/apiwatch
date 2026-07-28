@@ -301,12 +301,20 @@ fn phase2_d09_verify_v4_and_v3_preserve_composition_findings() {
             "reordered allOf must be silent: {text}"
         );
         assert!(
+            !text.contains("/allof-empty-neutral"),
+            "empty allOf branch must be neutral: {text}"
+        );
+        assert!(
             !text.contains("/oneof-reordered"),
             "reordered oneOf must be silent: {text}"
         );
         assert!(
             !text.contains("/anyof-reordered"),
             "reordered anyOf must be silent: {text}"
+        );
+        assert!(
+            !text.contains("/enum-branch-dedup"),
+            "semantic duplicate anyOf branches must be silent: {text}"
         );
     }
 }
