@@ -2,6 +2,197 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{json, Value};
 
+fn phase2_d06_openapi(server: &str) -> String {
+    format!(
+        "openapi: 3.0.3\ninfo: {{ title: D-06 Regression, version: '1' }}\nservers:\n  - url: {server:?}\npaths:\n  /users:\n    get:\n      responses: {{ '204': {{ description: ok }} }}\n"
+    )
+}
+
+fn phase2_d06_source(server: &str) -> tempfile::NamedTempFile {
+    let source = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary source should be created");
+    std::fs::write(source.path(), phase2_d06_openapi(server))
+        .expect("temporary source should be written");
+    source
+}
+
+#[test]
+fn phase2_d06_redacts_entire_query_values_that_mix_variables_and_literals() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let source = phase2_d06_source(
+        "https://api.example.com/v1?tenant={tenant}-literal-secret&token=plain-secret",
+    );
+    let lock = directory.path().join("private.lock");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            source
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--name",
+            "private",
+            "--output",
+            lock.to_str().expect("temporary path should be UTF-8"),
+        ])
+        .assert()
+        .success();
+
+    let rendered = std::fs::read_to_string(&lock).expect("lock should be readable");
+    assert!(rendered.contains("tenant={redacted}"));
+    assert!(rendered.contains("token={redacted}"));
+    assert!(!rendered.contains("literal-secret"));
+    assert!(!rendered.contains("plain-secret"));
+
+    let changed = phase2_d06_source(
+        "https://api.example.com/v1?tenant={tenant}-other-secret&token=other-secret",
+    );
+    let diff = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            source
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            changed
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    assert_eq!(diff.status.code(), Some(0));
+    let findings = String::from_utf8_lossy(&diff.stdout);
+    for secret in ["literal-secret", "plain-secret", "other-secret"] {
+        assert!(!findings.contains(secret), "finding leaked {secret}");
+    }
+}
+
+#[test]
+fn phase2_d06_preserves_network_relative_authority_in_server_changes() {
+    let old = phase2_d06_source("//old.example.com/v1");
+    let new = phase2_d06_source("//new.example.com/v1");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {"severity": "breaking", "method": "GET", "path": "/users", "message": "server //old.example.com/v1 removed"},
+            {"severity": "non_breaking", "method": "GET", "path": "/users", "message": "server //new.example.com/v1 added"}
+        ])
+    );
+}
+
+#[test]
+fn phase2_d06_preserves_template_ports() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let source = phase2_d06_source("https://api.example.com:{port}/v1");
+    let lock = directory.path().join("port.lock");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            source
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--name",
+            "port",
+            "--output",
+            lock.to_str().expect("temporary path should be UTF-8"),
+        ])
+        .assert()
+        .success();
+
+    assert!(std::fs::read_to_string(lock)
+        .expect("lock should be readable")
+        .contains("https://api.example.com:{port}/v1"));
+}
+
+#[test]
+fn phase2_d06_does_not_collide_placeholder_tokens_with_literal_url_text() {
+    let old = phase2_d06_source("https://api.example.com/apiwatchplaceholder0/{name}");
+    let new = phase2_d06_source("https://api.example.com/{name}/{name}");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+}
+
+#[test]
+fn phase2_d06_reencodes_query_keys_for_v4_canonical_validation() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let source = phase2_d06_source("https://api.example.com/v1?a%26b=value");
+    let lock = directory.path().join("encoded-key.lock");
+    let source_path = source
+        .path()
+        .to_str()
+        .expect("temporary path should be UTF-8");
+    let lock_path = lock.to_str().expect("temporary path should be UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            source_path,
+            "--name",
+            "encoded",
+            "--output",
+            lock_path,
+        ])
+        .assert()
+        .success();
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "verify",
+            source_path,
+            "--name",
+            "encoded",
+            "--lock",
+            lock_path,
+        ])
+        .assert()
+        .success();
+    assert!(std::fs::read_to_string(lock)
+        .expect("lock should be readable")
+        .contains("a%26b={redacted}"));
+}
+
 #[test]
 fn phase2_d06_diff_reports_effective_server_changes_without_leaking_values() {
     let output = Command::cargo_bin("apiwatch")

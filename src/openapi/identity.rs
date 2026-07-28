@@ -31,11 +31,15 @@ pub(crate) fn canonical_media_type(value: &str) -> Result<String> {
 }
 
 pub(crate) fn canonical_server_template(value: &str) -> Result<crate::contract::ServerTemplate> {
-    let (prepared, placeholders) = replace_placeholders(value);
+    let (prepared, placeholders) = replace_placeholders(value)?;
+    let network_relative = prepared.starts_with("//");
     let absolute = Url::parse(&prepared);
     let is_absolute = absolute.is_ok();
     let parsed = match absolute {
         Ok(url) => url,
+        Err(_) if network_relative => {
+            Url::parse(&format!("https:{prepared}")).map_err(|_| anyhow!("invalid server URL"))?
+        }
         Err(_) => Url::parse("https://apiwatch.invalid/")
             .expect("constant URL should parse")
             .join(&prepared)
@@ -45,26 +49,23 @@ pub(crate) fn canonical_server_template(value: &str) -> Result<crate::contract::
         return Err(anyhow!("server URL contains credentials"));
     }
 
-    let mut rendered = if is_absolute {
-        let serialized = parsed.as_str();
-        let path_start = serialized.find("://").and_then(|scheme| {
-            serialized[scheme + 3..]
-                .find('/')
-                .map(|offset| scheme + 3 + offset)
-                .or_else(|| {
-                    serialized[scheme + 3..]
-                        .find('?')
-                        .map(|offset| scheme + 3 + offset)
-                })
-                .or_else(|| {
-                    serialized[scheme + 3..]
-                        .find('#')
-                        .map(|offset| scheme + 3 + offset)
-                })
-        });
-        match path_start {
-            Some(index) => serialized[..index].to_string(),
-            None => serialized.trim_end_matches(['?', '#']).to_string(),
+    let mut rendered = if is_absolute || network_relative {
+        let host = parsed
+            .host_str()
+            .ok_or_else(|| anyhow!("invalid server URL"))?;
+        let host = if host.contains(':') {
+            format!("[{host}]")
+        } else {
+            host.to_string()
+        };
+        let port = parsed
+            .port()
+            .map(|port| format!(":{port}"))
+            .unwrap_or_default();
+        if network_relative {
+            format!("//{host}{port}")
+        } else {
+            format!("{}://{host}{port}", parsed.scheme())
         }
     } else {
         String::new()
@@ -78,14 +79,7 @@ pub(crate) fn canonical_server_template(value: &str) -> Result<crate::contract::
         rendered.push_str(
             &query
                 .into_iter()
-                .map(|(key, value)| {
-                    let value = restore_placeholders(&value, &placeholders);
-                    if value.contains('{') {
-                        format!("{key}={value}")
-                    } else {
-                        format!("{key}={{redacted}}")
-                    }
-                })
+                .map(|(key, _)| format!("{}={{redacted}}", encode_query_key(&key)))
                 .collect::<Vec<_>>()
                 .join("&"),
         );
@@ -96,7 +90,7 @@ pub(crate) fn canonical_server_template(value: &str) -> Result<crate::contract::
     )))
 }
 
-fn replace_placeholders(value: &str) -> (String, Vec<(String, String)>) {
+fn replace_placeholders(value: &str) -> Result<(String, Vec<(String, String)>)> {
     let mut prepared = String::new();
     let mut placeholders = Vec::new();
     let mut remainder = value;
@@ -105,16 +99,54 @@ fn replace_placeholders(value: &str) -> (String, Vec<(String, String)>) {
         prepared.push_str(prefix);
         let Some(end) = after_start.find('}') else {
             prepared.push_str(after_start);
-            return (prepared, placeholders);
+            return Ok((prepared, placeholders));
         };
         let placeholder = &after_start[..=end];
-        let token = format!("apiwatchplaceholder{}", placeholders.len());
+        let token = if is_port_placeholder(&prepared) {
+            unique_port_token(value, placeholders.len())?
+        } else {
+            unique_text_token(value, placeholders.len())
+        };
         prepared.push_str(&token);
         placeholders.push((token, placeholder.to_string()));
         remainder = &after_start[end + 1..];
     }
     prepared.push_str(remainder);
-    (prepared, placeholders)
+    Ok((prepared, placeholders))
+}
+
+fn is_port_placeholder(prefix: &str) -> bool {
+    let authority = prefix
+        .rsplit_once("://")
+        .map(|(_, authority)| authority)
+        .or_else(|| prefix.strip_prefix("//"));
+    authority
+        .is_some_and(|authority| authority.ends_with(':') && !authority.contains(['/', '?', '#']))
+}
+
+fn unique_text_token(value: &str, index: usize) -> String {
+    let mut nonce = index;
+    loop {
+        let token = format!("apiwatchplaceholder{nonce}x");
+        if !value.contains(&token) {
+            return token;
+        }
+        nonce += 1;
+    }
+}
+
+fn unique_port_token(value: &str, index: usize) -> Result<String> {
+    for port in 60_000 + index..=65_535 {
+        let token = port.to_string();
+        if !value.contains(&token) {
+            return Ok(token);
+        }
+    }
+    Err(anyhow!("unable to safely normalize server template port"))
+}
+
+fn encode_query_key(key: &str) -> String {
+    url::form_urlencoded::byte_serialize(key.as_bytes()).collect()
 }
 
 fn restore_placeholders(value: &str, placeholders: &[(String, String)]) -> String {
