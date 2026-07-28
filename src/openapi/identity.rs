@@ -31,7 +31,11 @@ pub(crate) fn canonical_media_type(value: &str) -> Result<String> {
 }
 
 pub(crate) fn canonical_server_template(value: &str) -> Result<crate::contract::ServerTemplate> {
-    let (prepared, placeholders) = replace_placeholders(value)?;
+    let value = value.split_once('#').map_or(value, |(value, _)| value);
+    let (base, query) = value
+        .split_once('?')
+        .map_or((value, None), |(base, query)| (base, Some(query)));
+    let (prepared, placeholders) = replace_placeholders(base)?;
     let network_relative = prepared.starts_with("//");
     let absolute = Url::parse(&prepared);
     let is_absolute = absolute.is_ok();
@@ -72,22 +76,12 @@ pub(crate) fn canonical_server_template(value: &str) -> Result<crate::contract::
     };
     rendered.push_str(parsed.path());
 
-    let mut query = parsed.query_pairs().collect::<Vec<_>>();
-    query.sort_by(|left, right| left.0.cmp(&right.0));
-    if !query.is_empty() {
+    let mut rendered = restore_placeholders(&rendered, &placeholders);
+    if let Some(query) = query.filter(|query| !query.is_empty()) {
         rendered.push('?');
-        rendered.push_str(
-            &query
-                .into_iter()
-                .map(|(key, _)| format!("{}={{redacted}}", encode_query_key(&key)))
-                .collect::<Vec<_>>()
-                .join("&"),
-        );
+        rendered.push_str(&canonical_query(query));
     }
-    Ok(crate::contract::ServerTemplate(restore_placeholders(
-        &rendered,
-        &placeholders,
-    )))
+    Ok(crate::contract::ServerTemplate(rendered))
 }
 
 fn replace_placeholders(value: &str) -> Result<(String, Vec<(String, String)>)> {
@@ -147,6 +141,61 @@ fn unique_port_token(value: &str, index: usize) -> Result<String> {
 
 fn encode_query_key(key: &str) -> String {
     url::form_urlencoded::byte_serialize(key.as_bytes()).collect()
+}
+
+fn canonical_query(query: &str) -> String {
+    let mut pairs = query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            let key = decode_query_component(key, true);
+            let value = decode_query_component(value, false);
+            (encode_query_key(&key), redact_query_value(&value))
+        })
+        .collect::<Vec<_>>();
+    pairs.sort();
+    pairs
+        .into_iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+fn decode_query_component(value: &str, is_key: bool) -> String {
+    let encoded = if is_key {
+        format!("{value}=")
+    } else {
+        format!("value={value}")
+    };
+    let (key, value) = url::form_urlencoded::parse(encoded.as_bytes())
+        .next()
+        .expect("constructed query pair should parse");
+    if is_key {
+        key.into_owned()
+    } else {
+        value.into_owned()
+    }
+}
+
+fn redact_query_value(value: &str) -> String {
+    let mut rendered = String::new();
+    let mut remainder = value;
+    while let Some(start) = remainder.find('{') {
+        let (literal, after_start) = remainder.split_at(start);
+        let Some(end) = after_start.find('}') else {
+            break;
+        };
+        if !literal.is_empty() {
+            rendered.push_str("{redacted}");
+        }
+        rendered.push_str(&after_start[..=end]);
+        remainder = &after_start[end + 1..];
+    }
+    if !remainder.is_empty() || rendered.is_empty() {
+        rendered.push_str("{redacted}");
+    }
+    rendered
 }
 
 fn restore_placeholders(value: &str, placeholders: &[(String, String)]) -> String {

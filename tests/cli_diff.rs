@@ -43,7 +43,7 @@ fn phase2_d06_redacts_entire_query_values_that_mix_variables_and_literals() {
         .success();
 
     let rendered = std::fs::read_to_string(&lock).expect("lock should be readable");
-    assert!(rendered.contains("tenant={redacted}"));
+    assert!(rendered.contains("tenant={tenant}{redacted}"));
     assert!(rendered.contains("token={redacted}"));
     assert!(!rendered.contains("literal-secret"));
     assert!(!rendered.contains("plain-secret"));
@@ -73,6 +73,57 @@ fn phase2_d06_redacts_entire_query_values_that_mix_variables_and_literals() {
     for secret in ["literal-secret", "plain-secret", "other-secret"] {
         assert!(!findings.contains(secret), "finding leaked {secret}");
     }
+}
+
+#[test]
+fn phase2_d06_keeps_query_placeholder_identity_while_redacting_literal_portions() {
+    let old = phase2_d06_source("https://api.example.com/v1?tenant={tenant}");
+    let new = phase2_d06_source("https://api.example.com/v1?tenant={organization}");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {"severity": "breaking", "method": "GET", "path": "/users", "message": "server https://api.example.com/v1?tenant={tenant} removed"},
+            {"severity": "non_breaking", "method": "GET", "path": "/users", "message": "server https://api.example.com/v1?tenant={organization} added"}
+        ])
+    );
+}
+
+#[test]
+fn phase2_d06_does_not_restore_placeholders_into_percent_decoded_query_keys() {
+    let old = phase2_d06_source("https://api.example.com/v1?%61piwatchplaceholder0x={name}");
+    let new = phase2_d06_source("https://api.example.com/v1?{name}={name}");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
 }
 
 #[test]
