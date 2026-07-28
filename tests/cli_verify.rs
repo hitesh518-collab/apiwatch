@@ -646,6 +646,40 @@ fn phase2_d10_verify_v4_and_v3_preserve_array_item_findings() {
 }
 
 #[test]
+fn phase2_d11_verify_v4_and_v3_match_directional_enum_findings() {
+    let expected = json!([
+        { "severity": "breaking", "method": "GET", "path": "/response-added", "message": "response 200 application/json field response_added enum value current added" },
+        { "severity": "non_breaking", "method": "GET", "path": "/response-removed", "message": "response 200 application/json field response_removed enum value legacy removed" },
+        { "severity": "non_breaking", "method": "POST", "path": "/request-added", "message": "request application/json field request_added enum value current added" },
+        { "severity": "breaking", "method": "POST", "path": "/request-removed", "message": "request application/json field request_removed enum value legacy removed" },
+    ]);
+
+    for (name, lock) in [
+        (
+            "d11-v4",
+            lock_from_v4("testdata/openapi/phase2_d11_enum_policy_old.yaml", "d11-v4"),
+        ),
+        (
+            "d11-v3",
+            lock_from_v3("testdata/openapi/phase2_d11_enum_policy_old.yaml", "d11-v3"),
+        ),
+    ] {
+        let output = verify_command(
+            "testdata/openapi/phase2_d11_enum_policy_new.yaml",
+            name,
+            lock.to_str().expect("temp path should be valid UTF-8"),
+        )
+        .args(["--format", "json"])
+        .output()
+        .expect("verify command should run");
+        fs::remove_file(lock).ok();
+
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(parse_json_output(&output)["changes"], expected);
+    }
+}
+
+#[test]
 fn phase2_d10_loads_and_verifies_pre_task_v4_lock() {
     verify_command(
         "testdata/openapi/privacy_sentinels.yaml",

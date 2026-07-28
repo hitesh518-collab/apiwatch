@@ -1952,6 +1952,32 @@ fn phase2_d09_compares_composition_branches_semantically() {
 }
 
 #[test]
+fn phase2_d11_classifies_enum_changes_directionally_without_duplicates() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d11_enum_policy_old.yaml",
+            "testdata/openapi/phase2_d11_enum_policy_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            { "severity": "breaking", "method": "GET", "path": "/response-added", "message": "response 200 application/json field response_added enum value current added" },
+            { "severity": "non_breaking", "method": "GET", "path": "/response-removed", "message": "response 200 application/json field response_removed enum value legacy removed" },
+            { "severity": "non_breaking", "method": "POST", "path": "/request-added", "message": "request application/json field request_added enum value current added" },
+            { "severity": "breaking", "method": "POST", "path": "/request-removed", "message": "request application/json field request_removed enum value legacy removed" },
+        ])
+    );
+}
+
+#[test]
 fn diff_resolves_component_response_refs_for_response_diff() {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
 

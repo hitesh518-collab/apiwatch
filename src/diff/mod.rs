@@ -496,6 +496,12 @@ enum SchemaUsage {
     Response,
 }
 
+#[derive(Clone, Copy)]
+enum SetChange {
+    Added,
+    Removed,
+}
+
 fn diff_schema(
     changes: &mut Vec<Change>,
     operation: &OperationKey,
@@ -547,7 +553,7 @@ fn diff_schema(
     for value in &new.enum_values {
         if !old.enum_values.contains(value) {
             changes.push(Change {
-                severity: enum_value_added_severity(usage),
+                severity: enum_change_severity(usage, SetChange::Added),
                 operation: operation.clone(),
                 message: format!("{context} {} enum value {value} added", schema_target(path)),
             });
@@ -557,7 +563,7 @@ fn diff_schema(
     for value in &old.enum_values {
         if !new.enum_values.contains(value) {
             changes.push(Change {
-                severity: enum_value_removed_severity(usage),
+                severity: enum_change_severity(usage, SetChange::Removed),
                 operation: operation.clone(),
                 message: format!(
                     "{context} {} enum value {value} removed",
@@ -700,7 +706,7 @@ fn diff_branches(
     }
     for (old_index, _) in old_remaining {
         changes.push(Change {
-            severity: branch_removed_severity(usage),
+            severity: enum_change_severity(usage, SetChange::Removed),
             operation: operation.clone(),
             message: format!(
                 "{context} field {} removed",
@@ -713,27 +719,13 @@ fn diff_branches(
     }
     for (new_index, _) in new_remaining {
         changes.push(Change {
-            severity: branch_added_severity(usage),
+            severity: enum_change_severity(usage, SetChange::Added),
             operation: operation.clone(),
             message: format!(
                 "{context} field {} added",
                 field_path(path, &format!("{name}[{new_index}]"))
             ),
         });
-    }
-}
-
-fn branch_removed_severity(usage: SchemaUsage) -> Severity {
-    match usage {
-        SchemaUsage::Request => Severity::Breaking,
-        SchemaUsage::Response => Severity::NonBreaking,
-    }
-}
-
-fn branch_added_severity(usage: SchemaUsage) -> Severity {
-    match usage {
-        SchemaUsage::Request => Severity::NonBreaking,
-        SchemaUsage::Response => Severity::Breaking,
     }
 }
 
@@ -847,17 +839,12 @@ fn nullable_change_severity(
     }
 }
 
-fn enum_value_added_severity(usage: SchemaUsage) -> Severity {
-    match usage {
-        SchemaUsage::Request => Severity::NonBreaking,
-        SchemaUsage::Response => Severity::Breaking,
-    }
-}
-
-fn enum_value_removed_severity(usage: SchemaUsage) -> Severity {
-    match usage {
-        SchemaUsage::Request => Severity::Breaking,
-        SchemaUsage::Response => Severity::NonBreaking,
+fn enum_change_severity(usage: SchemaUsage, direction: SetChange) -> Severity {
+    match (usage, direction) {
+        (SchemaUsage::Request, SetChange::Added) => Severity::NonBreaking,
+        (SchemaUsage::Request, SetChange::Removed) => Severity::Breaking,
+        (SchemaUsage::Response, SetChange::Added) => Severity::Breaking,
+        (SchemaUsage::Response, SetChange::Removed) => Severity::NonBreaking,
     }
 }
 

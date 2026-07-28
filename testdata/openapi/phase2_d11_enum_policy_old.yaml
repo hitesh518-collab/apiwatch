@@ -1,0 +1,47 @@
+openapi: 3.0.3
+info: { title: D-11 enum policy, version: '1' }
+paths:
+  /request-added:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request_added: { type: string, enum: [stable] }
+      responses: { '200': { description: OK } }
+  /request-removed:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                request_removed: { type: string, enum: [stable, legacy] }
+      responses: { '200': { description: OK } }
+  /response-added:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response_added: { type: string, enum: [stable] }
+  /response-removed:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response_removed: { type: string, enum: [stable, legacy] }

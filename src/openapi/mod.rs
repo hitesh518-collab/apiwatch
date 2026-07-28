@@ -1080,6 +1080,9 @@ fn normalize_schema(
         }
     }
 
+    normalized.enum_values.sort();
+    normalized.enum_values.dedup();
+
     Ok(normalized)
 }
 
