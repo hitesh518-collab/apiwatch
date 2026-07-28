@@ -6,7 +6,7 @@ use std::path::{Component, Path, PathBuf};
 
 use apiwatch::lock_size::{
     encode_canonical_json, encode_deduplicated_yaml, encode_expanded_yaml, measure_contract,
-    recommend, scope_contract, PRIVACY_SENTINELS,
+    recommend, scope_contract, CandidateMeasurement, ContractMeasurement, PRIVACY_SENTINELS,
 };
 use clap::Parser;
 use report::{CorpusResult, PrivacyResult, Report};
@@ -53,6 +53,15 @@ struct ManifestEntry {
     max_bytes: u64,
     status: String,
     expected_error: Option<String>,
+    phase1_measurement: Option<HistoricalMeasurement>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HistoricalMeasurement {
+    operation_count: usize,
+    expanded_yaml_bytes: u64,
+    canonical_json_bytes: u64,
+    deduplicated_yaml_bytes: u64,
 }
 
 #[derive(Debug)]
@@ -144,8 +153,10 @@ fn run(args: &Args) -> Result<(), Failure> {
                 })?;
                 let contract = scope_contract(&contract, &args.include_operations)
                     .map_err(|error| Failure::input(format!("{}: {error}", entry.name)))?;
-                let measurement = measure_contract(&contract, args.max_lock_bytes)
+                let current_measurement = measure_contract(&contract, args.max_lock_bytes)
                     .map_err(|error| Failure::behavior(format!("{}: {error:#}", entry.name)))?;
+                let measurement =
+                    phase1_measurement(entry, &current_measurement, args.max_lock_bytes)?;
                 let v4_contract_bytes = apiwatch::lockfile::measure_v4_contract_payload(&contract)
                     .map_err(|error| {
                         Failure::behavior(format!(
@@ -160,7 +171,7 @@ fn run(args: &Args) -> Result<(), Failure> {
                     sha256: entry.sha256.clone(),
                     source_bytes,
                     normalization_status: "passing".into(),
-                    operation_count: Some(measurement.operation_count),
+                    operation_count: Some(current_measurement.operation_count),
                     measurements: Some(measurement),
                     v4_contract_bytes: Some(v4_contract_bytes),
                     expected_error: None,
@@ -226,9 +237,9 @@ fn run(args: &Args) -> Result<(), Failure> {
         .map_err(|error| Failure::behavior(format!("failed to render JSON report: {error}")))?;
     let markdown = report::render_markdown(&phase_1_report);
     let phase_2_requested = args.v4_json_out.is_some() || args.v4_markdown_out.is_some();
-    if phase_2_requested {
-        preserve_or_seed(&args.json_out, &json, args.check)?;
-        preserve_or_seed(&args.markdown_out, &markdown, args.check)?;
+    if phase_2_requested && !args.check {
+        preserve_or_seed(&args.json_out, &json)?;
+        preserve_or_seed(&args.markdown_out, &markdown)?;
     } else {
         write_or_check(&args.json_out, &json, args.check)?;
         write_or_check(&args.markdown_out, &markdown, args.check)?;
@@ -246,16 +257,42 @@ fn run(args: &Args) -> Result<(), Failure> {
     Ok(())
 }
 
-fn preserve_or_seed(path: &Path, bytes: &[u8], check: bool) -> Result<(), Failure> {
+fn preserve_or_seed(path: &Path, bytes: &[u8]) -> Result<(), Failure> {
     match fs::read(path) {
         Ok(_) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !check => {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             write_or_check(path, bytes, false)
         }
         Err(error) => Err(Failure::input(format!(
             "failed to read historical Phase 1 report: {error}"
         ))),
     }
+}
+
+fn phase1_measurement(
+    entry: &ManifestEntry,
+    current: &ContractMeasurement,
+    ceiling: u64,
+) -> Result<ContractMeasurement, Failure> {
+    let Some(historical) = &entry.phase1_measurement else {
+        return Ok(current.clone());
+    };
+    if historical.operation_count != current.operation_count {
+        return Err(Failure::input(format!(
+            "{}: historical Phase 1 operation count {} does not match current normalized count {}",
+            entry.name, historical.operation_count, current.operation_count
+        )));
+    }
+    let candidate = |bytes| CandidateMeasurement {
+        bytes,
+        within_ceiling: bytes <= ceiling,
+    };
+    Ok(ContractMeasurement {
+        operation_count: historical.operation_count,
+        expanded_yaml: candidate(historical.expanded_yaml_bytes),
+        canonical_json: candidate(historical.canonical_json_bytes),
+        deduplicated_yaml: candidate(historical.deduplicated_yaml_bytes),
+    })
 }
 
 fn validate_entry(entry: &ManifestEntry) -> Result<String, Failure> {

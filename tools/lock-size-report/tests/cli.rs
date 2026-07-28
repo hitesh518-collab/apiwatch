@@ -43,7 +43,13 @@ impl Fixture {
                     ),
                     "sha256": sha256,
                     "max_bytes": 1_048_576,
-                    "status": "passing"
+                    "status": "passing",
+                    "phase1_measurement": {
+                        "operation_count": 2,
+                        "expanded_yaml_bytes": 101,
+                        "canonical_json_bytes": 102,
+                        "deduplicated_yaml_bytes": 103
+                    }
                 }]
             }))
             .unwrap(),
@@ -111,6 +117,19 @@ fn writes_deterministic_reports_and_checks_existing_bytes() {
     );
     let json = fs::read_to_string(&fixture.json_out).unwrap();
     let markdown = fs::read_to_string(&fixture.markdown_out).unwrap();
+    let phase_1_report: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        phase_1_report["corpus"][0]["measurements"]["expanded_yaml"]["bytes"],
+        101
+    );
+    assert_eq!(
+        phase_1_report["corpus"][0]["measurements"]["canonical_json"]["bytes"],
+        102
+    );
+    assert_eq!(
+        phase_1_report["corpus"][0]["measurements"]["deduplicated_yaml"]["bytes"],
+        103
+    );
     let preserved_json = format!("{json}\n");
     let preserved_markdown = format!("{markdown}\n");
     fs::write(&fixture.json_out, &preserved_json).unwrap();
@@ -146,6 +165,8 @@ fn writes_deterministic_reports_and_checks_existing_bytes() {
     assert!(v4_markdown.contains("# APIWatch Phase 2 v4 Lock-Size Report"));
     assert!(v4_markdown.contains(&format!("{v4_contract_bytes} (fits)")));
 
+    fs::write(&fixture.json_out, &json).unwrap();
+    fs::write(&fixture.markdown_out, &markdown).unwrap();
     assert!(fixture.run(true, true).status.success());
     fs::write(&fixture.json_out, json.replace('\n', "\r\n")).unwrap();
     fs::write(&fixture.markdown_out, markdown.replace('\n', "\r\n")).unwrap();
@@ -155,8 +176,21 @@ fn writes_deterministic_reports_and_checks_existing_bytes() {
     );
     fs::write(&fixture.json_out, "changed\n").unwrap();
     assert_eq!(fixture.run(true, false).status.code(), Some(1));
+    assert_eq!(
+        fixture.run(true, true).status.code(),
+        Some(1),
+        "combined check must reject a changed Phase 1 JSON report"
+    );
 
     fs::write(&fixture.json_out, &json).unwrap();
+    fs::write(&fixture.markdown_out, "changed\n").unwrap();
+    assert_eq!(
+        fixture.run(true, true).status.code(),
+        Some(1),
+        "combined check must reject a changed Phase 1 Markdown report"
+    );
+
+    fs::write(&fixture.markdown_out, &markdown).unwrap();
     fs::write(&fixture.v4_json_out, "changed\n").unwrap();
     assert_eq!(fixture.run(true, true).status.code(), Some(1));
 }

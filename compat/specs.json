@@ -8,7 +8,13 @@
       "url": "https://raw.githubusercontent.com/github/rest-api-description/5c88ff6bc3c36a12ccd69b8e0fee479b7202188a/descriptions/api.github.com/api.github.com.json",
       "sha256": "17d0cf71ec30e78bd1dc27085be8371504b98e9a9326cf2a0802ab88c37fbfb5",
       "max_bytes": 52428800,
-      "status": "passing"
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 1209,
+        "expanded_yaml_bytes": 39730491,
+        "canonical_json_bytes": 13885612,
+        "deduplicated_yaml_bytes": 2327580
+      }
     },
     {
       "name": "asana",
@@ -16,7 +22,13 @@
       "url": "https://raw.githubusercontent.com/Asana/openapi/56796a67a3c093eedf55fd9682357957a2ebfd85/defs/asana_oas.yaml",
       "sha256": "cb3b90f4e0af56035eab0c648974f625b942a28a7144aa6c2326e38ca0bb3d56",
       "max_bytes": 52428800,
-      "status": "passing"
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 249,
+        "expanded_yaml_bytes": 10846401,
+        "canonical_json_bytes": 3394194,
+        "deduplicated_yaml_bytes": 806691
+      }
     },
     {
       "name": "box",
@@ -24,7 +36,13 @@
       "url": "https://raw.githubusercontent.com/box/box-openapi/f28eec5d49b9597d7df82f3a0c75bd92478b699a/openapi.json",
       "sha256": "0db1ffa51e52b9f1cb779bc4a37f200ac5f978630cab5178141687b2fed24e7a",
       "max_bytes": 52428800,
-      "status": "passing"
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 296,
+        "expanded_yaml_bytes": 2082776,
+        "canonical_json_bytes": 1044360,
+        "deduplicated_yaml_bytes": 485332
+      }
     },
     {
       "name": "stripe",
