@@ -199,6 +199,12 @@ fn contract_yaml(contract: &Contract) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
+
+pub(super) fn measure_contract_payload(contract: &crate::contract::ApiContract) -> Result<u64> {
+    let contract = schema::intern_contract(contract)?;
+    u64::try_from(contract_yaml(&contract)?.len()).context("contract size overflow")
+}
+
 pub(super) fn build_declared(
     contract: &crate::contract::ApiContract,
     scope: Scope,
@@ -606,10 +612,11 @@ fn validate_auth_identity(identity: &WireAuthIdentity, kind: AuthSchemeKind) -> 
                 {
                     return Err(anyhow!("invalid OAuth authentication flow endpoints"));
                 }
-                for endpoint in [&flow.authorization, &flow.token, &flow.refresh] {
-                    if let Some(endpoint) = endpoint {
-                        validate_auth_endpoint(endpoint)?;
-                    }
+                for endpoint in [&flow.authorization, &flow.token, &flow.refresh]
+                    .into_iter()
+                    .flatten()
+                {
+                    validate_auth_endpoint(endpoint)?;
                 }
             }
         }
@@ -690,7 +697,30 @@ mod tests {
     use super::{
         build_declared, canonical, contract_yaml, validate_declared, DEFAULT_MAX_LOCK_BYTES,
     };
+    use crate::lock_size::PRIVACY_SENTINELS;
     use crate::lockfile::Scope;
+
+    #[test]
+    fn production_contract_payload_is_value_free_and_measurable() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        let contract = super::schema::intern_contract(&source).expect("contract should intern");
+        let payload = contract_yaml(&contract).expect("contract should serialize");
+
+        assert_eq!(
+            super::measure_contract_payload(&source).expect("payload should measure"),
+            u64::try_from(payload.len()).expect("payload length should fit")
+        );
+        for sentinel in PRIVACY_SENTINELS {
+            assert!(
+                !payload
+                    .windows(sentinel.len())
+                    .any(|part| part == sentinel.as_bytes()),
+                "production v4 payload leaked a privacy sentinel"
+            );
+        }
+    }
 
     #[test]
     fn rejects_items_on_a_non_array_schema_after_recomputing_all_digests() {

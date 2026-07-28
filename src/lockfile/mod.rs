@@ -17,6 +17,11 @@ pub mod v4;
 
 pub const DEFAULT_MAX_LOCK_BYTES: u64 = v3::DEFAULT_MAX_LOCK_BYTES;
 
+#[doc(hidden)]
+pub fn measure_v4_contract_payload(contract: &ApiContract) -> anyhow::Result<u64> {
+    v4::measure_contract_payload(contract)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Scope {
@@ -1447,9 +1452,8 @@ mod tests {
             rendered.contains(marker),
             "fixture should store the OAuth flow"
         );
-        let replacement = format!(
-            "flows:\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/alternate\n                  refresh: null\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/token\n                  refresh: null"
-        );
+        let replacement = "flows:\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/alternate\n                  refresh: null\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/token\n                  refresh: null"
+            .to_string();
         let tampered = rendered.replacen(marker, &replacement, 1);
         let path = std::env::temp_dir().join(format!(
             "apiwatch-d08-oauth-flow-{}.lock",

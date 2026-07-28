@@ -20,8 +20,8 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
     let mut schemas = BTreeMap::new();
     let operations = contract
         .operations
-        .iter()
-        .map(|(_identity, operation)| {
+        .values()
+        .map(|operation| {
             let auth = operation
                 .auth
                 .iter()

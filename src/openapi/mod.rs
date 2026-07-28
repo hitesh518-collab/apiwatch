@@ -1135,10 +1135,8 @@ fn intersect_schema(mut left: Schema, right: Schema) -> Result<Schema> {
     for (name, right_property) in right.properties {
         if let Some(left_property) = left.properties.get_mut(&name) {
             left_property.required |= right_property.required;
-            left_property.schema = Box::new(intersect_schema(
-                *left_property.schema.clone(),
-                *right_property.schema,
-            )?);
+            *left_property.schema =
+                intersect_schema(*left_property.schema.clone(), *right_property.schema)?;
         } else {
             left.properties.insert(name, right_property);
         }
@@ -1158,8 +1156,13 @@ fn intersect_schema(mut left: Schema, right: Schema) -> Result<Schema> {
             right.additional_properties,
         )?,
     };
-    if !left.branches.is_empty() || !right.branches.is_empty() {
-        return Err(anyhow!("allOf branches must be merged before intersection"));
+    match (left_was_unknown, right_was_unknown) {
+        (true, false) => left.branches = right.branches,
+        (false, true) => {}
+        _ if !left.branches.is_empty() || !right.branches.is_empty() => {
+            return Err(anyhow!("allOf branches must be merged before intersection"));
+        }
+        _ => {}
     }
     Ok(left)
 }

@@ -30,6 +30,10 @@ struct Args {
     #[arg(long)]
     markdown_out: PathBuf,
     #[arg(long)]
+    v4_json_out: Option<PathBuf>,
+    #[arg(long)]
+    v4_markdown_out: Option<PathBuf>,
+    #[arg(long)]
     check: bool,
 }
 
@@ -142,6 +146,13 @@ fn run(args: &Args) -> Result<(), Failure> {
                     .map_err(|error| Failure::input(format!("{}: {error}", entry.name)))?;
                 let measurement = measure_contract(&contract, args.max_lock_bytes)
                     .map_err(|error| Failure::behavior(format!("{}: {error:#}", entry.name)))?;
+                let v4_contract_bytes = apiwatch::lockfile::measure_v4_contract_payload(&contract)
+                    .map_err(|error| {
+                        Failure::behavior(format!(
+                            "{}: failed to measure production v4 payload: {error:#}",
+                            entry.name
+                        ))
+                    })?;
                 measurements.push(measurement.clone());
                 corpus.push(CorpusResult {
                     name: entry.name.clone(),
@@ -151,6 +162,7 @@ fn run(args: &Args) -> Result<(), Failure> {
                     normalization_status: "passing".into(),
                     operation_count: Some(measurement.operation_count),
                     measurements: Some(measurement),
+                    v4_contract_bytes: Some(v4_contract_bytes),
                     expected_error: None,
                 });
             }
@@ -181,6 +193,7 @@ fn run(args: &Args) -> Result<(), Failure> {
                     normalization_status: "known_failing".into(),
                     operation_count: None,
                     measurements: None,
+                    v4_contract_bytes: None,
                     expected_error: Some(expected.to_owned()),
                 });
             }
@@ -205,12 +218,44 @@ fn run(args: &Args) -> Result<(), Failure> {
         },
         recommendation: recommend(&measurements, args.max_lock_bytes),
     };
-    let json = report::render_json(&report)
+    let mut phase_1_report = report.clone();
+    for item in &mut phase_1_report.corpus {
+        item.v4_contract_bytes = None;
+    }
+    let json = report::render_json(&phase_1_report)
         .map_err(|error| Failure::behavior(format!("failed to render JSON report: {error}")))?;
-    let markdown = report::render_markdown(&report);
-    write_or_check(&args.json_out, &json, args.check)?;
-    write_or_check(&args.markdown_out, &markdown, args.check)?;
+    let markdown = report::render_markdown(&phase_1_report);
+    let phase_2_requested = args.v4_json_out.is_some() || args.v4_markdown_out.is_some();
+    if phase_2_requested {
+        preserve_or_seed(&args.json_out, &json, args.check)?;
+        preserve_or_seed(&args.markdown_out, &markdown, args.check)?;
+    } else {
+        write_or_check(&args.json_out, &json, args.check)?;
+        write_or_check(&args.markdown_out, &markdown, args.check)?;
+    }
+    if let Some(path) = &args.v4_json_out {
+        let json = report::render_v4_json(&report).map_err(|error| {
+            Failure::behavior(format!("failed to render Phase 2 JSON report: {error}"))
+        })?;
+        write_or_check(path, &json, args.check)?;
+    }
+    if let Some(path) = &args.v4_markdown_out {
+        let markdown = report::render_v4_markdown(&report);
+        write_or_check(path, &markdown, args.check)?;
+    }
     Ok(())
+}
+
+fn preserve_or_seed(path: &Path, bytes: &[u8], check: bool) -> Result<(), Failure> {
+    match fs::read(path) {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !check => {
+            write_or_check(path, bytes, false)
+        }
+        Err(error) => Err(Failure::input(format!(
+            "failed to read historical Phase 1 report: {error}"
+        ))),
+    }
 }
 
 fn validate_entry(entry: &ManifestEntry) -> Result<String, Failure> {

@@ -24,15 +24,15 @@ source-building Homebrew and Scoop definitions.
 
 Work merged after v0.6.0 adds versioned observed JSON contracts, monotonic
 shape merging, local observed Verify, value-free diagnostics, and explicit
-`--map-at` annotations for dynamic-key objects. That work is not yet part of a
-tagged release.
+`--map-at` annotations for dynamic-key objects. It also adds current v4
+declared locks with the complete Phase 2 comparison model. That work is not
+yet part of a tagged release.
 
 Important limitations remain:
 
-- declared v1 and v2 locks remain route-only and need original sources to
-  migrate to full-contract v3;
+- declared v1 and v2 locks remain route-only, v3 locks have partial Phase 2
+  coverage, and all need original sources to migrate to current v4;
 - OpenAPI 3.1 and external or multi-file references are not supported;
-- the diff engine has confirmed false-negative and false-positive classes;
 - real-world specification compatibility and binary distribution are
   incomplete;
 - observed contracts prove sampled structure, not complete runtime coverage.
@@ -144,24 +144,24 @@ Every defect receives a failing regression fixture before its fix.
 
 ### P0: False Negatives
 
-1. Request-body addition and removal (D-01).
-2. Content-type addition and removal (D-02).
-3. Response requiredness and its directional symmetry (D-03).
-4. Schema format comparison (D-05).
-5. `additionalProperties` semantics (D-04).
-6. Server changes (D-06).
+1. **Completed:** Request-body addition and removal (D-01).
+2. **Completed:** Content-type addition and removal (D-02).
+3. **Completed:** Response requiredness and its directional symmetry (D-03).
+4. **Completed:** Schema format comparison (D-05).
+5. **Completed:** `additionalProperties` semantics (D-04).
+6. **Completed:** Server changes (D-06).
 
 ### P0: False Positives
 
-1. Correct `allOf` merging and order-independent `oneOf`/`anyOf` set
+1. **Completed:** Correct `allOf` merging and order-independent `oneOf`/`anyOf` set
    comparison (D-09).
-2. Path-template normalization (D-07).
-3. Authentication identity matching (D-08).
+2. **Completed:** Path-template normalization (D-07).
+3. **Completed:** Authentication identity matching (D-08).
 
 ### P1 Refinements
 
-1. First-class array items (D-10).
-2. Enum-severity refinement (D-11).
+1. **Completed:** First-class array items (D-10).
+2. **Completed:** Enum-severity refinement (D-11).
 
 ### Excluded From This Phase
 
@@ -171,8 +171,10 @@ Every defect receives a failing regression fixture before its fix.
 
 ### Exit Criterion
 
-Every Category A audit reproduction produces its documented expected result,
-one regression fixture exists per defect, and the complete test suite passes.
+**Met:** every Category A audit reproduction produces its documented expected
+result, one regression fixture exists per D-01 through D-11 defect, the
+production v4 payload fits the default ceiling for every normalizable pinned
+corpus entry, and the complete local phase gate passes.
 
 ## Phase 3 — Real-World Compatibility
 

@@ -2,8 +2,9 @@
 
 `api.lock` is a repository-level lockfile for external API contracts.
 
-Versions 1 and 2 store normalized operation routes. Version 3 stores a
-complete normalized declared contract suitable for semantic verification.
+Versions 1 and 2 store normalized operation routes. Version 3 stores the
+Phase 1 normalized declared contract. Current version 4 stores the complete
+Phase 2 normalized contract suitable for full semantic verification.
 
 ## Format Status
 
@@ -11,7 +12,8 @@ complete normalized declared contract suitable for semantic verification.
 |---|---|---|---|
 | 1 | Readable legacy format | Route-only | Not supported |
 | 2 | Readable legacy format | Route-only with provenance | Value-free shapes |
-| 3 | Current format | Complete normalized contracts | Value-free shapes |
+| 3 | Readable legacy format | Partial Phase 2 contracts | Value-free shapes |
+| 4 | Current format | Complete Phase 2 contracts | Value-free shapes |
 
 ## Version 1
 
@@ -178,7 +180,117 @@ declared.
 Version 3 declared Verify reconstructs the locked contract and calls the same
 semantic `diff_contracts` path as `apiwatch diff`. Breaking findings exit `1`;
 warning-only and non-breaking findings exit `0`. Text, version-2 Verify JSON,
-and SARIF share the same severities and messages.
+and SARIF share the same severities and messages. Because v3 predates the
+Phase 2 wire fields, Verify reports partial coverage and requires re-locking
+for full current behavior.
+
+## Version 4
+
+Version 4 is the current declared-contract format. Its outer declared entry
+retains the v3 fields:
+
+- `source: openapi`;
+- `scope`;
+- `max_lock_bytes`;
+- `contract_bytes`;
+- `contract_digest`;
+- optional direct `x-*` extensions;
+- `contract.operations` and `contract.schemas`.
+
+The v4 operation key is `METHOD <canonical-path-identity>`. Each operation
+stores:
+
+- `display_path`, retaining the normalized source placeholder labels for
+  diagnostics;
+- `auth`, keyed by source label and containing `kind`, semantic `identity`,
+  and sorted unique `scopes`;
+- `servers`, the sorted effective privacy-safe server templates;
+- `parameters`, keyed by location and semantic name, with display `name`,
+  `required`, and a schema ID;
+- nullable `request_body`, with explicit boolean `required` and canonical
+  media-type-to-schema mappings;
+- `responses`, mapping status codes to canonical media-type-to-schema
+  mappings.
+
+Authentication identity is strict and tagged: API keys store location and
+wire name; HTTP stores scheme; OAuth2 stores sorted flow kinds plus canonical
+authorization, token, and refresh endpoint templates; OpenID Connect stores
+the canonical discovery template; unresolved schemes retain only their
+normalized kind. A stored kind that disagrees with its identity is rejected.
+
+Each content-addressed v4 schema stores:
+
+- `kind`, `nullable`, optional `format`, and sorted unique `enum_values`;
+- `properties`, whose values contain `required` and a schema ID;
+- optional first-class `items`;
+- `additional_properties` as `forbidden`, `any`, or `schema` with a schema ID;
+- sorted unique `branches` for `oneOf` and `anyOf`.
+
+Unknown fields, unknown dictionary policy, orphaned schemas, incorrect schema
+IDs, invalid references, duplicate normalized identities, and noncanonical
+arrays are rejected.
+
+### Digest domains and payload measurement
+
+Schema IDs hash canonical JSON containing the literal domain
+`apiwatch.schema.v4` and the complete wire schema. `contract_digest` hashes
+canonical JSON containing `apiwatch.declared-contract.v4`, `scope`,
+`contract`, and recursively canonicalized direct `x-*` extensions. Both are
+rendered as `sha256:` plus 64 lowercase hexadecimal characters.
+
+`contract_bytes` is the exact UTF-8 length of the standalone deterministic
+YAML serialization of the production v4 `contract`, including its final
+newline. Lock creation and the committed Phase 2 size report call this same
+interning and serialization path. The default maximum is 5,242,880 bytes.
+
+### Scope and operation identity
+
+Path placeholder labels are display data, not endpoint identity. `/users/{id}`
+and `/users/{userId}` both use `/users/{0}` as the canonical operation and
+scope identity. Later slots use `{1}`, `{2}`, and so on. The stored
+`display_path` preserves the source spelling used for findings.
+
+`scope: all` covers every normalized operation. Scoped selectors are
+validated against the source, normalized to uppercase method plus canonical
+positional path identity, sorted, and deduplicated. Verify applies the same
+identity normalization, so harmless placeholder renames do not become
+endpoint removals and additions.
+
+### Coverage and migration
+
+| Lock version | Declared Verify coverage | Structured limitation | Migration |
+|---|---|---|---|
+| 1–2 | `routes` | `route_only_lock` | Re-lock from the original source |
+| 3 | `partial` | `phase2_relock_required` | Re-lock from the original source |
+| 4 | `full` | None | Current |
+
+`lock --update` can migrate an older file only when the updated name is its
+sole pre-v4 declared entry. Observed entries are preserved. If any other v1,
+v2, or v3 declared entry remains, migration is refused and lists every API
+whose original source is required. An observed entry cannot be replaced as
+declared. Parsing, normalization, scope, size, integrity, or migration failure
+leaves the destination bytes unchanged.
+
+### Privacy exclusions
+
+The v4 contract excludes examples, defaults, descriptions, source extensions,
+raw OpenAPI fragments, raw server literals, server credentials, literal query
+values, captured JSON values, headers, and response bodies. It retains only
+normalized comparison data: operation/display identities, semantic
+authentication identity, privacy-safe server templates, canonical media
+types, requiredness, schema kinds/formats/enums, composition, array items, and
+dictionary policy. The production privacy fixture is checked against the
+exact v4 payload encoder.
+
+### Phase 2 production-size evidence
+
+Every currently normalizable pinned corpus entry fits the default production
+v4 payload ceiling: GitHub is 2,569,165 bytes, Asana is 946,072 bytes, and Box
+is 589,237 bytes. Stripe remains an expected recursive-schema failure and
+DigitalOcean remains an expected malformed-metadata failure.
+
+See the [human-readable Phase 2 report](benchmarks/phase-2-v4-lock-size-report.md)
+and [machine-readable Phase 2 report](benchmarks/phase-2-v4-lock-size-report.json).
 
 ### Phase 1 Prototype Results
 
@@ -203,17 +315,17 @@ the required schema, parameter, authentication, content-type, and response
 data was never stored.
 
 Users must re-lock from the original OpenAPI source to obtain a complete
-version 3 declared entry. Legacy Verify remains available, reports
-`coverage: routes` plus a `route_only_lock` limitation in JSON, emits a warning
-for text, and records a SARIF tool execution notification. It never invents
-missing contract data.
+version 4 declared entry. Legacy Verify remains available: v1/v2 reports
+`coverage: routes` plus `route_only_lock`; v3 reports `coverage: partial` plus
+`phase2_relock_required`. Text emits a warning and SARIF records a tool
+execution notification. Verify never invents missing contract data.
 
 ## Privacy
 
-The lockfile avoids secrets, sensitive raw payloads, examples, headers, raw
-OpenAPI fragments, and captured JSON values. Complete declared contracts may
-add normalized schema metadata or canonical hashes while preserving this
-boundary.
+The lockfile avoids secrets, sensitive raw payloads, examples, defaults,
+descriptions, headers, raw OpenAPI fragments, literal server query values,
+credentials, and captured JSON values. Complete declared contracts retain
+only normalized semantic metadata and canonical hashes.
 
 See [ROADMAP.md](../ROADMAP.md) for the implementation order and exit
 criteria.
