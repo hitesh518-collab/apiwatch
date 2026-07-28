@@ -260,7 +260,7 @@ pub(super) fn load(contents: &str) -> Result<V3Lock> {
         serde_yaml::from_value(raw).context("failed to parse api.lock v3 YAML")?;
     for api in lock.apis.values_mut() {
         if let V3Api::Declared(entry) = api {
-            validate_legacy_scope_digest(entry)?;
+            validate_stored_contract_digest(entry)?;
             canonicalize_scope_on_load(&mut entry.scope)?;
             entry.contract_digest =
                 canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?;
@@ -270,20 +270,8 @@ pub(super) fn load(contents: &str) -> Result<V3Lock> {
     Ok(lock)
 }
 
-fn validate_legacy_scope_digest(entry: &DeclaredEntry) -> Result<()> {
-    let Scope::Operations(scope) = &entry.scope else {
-        return Ok(());
-    };
-    let mut previous = None;
-    for selector in &scope.operations {
-        let identity = crate::lock_size::parse_operation_selector(selector)?;
-        if previous.as_ref().is_some_and(|value| value >= &identity) {
-            return Err(anyhow!(
-                "operation scope must be sorted and contain no duplicates"
-            ));
-        }
-        previous = Some(identity);
-    }
+fn validate_stored_contract_digest(entry: &DeclaredEntry) -> Result<()> {
+    canonical::validate_extensions(&entry.extensions)?;
     canonical::validate_digest(&entry.contract_digest)?;
     if canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?
         != entry.contract_digest
@@ -771,4 +759,22 @@ pub(super) fn tampered_contract_digest_error_for_test(
     let mut entry = build_declared(contract, Scope::all(), u64::MAX, BTreeMap::new())?;
     entry.contract_digest = format!("sha256:{}", "0".repeat(64));
     validate_declared("test", &entry).map(|_| ())
+}
+
+#[cfg(test)]
+pub(super) fn legacy_scoped_path_selector_loads_for_test(
+    contract: &crate::contract::ApiContract,
+) -> anyhow::Result<()> {
+    let mut entry = build_declared(
+        contract,
+        Scope::operations(vec!["GET /users/{0}/orders/{1}".to_string()]),
+        DEFAULT_MAX_LOCK_BYTES,
+        BTreeMap::new(),
+    )?;
+    entry.scope = Scope::operations(vec!["GET /users/{userId}/orders/{orderId}".to_string()]);
+    entry.contract_digest =
+        canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?;
+    let lock = V3Lock::single_declared("d07", entry)?;
+    let legacy = serde_yaml::to_string(&lock)?;
+    load(&legacy).map(|_| ())
 }

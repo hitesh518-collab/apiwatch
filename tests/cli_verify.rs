@@ -281,6 +281,27 @@ fn phase2_d07_verify_scoped_v3_lock_matches_renamed_path_placeholders() {
 }
 
 #[test]
+fn phase2_d07_verify_legacy_v1_and_v2_locks_use_path_template_identity() {
+    for contents in [
+        "version: 1\napis:\n  d07:\n    source: openapi\n    operations:\n      - method: GET\n        path: /users/{userId}/orders/{orderId}\n",
+        "version: 2\napis:\n  d07:\n    provenance: declared\n    source: openapi\n    operations:\n      - method: GET\n        path: /users/{userId}/orders/{orderId}\n",
+    ] {
+        let lock = observed_lock_path();
+        fs::write(&lock, contents).expect("legacy lock should be written");
+
+        verify_command(
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+            "d07",
+            lock.to_str().expect("temporary path should be valid UTF-8"),
+        )
+        .assert()
+        .success()
+        .stdout("Verified d07\n");
+        fs::remove_file(lock).ok();
+    }
+}
+
+#[test]
 fn phase2_d01_verify_v4_matches_diff_request_body_findings() {
     let lock = lock_from_v4("testdata/openapi/phase2_d01_request_body_old.yaml", "d01");
     let lock = lock.to_str().expect("temp path should be valid UTF-8");

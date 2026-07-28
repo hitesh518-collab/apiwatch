@@ -436,7 +436,7 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
         if operation_key != &format!("{} {}", parsed.method.as_str(), parsed.path) {
             return Err(anyhow!("operation key is not canonical"));
         }
-        let (display_identity, _) =
+        let (display_identity, display_placeholders) =
             crate::openapi::identity::canonical_path_template(&operation.display_path)?;
         if display_identity != parsed.path {
             return Err(anyhow!(
@@ -453,11 +453,24 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
                 return Err(anyhow!("server template is not canonical"));
             }
         }
-        for parameter_key in operation.parameters.keys() {
+        let mut expected_path_parameters = display_placeholders
+            .iter()
+            .enumerate()
+            .map(|(slot, name)| (format!("{{{slot}}}"), name))
+            .collect::<BTreeMap<_, _>>();
+        for (parameter_key, parameter) in &operation.parameters {
             let parsed = schema::parse_parameter_key(parameter_key)?;
             if parameter_key != &format!("{}:{}", parsed.location.as_str(), parsed.name) {
                 return Err(anyhow!("parameter key is not canonical"));
             }
+            if parsed.location == crate::contract::ParameterLocation::Path
+                && expected_path_parameters.remove(&parsed.name) != Some(&parameter.name)
+            {
+                return Err(anyhow!("path parameter bindings do not match display path"));
+            }
+        }
+        if !expected_path_parameters.is_empty() {
+            return Err(anyhow!("path parameter bindings do not match display path"));
         }
         if let Some(body) = &operation.request_body {
             validate_content_types(&body.content)?;

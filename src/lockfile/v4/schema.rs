@@ -212,11 +212,7 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                     Ok((
                         key.clone(),
                         Parameter {
-                            name: if parameter.name.is_empty() {
-                                key.name.clone()
-                            } else {
-                                parameter.name.clone()
-                            },
+                            name: parameter.name.clone(),
                             required: parameter.required,
                             schema: expand_schema(&parameter.schema, &contract.schemas)?,
                         },

@@ -606,17 +606,21 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Re
     else {
         return Ok(Vec::new());
     };
-    let current_operations: BTreeSet<_> = current
+    let target_operations = target_operations
+        .iter()
+        .map(|operation| Ok((operation_identity_from_locked(operation)?, operation)))
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let current_operations = current
         .operations
-        .keys()
-        .map(|key| LockedOperation {
-            method: key.method.as_str().to_string(),
-            path: key.path.clone(),
-        })
-        .collect();
+        .iter()
+        .map(|(identity, operation)| (identity.clone(), operation))
+        .collect::<BTreeMap<_, _>>();
     let mut changes = Vec::new();
 
-    for operation in target_operations.difference(&current_operations) {
+    for (identity, operation) in &target_operations {
+        if current_operations.contains_key(identity) {
+            continue;
+        }
         changes.push(Change {
             severity: Severity::Breaking,
             operation: operation_key_from_locked(operation)?,
@@ -624,10 +628,13 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Re
         });
     }
 
-    for operation in current_operations.difference(target_operations) {
+    for (identity, operation) in &current_operations {
+        if target_operations.contains_key(identity) {
+            continue;
+        }
         changes.push(Change {
             severity: Severity::Warning,
-            operation: operation_key_from_locked(operation)?,
+            operation: operation.key.clone(),
             message: "endpoint added outside route-only lock".to_string(),
         });
     }
@@ -710,6 +717,13 @@ fn operation_key_from_locked(operation: &LockedOperation) -> Result<crate::contr
         method,
         path: operation.path,
     })
+}
+
+fn operation_identity_from_locked(
+    operation: &LockedOperation,
+) -> Result<crate::contract::OperationIdentity> {
+    let operation = normalized_locked_operation(operation)?;
+    crate::lock_size::parse_operation_selector(&format!("{} {}", operation.method, operation.path))
 }
 
 #[cfg(test)]
@@ -1367,6 +1381,30 @@ mod tests {
     }
 
     #[test]
+    fn v4_rejects_path_parameter_names_that_do_not_match_display_slots() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+        ))
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("d07", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        let tampered = rendered.replacen("name: userId", "name: orderId", 1);
+        let path = std::env::temp_dir().join(format!(
+            "apiwatch-d07-v4-binding-{}.lock",
+            std::process::id()
+        ));
+        fs::write(&path, tampered).expect("tampered v4 lock should write");
+        let error = load(&path).expect_err("inconsistent path parameter name should fail");
+        fs::remove_file(path).ok();
+
+        assert!(error
+            .to_string()
+            .contains("path parameter bindings do not match display path"));
+    }
+
+    #[test]
     fn v3_rejects_a_tampered_schema_digest() {
         let contract =
             crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
@@ -1479,6 +1517,50 @@ mod tests {
             .expect_err("tampered contract digest should fail")
             .to_string()
             .contains("contract digest mismatch"));
+    }
+
+    #[test]
+    fn v3_scope_all_rejects_digest_and_same_length_contract_tampering() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        let entry = super::v3::build_declared(
+            &source,
+            super::v3::Scope::all(),
+            super::v3::DEFAULT_MAX_LOCK_BYTES,
+            BTreeMap::new(),
+        )
+        .expect("entry should build");
+        let rendered = super::v3::render(
+            &super::v3::V3Lock::single_declared("private", entry).expect("lock should build"),
+        )
+        .expect("lock should render");
+        let digest = rendered
+            .lines()
+            .find(|line| line.trim_start().starts_with("contract_digest:"))
+            .expect("lock should contain a digest");
+        let replacement = format!("{}0", &digest[..digest.len() - 1]);
+        let digest_tampered = rendered.replacen(digest, &replacement, 1);
+        assert!(super::v3::load(&digest_tampered)
+            .expect_err("digest-only tampering must fail")
+            .to_string()
+            .contains("contract digest mismatch"));
+
+        let semantic_tampered = rendered.replacen("'200':", "'201':", 1);
+        assert!(super::v3::load(&semantic_tampered)
+            .expect_err("same-length contract tampering must fail")
+            .to_string()
+            .contains("contract digest mismatch"));
+    }
+
+    #[test]
+    fn v3_loads_legacy_scoped_path_selectors_after_validating_their_digest() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+        ))
+        .expect("fixture should load");
+        super::v3::legacy_scoped_path_selector_loads_for_test(&source)
+            .expect("legacy scoped selector should remain compatible");
     }
 
     #[test]

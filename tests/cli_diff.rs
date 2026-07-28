@@ -48,6 +48,33 @@ fn phase2_d07_rejects_ambiguous_positional_path_template_identity() {
         ));
 }
 
+#[test]
+fn phase2_d07_rejects_duplicate_same_layer_parameters() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    std::fs::write(
+        document.path(),
+        "openapi: 3.0.3\ninfo: { title: D-07 duplicate parameters, version: '1' }\npaths:\n  /users:\n    get:\n      parameters:\n        - { name: page, in: query, schema: { type: integer } }\n        - { name: page, in: query, schema: { type: integer } }\n      responses: { '200': { description: ok } }\n",
+    )
+    .expect("temporary OpenAPI document should be written");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            document
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("duplicate parameter query:page"));
+}
+
 fn phase2_d06_openapi(server: &str) -> String {
     format!(
         "openapi: 3.0.3\ninfo: {{ title: D-06 Regression, version: '1' }}\nservers:\n  - url: {server:?}\npaths:\n  /users:\n    get:\n      responses: {{ '204': {{ description: ok }} }}\n"

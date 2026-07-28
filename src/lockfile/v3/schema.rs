@@ -190,82 +190,83 @@ pub(super) fn forced_collision_error() -> Result<()> {
 
 pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
     validate_schema_table(contract)?;
-    let operations = contract
-        .operations
-        .iter()
-        .map(|(key, operation)| {
-            let key = parse_operation_key(key)?;
-            let (canonical_path, placeholders) = canonical_path_template(&key.path)?;
-            let identity = OperationIdentity {
-                method: key.method,
-                path: canonical_path,
-            };
-            let auth = operation
-                .auth
-                .iter()
-                .map(|(name, requirement)| {
-                    Ok((
-                        name.clone(),
-                        AuthRequirement {
-                            name: name.clone(),
-                            kind: requirement.kind,
-                            scopes: requirement.scopes.clone(),
-                        },
-                    ))
+    let mut operations = BTreeMap::new();
+    for (key, operation) in &contract.operations {
+        let key = parse_operation_key(key)?;
+        let (canonical_path, placeholders) = canonical_path_template(&key.path)?;
+        let identity = OperationIdentity {
+            method: key.method,
+            path: canonical_path,
+        };
+        let auth = operation
+            .auth
+            .iter()
+            .map(|(name, requirement)| {
+                Ok((
+                    name.clone(),
+                    AuthRequirement {
+                        name: name.clone(),
+                        kind: requirement.kind,
+                        scopes: requirement.scopes.clone(),
+                    },
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let parameters = operation
+            .parameters
+            .iter()
+            .map(|(key, parameter)| {
+                let key = parse_parameter_key(key)?;
+                let name = key.name.clone();
+                let key = canonicalize_parameter_key(key, &placeholders)?;
+                Ok((
+                    key.clone(),
+                    Parameter {
+                        name,
+                        required: parameter.required,
+                        schema: expand_schema(&parameter.schema, &contract.schemas)?,
+                    },
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let request_body = operation
+            .request_body
+            .as_ref()
+            .map(|content| -> Result<RequestBody> {
+                Ok(RequestBody {
+                    required: None,
+                    content: expand_content(content, &contract.schemas)?,
                 })
-                .collect::<Result<_>>()?;
-            let parameters = operation
-                .parameters
-                .iter()
-                .map(|(key, parameter)| {
-                    let key = parse_parameter_key(key)?;
-                    let name = key.name.clone();
-                    let key = canonicalize_parameter_key(key, &placeholders)?;
-                    Ok((
-                        key.clone(),
-                        Parameter {
-                            name,
-                            required: parameter.required,
-                            schema: expand_schema(&parameter.schema, &contract.schemas)?,
-                        },
-                    ))
-                })
-                .collect::<Result<_>>()?;
-            let request_body = operation
-                .request_body
-                .as_ref()
-                .map(|content| -> Result<RequestBody> {
-                    Ok(RequestBody {
-                        required: None,
+            })
+            .transpose()?;
+        let responses = operation
+            .responses
+            .iter()
+            .map(|(status, content)| {
+                Ok((
+                    status.clone(),
+                    Response {
                         content: expand_content(content, &contract.schemas)?,
-                    })
-                })
-                .transpose()?;
-            let responses = operation
-                .responses
-                .iter()
-                .map(|(status, content)| {
-                    Ok((
-                        status.clone(),
-                        Response {
-                            content: expand_content(content, &contract.schemas)?,
-                        },
-                    ))
-                })
-                .collect::<Result<_>>()?;
-            Ok((
-                identity,
-                Operation {
-                    key,
-                    auth,
-                    servers: None,
-                    parameters,
-                    request_body,
-                    responses,
-                },
-            ))
-        })
-        .collect::<Result<_>>()?;
+                    },
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let operation = Operation {
+            key,
+            auth,
+            servers: None,
+            parameters,
+            request_body,
+            responses,
+        };
+        if operations.insert(identity.clone(), operation).is_some() {
+            return Err(anyhow!(
+                "ambiguous operation identity {} {}",
+                identity.method.as_str(),
+                identity.path
+            ));
+        }
+    }
     Ok(ApiContract { operations })
 }
 
@@ -514,4 +515,42 @@ fn sanitized(value: &str) -> String {
         .chars()
         .filter(|character| !character.is_control())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::{expand_contract, Contract, WireOperation};
+
+    #[test]
+    fn rejects_operations_that_collide_after_path_template_canonicalization() {
+        let contract = Contract {
+            operations: BTreeMap::from([
+                (
+                    "GET /users/{id}".to_string(),
+                    WireOperation {
+                        auth: BTreeMap::new(),
+                        parameters: BTreeMap::new(),
+                        request_body: None,
+                        responses: BTreeMap::new(),
+                    },
+                ),
+                (
+                    "GET /users/{name}".to_string(),
+                    WireOperation {
+                        auth: BTreeMap::new(),
+                        parameters: BTreeMap::new(),
+                        request_body: None,
+                        responses: BTreeMap::new(),
+                    },
+                ),
+            ]),
+            schemas: BTreeMap::new(),
+        };
+
+        let error = expand_contract(&contract)
+            .expect_err("canonical operation identities must not overwrite each other");
+        assert!(error.to_string().contains("ambiguous operation identity"));
+    }
 }

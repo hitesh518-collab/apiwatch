@@ -677,16 +677,32 @@ fn normalize_parameters(
     operation_parameters: &[ReferenceOr<OpenApiParameter>],
 ) -> Result<BTreeMap<ParameterKey, Parameter>> {
     let mut parameters = BTreeMap::new();
+    let mut path_keys = BTreeSet::new();
 
     for parameter in path_parameters {
         let (key, parameter) =
             normalize_parameter_ref(parameter, schema_resolver, &mut BTreeSet::new())?;
+        if !path_keys.insert(key.clone()) {
+            return Err(anyhow!(
+                "duplicate parameter {}:{}",
+                key.location.as_str(),
+                key.name
+            ));
+        }
         parameters.insert(key, parameter);
     }
 
+    let mut operation_keys = BTreeSet::new();
     for parameter in operation_parameters {
         let (key, parameter) =
             normalize_parameter_ref(parameter, schema_resolver, &mut BTreeSet::new())?;
+        if !operation_keys.insert(key.clone()) {
+            return Err(anyhow!(
+                "duplicate parameter {}:{}",
+                key.location.as_str(),
+                key.name
+            ));
+        }
         parameters.insert(key, parameter);
     }
 
