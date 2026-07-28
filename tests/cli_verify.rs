@@ -266,6 +266,52 @@ fn phase2_d01_verify_v4_matches_diff_request_body_findings() {
 }
 
 #[test]
+fn phase2_d09_verify_v4_and_v3_preserve_composition_findings() {
+    let expected = [
+        "GET /allof-required-change: response 200 application/json field name changed from required to optional",
+        "GET /response-branch-addition: response 200 application/json field anyOf[1] added",
+        "POST /request-branch-removal: request application/json field oneOf[1] removed",
+    ];
+    for (name, lock) in [
+        (
+            "d09-v4",
+            lock_from_v4("testdata/openapi/phase2_d09_composition_old.yaml", "d09-v4"),
+        ),
+        (
+            "d09-v3",
+            lock_from_v3("testdata/openapi/phase2_d09_composition_old.yaml", "d09-v3"),
+        ),
+    ] {
+        let output = verify_command(
+            "testdata/openapi/phase2_d09_composition_new.yaml",
+            name,
+            lock.to_str().expect("temp path should be valid UTF-8"),
+        )
+        .assert()
+        .code(1)
+        .get_output()
+        .stdout
+        .clone();
+        let text = String::from_utf8(output).expect("verify output should be UTF-8");
+        for finding in expected {
+            assert!(text.contains(finding), "missing {finding}: {text}");
+        }
+        assert!(
+            !text.contains("/allof-reordered"),
+            "reordered allOf must be silent: {text}"
+        );
+        assert!(
+            !text.contains("/oneof-reordered"),
+            "reordered oneOf must be silent: {text}"
+        );
+        assert!(
+            !text.contains("/anyof-reordered"),
+            "reordered anyOf must be silent: {text}"
+        );
+    }
+}
+
+#[test]
 fn phase2_d02_verify_v4_matches_diff_content_type_findings() {
     let lock = lock_from_v4("testdata/openapi/phase2_d02_content_type_old.yaml", "d02");
     let lock = lock.to_str().expect("temp path should be valid UTF-8");

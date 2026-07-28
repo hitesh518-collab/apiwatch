@@ -124,6 +124,22 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
             ))
         })
         .collect::<Result<_>>()?;
+    if !matches!(
+        schema.kind,
+        crate::contract::SchemaKind::OneOf | crate::contract::SchemaKind::AnyOf
+    ) && !schema.branches.is_empty()
+    {
+        return Err(anyhow!(
+            "v4 branches are only valid for oneOf or anyOf schemas"
+        ));
+    }
+    let mut branches = schema
+        .branches
+        .iter()
+        .map(|branch| intern_schema(branch, schemas))
+        .collect::<Result<Vec<_>>>()?;
+    branches.sort();
+    branches.dedup();
     let mut enum_values = schema.enum_values.clone();
     enum_values.sort();
     enum_values.dedup();
@@ -142,6 +158,7 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
         enum_values,
         properties,
         additional_properties,
+        branches,
     };
     let id = canonical::schema_id(&wire)?;
     if let Some(existing) = schemas.get(&id) {
@@ -257,6 +274,22 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
             ))
         })
         .collect::<Result<_>>()?;
+    if !matches!(
+        wire.kind,
+        crate::contract::SchemaKind::OneOf | crate::contract::SchemaKind::AnyOf
+    ) && !wire.branches.is_empty()
+    {
+        return Err(anyhow!(
+            "v4 branches are only valid for oneOf or anyOf schemas"
+        ));
+    }
+    let mut branches: Vec<Schema> = wire
+        .branches
+        .iter()
+        .map(|branch| expand_schema(branch, schemas))
+        .collect::<Result<_>>()?;
+    branches.sort_by_key(Schema::structural_key);
+    branches.dedup_by(|left, right| left.structural_key() == right.structural_key());
     Ok(Schema {
         kind: wire.kind.clone(),
         nullable: wire.nullable,
@@ -270,6 +303,7 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
                 AdditionalProperties::Schema(Box::new(expand_schema(schema, schemas)?))
             }
         },
+        branches,
     })
 }
 pub(super) fn validate_schema_table(contract: &Contract) -> Result<()> {
@@ -319,6 +353,9 @@ fn visit_schema(
     }
     for property in schema.properties.values() {
         visit_schema(&property.schema, schemas, visiting, reachable)?;
+    }
+    for branch in &schema.branches {
+        visit_schema(branch, schemas, visiting, reachable)?;
     }
     if let WireAdditionalProperties::Schema { schema } = &schema.additional_properties {
         visit_schema(schema, schemas, visiting, reachable)?;

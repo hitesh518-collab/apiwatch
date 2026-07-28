@@ -1,0 +1,84 @@
+openapi: 3.0.3
+info:
+  title: D-09 composition new
+  version: 1.0.1
+paths:
+  /allof-reordered:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      age: { type: integer }
+                  - type: object
+                    required: [name]
+                    properties:
+                      name: { type: string }
+  /oneof-reordered:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { type: integer }
+                  - { type: string }
+  /anyof-reordered:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    properties:
+                      beta: { type: integer }
+                  - type: object
+                    properties:
+                      alpha: { type: string }
+  /request-branch-removal:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - { type: string }
+      responses:
+        '204': { description: Done }
+  /response-branch-addition:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - { type: string }
+                  - { type: integer }
+  /allof-required-change:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    properties:
+                      name: { type: string }
+                  - type: object
+                    properties:
+                      age: { type: integer }

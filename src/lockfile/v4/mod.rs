@@ -127,6 +127,8 @@ pub(super) struct WireSchema {
     enum_values: Vec<String>,
     properties: BTreeMap<String, WireProperty>,
     additional_properties: WireAdditionalProperties,
+    #[serde(default)]
+    branches: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -460,6 +462,14 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
             validate_wire_string(format, "schema format", true)?;
         }
         validate_normalized_strings(&schema.enum_values, "schema enum values")?;
+        validate_normalized_strings(&schema.branches, "schema branches")?;
+        if !schema.branches.is_empty()
+            && !matches!(schema.kind, SchemaKind::OneOf | SchemaKind::AnyOf)
+        {
+            return Err(anyhow!(
+                "schema branches are only valid for oneOf or anyOf schemas"
+            ));
+        }
         for property in schema.properties.keys() {
             validate_wire_string(property, "schema property name", true)?;
         }

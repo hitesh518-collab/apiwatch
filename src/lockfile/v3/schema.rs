@@ -6,7 +6,7 @@ use crate::contract::{
     AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey,
     Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema,
 };
-use crate::openapi::identity::canonical_media_type;
+use crate::openapi::{identity::canonical_media_type, merge_all_of};
 
 use super::{
     canonical, Contract, WireAuth, WireOperation, WireParameter, WireProperty, WireSchema,
@@ -90,7 +90,7 @@ fn intern_content(
 }
 
 fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) -> Result<String> {
-    let properties = schema
+    let mut properties: BTreeMap<String, WireProperty> = schema
         .properties
         .iter()
         .map(|(name, property)| {
@@ -103,6 +103,24 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
             ))
         })
         .collect::<Result<_>>()?;
+    if matches!(
+        schema.kind,
+        crate::contract::SchemaKind::OneOf | crate::contract::SchemaKind::AnyOf
+    ) {
+        let prefix = match schema.kind {
+            crate::contract::SchemaKind::OneOf => "oneOf",
+            _ => "anyOf",
+        };
+        for (index, branch) in schema.branches.iter().enumerate() {
+            properties.insert(
+                format!("{prefix}[{index}]"),
+                WireProperty {
+                    required: true,
+                    schema: intern_schema(branch, schemas)?,
+                },
+            );
+        }
+    }
     let mut enum_values = schema.enum_values.clone();
     enum_values.sort();
     enum_values.dedup();
@@ -250,7 +268,7 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
     let wire = schemas
         .get(id)
         .ok_or_else(|| anyhow!("missing schema reference"))?;
-    let properties = wire
+    let mut properties: BTreeMap<String, crate::contract::Property> = wire
         .properties
         .iter()
         .map(|(name, property)| {
@@ -263,6 +281,65 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
             ))
         })
         .collect::<Result<_>>()?;
+    let branches = match wire.kind {
+        crate::contract::SchemaKind::OneOf | crate::contract::SchemaKind::AnyOf => {
+            let prefix = if matches!(wire.kind, crate::contract::SchemaKind::OneOf) {
+                "oneOf"
+            } else {
+                "anyOf"
+            };
+            let mut legacy = properties
+                .iter()
+                .filter_map(|(name, property)| {
+                    parse_legacy_branch(name, prefix).map(|index| (index, *property.schema.clone()))
+                })
+                .collect::<Vec<_>>();
+            legacy.sort_by_key(|(index, _)| *index);
+            for (index, _) in &legacy {
+                properties.remove(&format!("{prefix}[{index}]"));
+            }
+            let mut branches = legacy
+                .into_iter()
+                .map(|(_, branch)| Ok(branch))
+                .collect::<Result<Vec<_>>>()?;
+            branches.sort_by_key(Schema::structural_key);
+            branches.dedup_by(|left, right| left.structural_key() == right.structural_key());
+            branches
+        }
+        crate::contract::SchemaKind::AllOf => {
+            let mut legacy = properties
+                .iter()
+                .filter_map(|(name, property)| {
+                    parse_legacy_branch(name, "allOf")
+                        .map(|index| (index, *property.schema.clone()))
+                })
+                .collect::<Vec<_>>();
+            if legacy.is_empty() {
+                Vec::new()
+            } else {
+                legacy.sort_by_key(|(index, _)| *index);
+                for (index, _) in &legacy {
+                    properties.remove(&format!("allOf[{index}]"));
+                }
+                let mut branches = legacy
+                    .into_iter()
+                    .map(|(_, branch)| branch)
+                    .collect::<Vec<_>>();
+                let merged = merge_all_of(std::mem::take(&mut branches))?;
+                properties.extend(merged.properties);
+                return Ok(Schema {
+                    kind: merged.kind,
+                    nullable: merged.nullable,
+                    format: merged.format,
+                    enum_values: merged.enum_values,
+                    properties,
+                    additional_properties: merged.additional_properties,
+                    branches: Vec::new(),
+                });
+            }
+        }
+        _ => Vec::new(),
+    };
     Ok(Schema {
         kind: wire.kind.clone(),
         nullable: wire.nullable,
@@ -270,7 +347,16 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
         enum_values: wire.enum_values.clone(),
         properties,
         additional_properties: AdditionalProperties::Unknown,
+        branches,
     })
+}
+
+fn parse_legacy_branch(name: &str, prefix: &str) -> Option<usize> {
+    name.strip_prefix(prefix)?
+        .strip_prefix('[')?
+        .strip_suffix(']')?
+        .parse()
+        .ok()
 }
 
 pub(super) fn validate_schema_table(contract: &Contract) -> Result<()> {

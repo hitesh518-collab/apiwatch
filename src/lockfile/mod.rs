@@ -1127,6 +1127,7 @@ mod tests {
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
             additional_properties: AdditionalProperties::Unknown,
+            branches: Vec::new(),
         };
         let operation = |path: &str| {
             (

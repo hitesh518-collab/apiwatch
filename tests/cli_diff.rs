@@ -1687,7 +1687,7 @@ fn diff_exits_two_for_circular_schema_ref() {
 }
 
 #[test]
-fn diff_detects_oneof_branch_type_change() {
+fn diff_classifies_oneof_branch_type_replacement() {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
 
     command
@@ -1700,7 +1700,7 @@ fn diff_detects_oneof_branch_type_change() {
         .code(1)
         .stdout(predicate::str::contains("Breaking changes"))
         .stdout(predicate::str::contains(
-            "GET /search: response 200 application/json field oneOf[0] type changed from string to integer",
+            "GET /search: response 200 application/json field oneOf[1] added",
         ));
 }
 
@@ -1718,7 +1718,7 @@ fn diff_detects_allof_branch_field_removed() {
         .code(1)
         .stdout(predicate::str::contains("Breaking changes"))
         .stdout(predicate::str::contains(
-            "GET /users: response 200 application/json field allOf[0].name removed",
+            "GET /users: response 200 application/json field name removed",
         ));
 }
 
@@ -1738,6 +1738,32 @@ fn diff_detects_anyof_branch_field_type_change() {
         .stdout(predicate::str::contains(
             "GET /search: response 200 application/json field anyOf[0].result type changed from string to integer",
         ));
+}
+
+#[test]
+fn phase2_d09_compares_composition_branches_semantically() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d09_composition_old.yaml",
+            "testdata/openapi/phase2_d09_composition_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "POST /request-branch-removal: request application/json field oneOf[1] removed",
+        ))
+        .stdout(predicate::str::contains(
+            "GET /response-branch-addition: response 200 application/json field anyOf[1] added",
+        ))
+        .stdout(predicate::str::contains(
+            "GET /allof-required-change: response 200 application/json field name changed from required to optional",
+        ))
+        .stdout(predicate::str::contains("GET /allof-reordered").not())
+        .stdout(predicate::str::contains("GET /oneof-reordered").not())
+        .stdout(predicate::str::contains("GET /anyof-reordered").not());
 }
 
 #[test]

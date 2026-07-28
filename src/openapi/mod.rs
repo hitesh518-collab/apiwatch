@@ -863,18 +863,22 @@ fn normalize_schema(
         }
         OpenApiSchemaKind::OneOf { one_of } => {
             normalized.kind = SchemaKind::OneOf;
-            normalized.properties =
-                normalize_composed_schema_refs("oneOf", one_of, schema_resolver, visiting)?;
+            normalized.branches =
+                normalize_composed_schema_refs(one_of, schema_resolver, visiting)?;
         }
         OpenApiSchemaKind::AllOf { all_of } => {
-            normalized.kind = SchemaKind::AllOf;
-            normalized.properties =
-                normalize_composed_schema_refs("allOf", all_of, schema_resolver, visiting)?;
+            let mut merged = merge_all_of(normalize_composed_schema_refs(
+                all_of,
+                schema_resolver,
+                visiting,
+            )?)?;
+            merged.nullable &= normalized.nullable;
+            normalized = merged;
         }
         OpenApiSchemaKind::AnyOf { any_of } => {
             normalized.kind = SchemaKind::AnyOf;
-            normalized.properties =
-                normalize_composed_schema_refs("anyOf", any_of, schema_resolver, visiting)?;
+            normalized.branches =
+                normalize_composed_schema_refs(any_of, schema_resolver, visiting)?;
         }
         OpenApiSchemaKind::Type(Type::String(string)) => {
             normalized.kind = SchemaKind::String;
@@ -913,25 +917,89 @@ fn normalize_schema(
 }
 
 fn normalize_composed_schema_refs(
-    prefix: &str,
     schemas: &[ReferenceOr<OpenApiSchema>],
     schema_resolver: &SchemaResolver,
     visiting: &mut BTreeSet<String>,
-) -> Result<BTreeMap<String, Property>> {
-    schemas
+) -> Result<Vec<Schema>> {
+    let mut branches = schemas
         .iter()
-        .enumerate()
-        .map(|(index, schema)| {
-            let schema = normalize_schema_ref(schema, schema_resolver, visiting)?;
-            Ok((
-                format!("{prefix}[{index}]"),
-                Property {
-                    required: true,
-                    schema: Box::new(schema),
-                },
-            ))
-        })
-        .collect()
+        .map(|schema| normalize_schema_ref(schema, schema_resolver, visiting))
+        .collect::<Result<Vec<_>>>()?;
+    branches.sort_by_key(Schema::structural_key);
+    branches.dedup_by(|left, right| left.structural_key() == right.structural_key());
+    Ok(branches)
+}
+
+pub fn merge_all_of(mut schemas: Vec<Schema>) -> Result<Schema> {
+    let Some(mut merged) = schemas.pop() else {
+        return Ok(unknown_schema());
+    };
+    for schema in schemas {
+        merged = intersect_schema(merged, schema)?;
+    }
+    Ok(merged)
+}
+
+fn intersect_schema(mut left: Schema, right: Schema) -> Result<Schema> {
+    left.kind = match (&left.kind, &right.kind) {
+        (SchemaKind::Unknown, kind) => kind.clone(),
+        (kind, SchemaKind::Unknown) => kind.clone(),
+        (left_kind, right_kind) if left_kind == right_kind => left_kind.clone(),
+        _ => return Err(anyhow!("allOf contains incompatible schema kinds")),
+    };
+    left.nullable &= right.nullable;
+    left.format = match (left.format.take(), right.format) {
+        (None, format) | (format, None) => format,
+        (Some(left_format), Some(right_format)) if left_format == right_format => Some(left_format),
+        _ => return Err(anyhow!("allOf contains incompatible schema formats")),
+    };
+    left.enum_values = intersect_enums(left.enum_values, right.enum_values)?;
+    for (name, right_property) in right.properties {
+        if let Some(left_property) = left.properties.get_mut(&name) {
+            left_property.required |= right_property.required;
+            left_property.schema = Box::new(intersect_schema(
+                *left_property.schema.clone(),
+                *right_property.schema,
+            )?);
+        } else {
+            left.properties.insert(name, right_property);
+        }
+    }
+    left.additional_properties =
+        intersect_additional_properties(left.additional_properties, right.additional_properties)?;
+    if !left.branches.is_empty() || !right.branches.is_empty() {
+        return Err(anyhow!("allOf branches must be merged before intersection"));
+    }
+    Ok(left)
+}
+fn intersect_enums(left: Vec<String>, right: Vec<String>) -> Result<Vec<String>> {
+    if left.is_empty() {
+        return Ok(right);
+    }
+    if right.is_empty() {
+        return Ok(left);
+    }
+    let right = right.into_iter().collect::<BTreeSet<_>>();
+    let values = left
+        .into_iter()
+        .filter(|value| right.contains(value))
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        return Err(anyhow!("allOf enum intersection is empty"));
+    }
+    Ok(values)
+}
+fn intersect_additional_properties(
+    left: AdditionalProperties,
+    right: AdditionalProperties,
+) -> Result<AdditionalProperties> {
+    use AdditionalProperties::{Any, Forbidden, Schema, Unknown};
+    match (left, right) {
+        (Unknown, policy) | (policy, Unknown) => Ok(policy),
+        (Forbidden, _) | (_, Forbidden) => Ok(Forbidden),
+        (Any, policy) | (policy, Any) => Ok(policy),
+        (Schema(left), Schema(right)) => Ok(Schema(Box::new(intersect_schema(*left, *right)?))),
+    }
 }
 
 fn string_format_name(format: &VariantOrUnknownOrEmpty<StringFormat>) -> Option<String> {
@@ -972,17 +1040,85 @@ fn unknown_schema() -> Schema {
         enum_values: Vec::new(),
         properties: BTreeMap::new(),
         additional_properties: AdditionalProperties::Forbidden,
+        branches: Vec::new(),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::path::Path;
 
-    use crate::contract::HttpMethod;
+    use crate::contract::{AdditionalProperties, HttpMethod, Property, Schema, SchemaKind};
     use crate::remote::RemoteOpenApi;
 
-    use super::{load_contract, load_remote_contract};
+    use super::{load_contract, load_remote_contract, merge_all_of};
+
+    fn schema(kind: SchemaKind) -> Schema {
+        Schema {
+            kind,
+            nullable: false,
+            format: None,
+            enum_values: Vec::new(),
+            properties: BTreeMap::new(),
+            additional_properties: AdditionalProperties::Any,
+            branches: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn allof_intersection_preserves_the_narrowest_recursive_constraints() {
+        let mut left = schema(SchemaKind::Object);
+        left.nullable = true;
+        left.properties.insert(
+            "items".to_string(),
+            Property {
+                required: false,
+                schema: Box::new(schema(SchemaKind::Unknown)),
+            },
+        );
+        left.additional_properties =
+            AdditionalProperties::Schema(Box::new(schema(SchemaKind::Unknown)));
+        let mut right = schema(SchemaKind::Object);
+        right.properties.insert(
+            "items".to_string(),
+            Property {
+                required: true,
+                schema: Box::new(Schema {
+                    format: Some("uuid".to_string()),
+                    enum_values: vec!["a".to_string(), "b".to_string()],
+                    ..schema(SchemaKind::String)
+                }),
+            },
+        );
+        right.additional_properties = AdditionalProperties::Schema(Box::new(Schema {
+            enum_values: vec!["a".to_string()],
+            ..schema(SchemaKind::String)
+        }));
+
+        let merged = merge_all_of(vec![left, right]).expect("compatible allOf should merge");
+
+        assert!(!merged.nullable);
+        let items = merged.properties.get("items").expect("items should merge");
+        assert!(items.required);
+        assert_eq!(items.schema.kind, SchemaKind::String);
+        assert_eq!(items.schema.format.as_deref(), Some("uuid"));
+        match merged.additional_properties {
+            AdditionalProperties::Schema(value) => assert_eq!(value.enum_values, ["a"]),
+            _ => panic!("additionalProperties should stay schema constrained"),
+        }
+    }
+
+    #[test]
+    fn allof_intersection_rejects_incompatible_constraints() {
+        let error = merge_all_of(vec![
+            schema(SchemaKind::String),
+            schema(SchemaKind::Integer),
+        ])
+        .expect_err("different known kinds cannot intersect");
+
+        assert!(error.to_string().contains("incompatible schema kinds"));
+    }
 
     #[test]
     fn loads_openapi_operations() {

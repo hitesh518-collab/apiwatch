@@ -73,6 +73,7 @@ struct WireSchema {
     enum_values: Vec<String>,
     properties: BTreeMap<String, WireProperty>,
     additional_properties: WireAdditionalProperties,
+    branches: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -122,6 +123,13 @@ where
             schema: intern_schema(schema, schemas, canonical, digest)?,
         },
     };
+    let mut branches = schema
+        .branches
+        .iter()
+        .map(|branch| intern_schema(branch, schemas, canonical, digest))
+        .collect::<Result<Vec<_>>>()?;
+    branches.sort();
+    branches.dedup();
     let wire = WireSchema {
         kind: schema.kind.clone(),
         nullable: schema.nullable,
@@ -129,6 +137,7 @@ where
         enum_values: schema.enum_values.clone(),
         properties,
         additional_properties,
+        branches,
     };
     let bytes = serde_json::to_vec(&wire).context("failed to canonicalize schema")?;
     let id = digest(&bytes);
@@ -503,6 +512,7 @@ mod tests {
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
             additional_properties: AdditionalProperties::Forbidden,
+            branches: Vec::new(),
         };
         let second = Schema {
             kind: SchemaKind::Boolean,
@@ -511,6 +521,7 @@ mod tests {
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
             additional_properties: AdditionalProperties::Forbidden,
+            branches: Vec::new(),
         };
         let error =
             intern_schemas_for_test(&[first, second], |_| "sha256:forced".into()).unwrap_err();

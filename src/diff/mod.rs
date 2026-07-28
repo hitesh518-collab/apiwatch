@@ -525,6 +525,11 @@ fn diff_schema(
         }
     }
 
+    if matches!(old.kind, SchemaKind::OneOf | SchemaKind::AnyOf) && old.kind == new.kind {
+        diff_branches(changes, operation, usage, context, path, old, new);
+        return;
+    }
+
     for name in old.properties.keys() {
         if !new.properties.contains_key(name) {
             changes.push(Change {
@@ -572,6 +577,99 @@ fn diff_schema(
     }
 
     diff_additional_properties(changes, operation, usage, context, path, old, new);
+}
+
+fn diff_branches(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    usage: SchemaUsage,
+    context: &str,
+    path: &str,
+    old: &Schema,
+    new: &Schema,
+) {
+    let mut old_remaining: Vec<_> = old.branches.iter().enumerate().collect();
+    let mut new_remaining: Vec<_> = new.branches.iter().enumerate().collect();
+    old_remaining.retain(|(_, old_branch)| {
+        if let Some(index) = new_remaining
+            .iter()
+            .position(|(_, new_branch)| old_branch.structural_key() == new_branch.structural_key())
+        {
+            new_remaining.remove(index);
+            false
+        } else {
+            true
+        }
+    });
+    let mut pairs = Vec::new();
+    for old_position in (0..old_remaining.len()).rev() {
+        let (_, old_branch) = old_remaining[old_position];
+        let shape = old_branch.shape_key();
+        let old_count = old_remaining
+            .iter()
+            .filter(|(_, branch)| branch.shape_key() == shape)
+            .count();
+        let matching: Vec<_> = new_remaining
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, branch))| branch.shape_key() == shape)
+            .map(|(index, _)| index)
+            .collect();
+        if old_count == 1 && matching.len() == 1 {
+            let new_branch = new_remaining.remove(matching[0]);
+            pairs.push((old_remaining.remove(old_position), new_branch));
+        }
+    }
+    let name = schema_kind_name(&new.kind);
+    for ((_, old_branch), (new_index, new_branch)) in pairs {
+        let branch_path = field_path(path, &format!("{name}[{new_index}]"));
+        diff_schema(
+            changes,
+            operation,
+            usage,
+            context,
+            &branch_path,
+            old_branch,
+            new_branch,
+        );
+    }
+    for (old_index, _) in old_remaining {
+        changes.push(Change {
+            severity: branch_removed_severity(usage),
+            operation: operation.clone(),
+            message: format!(
+                "{context} field {} removed",
+                field_path(
+                    path,
+                    &format!("{}[{old_index}]", schema_kind_name(&old.kind))
+                )
+            ),
+        });
+    }
+    for (new_index, _) in new_remaining {
+        changes.push(Change {
+            severity: branch_added_severity(usage),
+            operation: operation.clone(),
+            message: format!(
+                "{context} field {} added",
+                field_path(path, &format!("{name}[{new_index}]"))
+            ),
+        });
+    }
+}
+
+fn branch_removed_severity(usage: SchemaUsage) -> Severity {
+    match usage {
+        SchemaUsage::Request => Severity::Breaking,
+        SchemaUsage::Response => Severity::NonBreaking,
+    }
+}
+
+fn branch_added_severity(usage: SchemaUsage) -> Severity {
+    match usage {
+        SchemaUsage::Request => Severity::NonBreaking,
+        SchemaUsage::Response => Severity::Breaking,
+    }
 }
 
 fn diff_additional_properties(
