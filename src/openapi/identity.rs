@@ -118,6 +118,10 @@ pub(crate) fn canonical_server_template(value: &str) -> Result<crate::contract::
     Ok(crate::contract::ServerTemplate(rendered))
 }
 
+pub(crate) fn canonical_auth_endpoint(value: &str) -> Result<crate::contract::ServerTemplate> {
+    canonical_server_template(value)
+}
+
 fn replace_placeholders(value: &str) -> Result<(String, Vec<(String, String)>)> {
     let mut prepared = String::new();
     let mut placeholders = Vec::new();

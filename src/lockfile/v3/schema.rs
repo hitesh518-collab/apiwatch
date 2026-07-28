@@ -207,6 +207,7 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                     AuthRequirement {
                         name: name.clone(),
                         kind: requirement.kind,
+                        identity: None,
                         scopes: requirement.scopes.clone(),
                     },
                 ))

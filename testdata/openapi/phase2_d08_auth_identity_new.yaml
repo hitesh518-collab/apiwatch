@@ -1,0 +1,26 @@
+openapi: 3.0.3
+info:
+  title: D-08 authentication identity
+  version: 1.0.0
+components:
+  securitySchemes:
+    accessToken:
+      type: http
+      scheme: bearer
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Client-Key
+paths:
+  /renamed:
+    get:
+      security:
+        - accessToken: []
+      responses:
+        "200": { description: OK }
+  /keyed:
+    get:
+      security:
+        - apiKeyAuth: []
+      responses:
+        "200": { description: OK }

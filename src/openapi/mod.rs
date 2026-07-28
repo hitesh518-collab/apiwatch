@@ -15,9 +15,9 @@ use openapiv3::{
 };
 
 use crate::contract::{
-    AdditionalProperties, ApiContract, AuthRequirement, AuthSchemeKind, HttpMethod, Operation,
-    OperationIdentity, OperationKey, Parameter, ParameterKey, ParameterLocation, Property,
-    RequestBody, Response, Schema, SchemaKind,
+    AdditionalProperties, ApiContract, AuthIdentity, AuthRequirement, AuthSchemeKind, HttpMethod,
+    OAuthFlowIdentity, OAuthFlowKind, Operation, OperationIdentity, OperationKey, Parameter,
+    ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema, SchemaKind,
 };
 
 pub fn load_contract(path: &Path) -> Result<ApiContract> {
@@ -246,7 +246,7 @@ fn normalized_openapi_path(path: &str) -> Result<&str> {
 }
 
 struct OperationNormalizeContext<'a> {
-    security_schemes: &'a BTreeMap<String, AuthSchemeKind>,
+    security_schemes: &'a BTreeMap<String, ResolvedAuthScheme>,
     schema_resolver: &'a SchemaResolver,
     global_security: &'a [SecurityRequirement],
     root_servers: &'a [Server],
@@ -300,7 +300,7 @@ fn insert_operation(
             .as_deref()
             .unwrap_or(context.global_security),
         context.security_schemes,
-    );
+    )?;
     let server_sources = if !operation.servers.is_empty() {
         &operation.servers
     } else if !path_servers.is_empty() {
@@ -413,9 +413,15 @@ fn normalize_status_code(status: &StatusCode) -> String {
     }
 }
 
+#[derive(Clone, Debug)]
+struct ResolvedAuthScheme {
+    kind: AuthSchemeKind,
+    identity: AuthIdentity,
+}
+
 fn normalize_security_schemes(
     components: Option<&Components>,
-) -> Result<BTreeMap<String, AuthSchemeKind>> {
+) -> Result<BTreeMap<String, ResolvedAuthScheme>> {
     let mut schemes = BTreeMap::new();
 
     let Some(components) = components else {
@@ -440,9 +446,12 @@ fn normalize_security_scheme_ref(
     scheme: &ReferenceOr<OpenApiSecurityScheme>,
     security_schemes: &BTreeMap<String, ReferenceOr<OpenApiSecurityScheme>>,
     visiting: &mut BTreeSet<String>,
-) -> Result<AuthSchemeKind> {
+) -> Result<ResolvedAuthScheme> {
     match scheme {
-        ReferenceOr::Item(scheme) => Ok(auth_scheme_kind(scheme)),
+        ReferenceOr::Item(scheme) => Ok(ResolvedAuthScheme {
+            kind: auth_scheme_kind(scheme),
+            identity: auth_scheme_identity(scheme)?,
+        }),
         ReferenceOr::Reference { reference } => {
             resolve_security_scheme(reference, security_schemes, visiting)
         }
@@ -453,7 +462,7 @@ fn resolve_security_scheme(
     reference: &str,
     security_schemes: &BTreeMap<String, ReferenceOr<OpenApiSecurityScheme>>,
     visiting: &mut BTreeSet<String>,
-) -> Result<AuthSchemeKind> {
+) -> Result<ResolvedAuthScheme> {
     let name = component_name(
         reference,
         "#/components/securitySchemes/",
@@ -490,39 +499,132 @@ fn auth_scheme_kind(scheme: &OpenApiSecurityScheme) -> AuthSchemeKind {
     }
 }
 
+fn auth_scheme_identity(scheme: &OpenApiSecurityScheme) -> Result<AuthIdentity> {
+    match scheme {
+        OpenApiSecurityScheme::APIKey { location, name, .. } => {
+            let location = match location {
+                openapiv3::APIKeyLocation::Query => ParameterLocation::Query,
+                openapiv3::APIKeyLocation::Header => ParameterLocation::Header,
+                openapiv3::APIKeyLocation::Cookie => ParameterLocation::Cookie,
+            };
+            Ok(AuthIdentity::ApiKey {
+                location,
+                name: name.clone(),
+            })
+        }
+        OpenApiSecurityScheme::HTTP { scheme, .. } => Ok(AuthIdentity::Http {
+            scheme: scheme.to_ascii_lowercase(),
+        }),
+        OpenApiSecurityScheme::OAuth2 { flows, .. } => {
+            let mut identities = BTreeSet::new();
+            if let Some(flow) = &flows.implicit {
+                identities.insert(OAuthFlowIdentity {
+                    kind: OAuthFlowKind::Implicit,
+                    authorization: Some(identity::canonical_auth_endpoint(
+                        &flow.authorization_url,
+                    )?),
+                    token: None,
+                    refresh: flow
+                        .refresh_url
+                        .as_deref()
+                        .map(identity::canonical_auth_endpoint)
+                        .transpose()?,
+                });
+            }
+            if let Some(flow) = &flows.password {
+                identities.insert(OAuthFlowIdentity {
+                    kind: OAuthFlowKind::Password,
+                    authorization: None,
+                    token: Some(identity::canonical_auth_endpoint(&flow.token_url)?),
+                    refresh: flow
+                        .refresh_url
+                        .as_deref()
+                        .map(identity::canonical_auth_endpoint)
+                        .transpose()?,
+                });
+            }
+            if let Some(flow) = &flows.client_credentials {
+                identities.insert(OAuthFlowIdentity {
+                    kind: OAuthFlowKind::ClientCredentials,
+                    authorization: None,
+                    token: Some(identity::canonical_auth_endpoint(&flow.token_url)?),
+                    refresh: flow
+                        .refresh_url
+                        .as_deref()
+                        .map(identity::canonical_auth_endpoint)
+                        .transpose()?,
+                });
+            }
+            if let Some(flow) = &flows.authorization_code {
+                identities.insert(OAuthFlowIdentity {
+                    kind: OAuthFlowKind::AuthorizationCode,
+                    authorization: Some(identity::canonical_auth_endpoint(
+                        &flow.authorization_url,
+                    )?),
+                    token: Some(identity::canonical_auth_endpoint(&flow.token_url)?),
+                    refresh: flow
+                        .refresh_url
+                        .as_deref()
+                        .map(identity::canonical_auth_endpoint)
+                        .transpose()?,
+                });
+            }
+            Ok(AuthIdentity::OAuth2 { flows: identities })
+        }
+        OpenApiSecurityScheme::OpenIDConnect {
+            open_id_connect_url,
+            ..
+        } => Ok(AuthIdentity::OpenIdConnect {
+            discovery: identity::canonical_auth_endpoint(open_id_connect_url)?,
+        }),
+    }
+}
+
 fn normalize_auth_requirements(
     requirements: &[SecurityRequirement],
-    security_schemes: &BTreeMap<String, AuthSchemeKind>,
-) -> BTreeMap<String, AuthRequirement> {
+    security_schemes: &BTreeMap<String, ResolvedAuthScheme>,
+) -> Result<BTreeMap<String, AuthRequirement>> {
     let mut auth = BTreeMap::new();
 
     if requirements
         .iter()
         .any(|requirement| requirement.is_empty())
     {
-        return auth;
+        return Ok(auth);
     }
+
+    let mut identities = BTreeSet::new();
 
     for requirement in requirements {
         for (name, scopes) in requirement {
             let mut scopes = scopes.clone();
             scopes.sort();
 
+            let scheme = security_schemes.get(name);
+            let identity = scheme.map(|scheme| scheme.identity.clone());
+            if let Some(identity) = &identity {
+                if !identities.insert(identity.clone()) {
+                    return Err(anyhow!("duplicate authentication identity"));
+                }
+            }
+
             auth.insert(
                 name.clone(),
                 AuthRequirement {
                     name: name.clone(),
-                    kind: security_schemes
-                        .get(name)
-                        .copied()
+                    kind: scheme
+                        .map(|scheme| scheme.kind)
                         .unwrap_or(AuthSchemeKind::Unknown),
+                    identity: identity.or(Some(AuthIdentity::Unknown {
+                        kind: AuthSchemeKind::Unknown,
+                    })),
                     scopes,
                 },
             );
         }
     }
 
-    auth
+    Ok(auth)
 }
 
 struct SchemaResolver {

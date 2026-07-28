@@ -118,8 +118,31 @@ fn diff_auth_requirements(
     old: &std::collections::BTreeMap<String, AuthRequirement>,
     new: &std::collections::BTreeMap<String, AuthRequirement>,
 ) {
+    let mut matched_old = std::collections::BTreeSet::new();
+    let mut matched_new = std::collections::BTreeSet::new();
+
+    for (old_name, old_requirement) in old {
+        let Some(old_identity) = old_requirement.identity.as_ref() else {
+            continue;
+        };
+        if matches!(old_identity, crate::contract::AuthIdentity::Unknown { .. }) {
+            continue;
+        }
+        if let Some((new_name, new_requirement)) = new.iter().find(|(new_name, new_requirement)| {
+            !matched_new.contains(*new_name)
+                && new_requirement.identity.as_ref() == Some(old_identity)
+        }) {
+            matched_old.insert(old_name.clone());
+            matched_new.insert(new_name.clone());
+            diff_auth_scopes(changes, operation, old_requirement, new_requirement);
+        }
+    }
+
     for (name, old_requirement) in old {
-        let Some(new_requirement) = new.get(name) else {
+        if matched_old.contains(name) {
+            continue;
+        }
+        let Some(new_requirement) = new.get(name).filter(|_| !matched_new.contains(name)) else {
             changes.push(Change {
                 severity: Severity::NonBreaking,
                 operation: operation.clone(),
@@ -132,6 +155,9 @@ fn diff_auth_requirements(
             continue;
         };
 
+        matched_old.insert(name.clone());
+        matched_new.insert(name.clone());
+
         if old_requirement.kind != new_requirement.kind {
             changes.push(Change {
                 severity: Severity::Breaking,
@@ -143,13 +169,22 @@ fn diff_auth_requirements(
                     new_requirement.kind.as_str()
                 ),
             });
+        } else if old_requirement.identity.is_some()
+            && new_requirement.identity.is_some()
+            && old_requirement.identity != new_requirement.identity
+        {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: format!("authentication {} changed identity", new_requirement.name),
+            });
         }
 
         diff_auth_scopes(changes, operation, old_requirement, new_requirement);
     }
 
     for (name, new_requirement) in new {
-        if !old.contains_key(name) {
+        if !matched_new.contains(name) {
             changes.push(Change {
                 severity: Severity::Breaking,
                 operation: operation.clone(),

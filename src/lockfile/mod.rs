@@ -1471,6 +1471,9 @@ mod tests {
         with_unknown_additional_properties(&mut expected);
         for operation in expected.operations.values_mut() {
             operation.servers = None;
+            for auth in operation.auth.values_mut() {
+                auth.identity = None;
+            }
         }
         assert_eq!(expanded, expected);
         for sentinel in crate::lock_size::PRIVACY_SENTINELS {

@@ -173,6 +173,43 @@ fn lock_from_v3(openapi: &str, name: &str) -> PathBuf {
     lock
 }
 
+#[test]
+fn phase2_d08_v4_verify_matches_authentication_by_wire_identity() {
+    let lock = lock_from_v4("testdata/openapi/phase2_d08_auth_identity_old.yaml", "d08");
+
+    verify_command(
+        "testdata/openapi/phase2_d08_auth_identity_new.yaml",
+        "d08",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .code(1)
+    .stdout(predicate::str::contains(
+        "GET /keyed: authentication apiKeyAuth changed identity",
+    ))
+    .stdout(predicate::str::contains("GET /renamed").not());
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d08_v3_verify_retains_label_based_authentication_matching() {
+    let lock = lock_from_v3("testdata/openapi/phase2_d08_auth_identity_old.yaml", "d08");
+
+    verify_command(
+        "testdata/openapi/phase2_d08_auth_identity_new.yaml",
+        "d08",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .code(1)
+    .stdout(predicate::str::contains(
+        "GET /renamed: authentication accessToken (bearer) added",
+    ));
+
+    fs::remove_file(lock).ok();
+}
+
 fn scoped_lock_v3(selector: &str) -> PathBuf {
     let lock = observed_lock_path();
     let selectors = vec![selector.to_owned()];

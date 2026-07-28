@@ -70,10 +70,47 @@ pub struct Operation {
 pub struct AuthRequirement {
     pub name: String,
     pub kind: AuthSchemeKind,
+    pub identity: Option<AuthIdentity>,
     pub scopes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub enum AuthIdentity {
+    ApiKey {
+        location: ParameterLocation,
+        name: String,
+    },
+    Http {
+        scheme: String,
+    },
+    OAuth2 {
+        flows: BTreeSet<OAuthFlowIdentity>,
+    },
+    OpenIdConnect {
+        discovery: ServerTemplate,
+    },
+    Unknown {
+        kind: AuthSchemeKind,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct OAuthFlowIdentity {
+    pub kind: OAuthFlowKind,
+    pub authorization: Option<ServerTemplate>,
+    pub token: Option<ServerTemplate>,
+    pub refresh: Option<ServerTemplate>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub enum OAuthFlowKind {
+    Implicit,
+    Password,
+    ClientCredentials,
+    AuthorizationCode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AuthSchemeKind {
     ApiKey,
@@ -105,7 +142,7 @@ pub struct ParameterKey {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ParameterLocation {
     Path,

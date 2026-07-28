@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::contract::{AuthSchemeKind, SchemaKind};
+use crate::contract::{AuthSchemeKind, ParameterLocation, SchemaKind};
 use crate::lockfile::Scope;
 use crate::openapi::identity::canonical_media_type;
 
@@ -111,7 +111,47 @@ pub(super) struct WireRequestBody {
 #[serde(deny_unknown_fields)]
 pub(super) struct WireAuth {
     kind: AuthSchemeKind,
+    identity: WireAuthIdentity,
     scopes: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub(super) enum WireAuthIdentity {
+    ApiKey {
+        location: ParameterLocation,
+        name: String,
+    },
+    Http {
+        scheme: String,
+    },
+    OAuth2 {
+        flows: Vec<WireOAuthFlowIdentity>,
+    },
+    OpenIdConnect {
+        discovery: String,
+    },
+    Unknown {
+        kind: AuthSchemeKind,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct WireOAuthFlowIdentity {
+    kind: WireOAuthFlowKind,
+    authorization: Option<String>,
+    token: Option<String>,
+    refresh: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum WireOAuthFlowKind {
+    Implicit,
+    Password,
+    ClientCredentials,
+    AuthorizationCode,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -446,6 +486,13 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
         for (name, auth) in &operation.auth {
             validate_wire_string(name, "auth name", false)?;
             validate_normalized_strings(&auth.scopes, "auth scopes")?;
+            validate_auth_identity(&auth.identity)?;
+        }
+        let mut identities = BTreeSet::new();
+        for auth in operation.auth.values() {
+            if !identities.insert(&auth.identity) {
+                return Err(anyhow!("duplicate authentication identity"));
+            }
         }
         validate_normalized_strings(&operation.servers, "servers")?;
         for server in &operation.servers {
@@ -496,6 +543,59 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
         for property in schema.properties.keys() {
             validate_wire_string(property, "schema property name", true)?;
         }
+    }
+    Ok(())
+}
+
+fn validate_auth_identity(identity: &WireAuthIdentity) -> Result<()> {
+    match identity {
+        WireAuthIdentity::ApiKey { location, name } => {
+            if matches!(location, ParameterLocation::Path) {
+                return Err(anyhow!("invalid api key authentication location"));
+            }
+            validate_wire_string(name, "api key authentication name", false)?;
+        }
+        WireAuthIdentity::Http { scheme } => {
+            validate_wire_string(scheme, "http authentication scheme", false)?;
+            if scheme != &scheme.to_ascii_lowercase() {
+                return Err(anyhow!("http authentication scheme is not canonical"));
+            }
+        }
+        WireAuthIdentity::OAuth2 { flows } => {
+            if flows.is_empty() || flows.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return Err(anyhow!(
+                    "OAuth authentication flows must be sorted and contain no duplicates"
+                ));
+            }
+            for flow in flows {
+                let expected = match flow.kind {
+                    WireOAuthFlowKind::Implicit => (true, false),
+                    WireOAuthFlowKind::Password | WireOAuthFlowKind::ClientCredentials => {
+                        (false, true)
+                    }
+                    WireOAuthFlowKind::AuthorizationCode => (true, true),
+                };
+                if flow.authorization.is_some() != expected.0 || flow.token.is_some() != expected.1
+                {
+                    return Err(anyhow!("invalid OAuth authentication flow endpoints"));
+                }
+                for endpoint in [&flow.authorization, &flow.token, &flow.refresh] {
+                    if let Some(endpoint) = endpoint {
+                        validate_auth_endpoint(endpoint)?;
+                    }
+                }
+            }
+        }
+        WireAuthIdentity::OpenIdConnect { discovery } => validate_auth_endpoint(discovery)?,
+        WireAuthIdentity::Unknown { .. } => {}
+    }
+    Ok(())
+}
+
+fn validate_auth_endpoint(endpoint: &str) -> Result<()> {
+    validate_wire_string(endpoint, "authentication endpoint", false)?;
+    if crate::openapi::identity::canonical_auth_endpoint(endpoint)?.0 != endpoint {
+        return Err(anyhow!("authentication endpoint is not canonical"));
     }
     Ok(())
 }

@@ -5,6 +5,57 @@ use serde_json::{json, Value};
 const PHASE2_D07_COLLIDING_PATHS: &str = "openapi: 3.0.3\ninfo: { title: D-07 collision, version: '1' }\npaths:\n  /users/{id}:\n    get:\n      parameters:\n        - { name: id, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n  /users/{name}:\n    get:\n      parameters:\n        - { name: name, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n";
 
 #[test]
+fn phase2_d08_matches_authentication_by_wire_identity() {
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d08_auth_identity_old.yaml",
+            "testdata/openapi/phase2_d08_auth_identity_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "GET /keyed: authentication apiKeyAuth changed identity",
+        ))
+        .stdout(predicate::str::contains("GET /renamed").not());
+}
+
+#[test]
+fn phase2_d08_rejects_duplicate_authentication_identity_without_echoing_controls() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    std::fs::write(
+        document.path(),
+        "openapi: 3.0.3\ninfo: { title: D-08 duplicate, version: '1' }\ncomponents:\n  securitySchemes:\n    bearerAuth:\n      type: http\n      scheme: bearer\n    \"duplicate\\e\":\n      type: http\n      scheme: bearer\npaths:\n  /duplicate:\n    get:\n      security:\n        - bearerAuth: []\n          \"duplicate\\e\": []\n      responses: { '200': { description: OK } }\n",
+    )
+    .expect("temporary OpenAPI document should be written");
+
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            document
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "testdata/openapi/phase2_d08_auth_identity_old.yaml",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("duplicate authentication identity"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+}
+
+#[test]
 fn phase2_d07_ignores_positional_path_placeholder_renames() {
     let output = Command::cargo_bin("apiwatch")
         .expect("binary should build")

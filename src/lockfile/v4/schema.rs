@@ -3,13 +3,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{anyhow, Result};
 
 use super::{
-    canonical, Contract, WireAdditionalProperties, WireAuth, WireOperation, WireParameter,
-    WireProperty, WireRequestBody, WireSchema,
+    canonical, Contract, WireAdditionalProperties, WireAuth, WireAuthIdentity,
+    WireOAuthFlowIdentity, WireOAuthFlowKind, WireOperation, WireParameter, WireProperty,
+    WireRequestBody, WireSchema,
 };
 use crate::contract::{
-    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationIdentity,
-    OperationKey, Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response,
-    Schema,
+    AdditionalProperties, ApiContract, AuthIdentity, AuthRequirement, HttpMethod,
+    OAuthFlowIdentity, OAuthFlowKind, Operation, OperationIdentity, OperationKey, Parameter,
+    ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema, ServerTemplate,
 };
 use crate::openapi::identity::{canonical_media_type, canonical_path_template};
 
@@ -22,19 +23,25 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
             let auth = operation
                 .auth
                 .iter()
-                .map(|(name, requirement)| {
+                .map(|(name, requirement)| -> Result<_> {
                     let mut scopes = requirement.scopes.clone();
                     scopes.sort();
                     scopes.dedup();
-                    (
+                    Ok((
                         name.clone(),
                         WireAuth {
                             kind: requirement.kind,
+                            identity: intern_auth_identity(
+                                requirement
+                                    .identity
+                                    .as_ref()
+                                    .ok_or_else(|| anyhow!("v4 auth identity must be known"))?,
+                            ),
                             scopes,
                         },
-                    )
+                    ))
                 })
-                .collect();
+                .collect::<Result<_>>()?;
             let servers = operation
                 .servers
                 .as_ref()
@@ -95,6 +102,82 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
         operations,
         schemas,
     })
+}
+
+fn intern_auth_identity(identity: &AuthIdentity) -> WireAuthIdentity {
+    match identity {
+        AuthIdentity::ApiKey { location, name } => WireAuthIdentity::ApiKey {
+            location: *location,
+            name: name.clone(),
+        },
+        AuthIdentity::Http { scheme } => WireAuthIdentity::Http {
+            scheme: scheme.clone(),
+        },
+        AuthIdentity::OAuth2 { flows } => WireAuthIdentity::OAuth2 {
+            flows: flows
+                .iter()
+                .map(|flow| WireOAuthFlowIdentity {
+                    kind: match flow.kind {
+                        OAuthFlowKind::Implicit => WireOAuthFlowKind::Implicit,
+                        OAuthFlowKind::Password => WireOAuthFlowKind::Password,
+                        OAuthFlowKind::ClientCredentials => WireOAuthFlowKind::ClientCredentials,
+                        OAuthFlowKind::AuthorizationCode => WireOAuthFlowKind::AuthorizationCode,
+                    },
+                    authorization: flow
+                        .authorization
+                        .as_ref()
+                        .map(|endpoint| endpoint.0.clone()),
+                    token: flow.token.as_ref().map(|endpoint| endpoint.0.clone()),
+                    refresh: flow.refresh.as_ref().map(|endpoint| endpoint.0.clone()),
+                })
+                .collect(),
+        },
+        AuthIdentity::OpenIdConnect { discovery } => WireAuthIdentity::OpenIdConnect {
+            discovery: discovery.0.clone(),
+        },
+        AuthIdentity::Unknown { kind } => WireAuthIdentity::Unknown { kind: *kind },
+    }
+}
+
+fn expand_auth_identity(identity: &WireAuthIdentity) -> AuthIdentity {
+    match identity {
+        WireAuthIdentity::ApiKey { location, name } => AuthIdentity::ApiKey {
+            location: *location,
+            name: name.clone(),
+        },
+        WireAuthIdentity::Http { scheme } => AuthIdentity::Http {
+            scheme: scheme.clone(),
+        },
+        WireAuthIdentity::OAuth2 { flows } => AuthIdentity::OAuth2 {
+            flows: flows
+                .iter()
+                .map(|flow| OAuthFlowIdentity {
+                    kind: match flow.kind {
+                        WireOAuthFlowKind::Implicit => OAuthFlowKind::Implicit,
+                        WireOAuthFlowKind::Password => OAuthFlowKind::Password,
+                        WireOAuthFlowKind::ClientCredentials => OAuthFlowKind::ClientCredentials,
+                        WireOAuthFlowKind::AuthorizationCode => OAuthFlowKind::AuthorizationCode,
+                    },
+                    authorization: flow
+                        .authorization
+                        .as_ref()
+                        .map(|endpoint| ServerTemplate(endpoint.clone())),
+                    token: flow
+                        .token
+                        .as_ref()
+                        .map(|endpoint| ServerTemplate(endpoint.clone())),
+                    refresh: flow
+                        .refresh
+                        .as_ref()
+                        .map(|endpoint| ServerTemplate(endpoint.clone())),
+                })
+                .collect(),
+        },
+        WireAuthIdentity::OpenIdConnect { discovery } => AuthIdentity::OpenIdConnect {
+            discovery: ServerTemplate(discovery.clone()),
+        },
+        WireAuthIdentity::Unknown { kind } => AuthIdentity::Unknown { kind: *kind },
+    }
 }
 fn intern_content(
     content: &BTreeMap<String, Schema>,
@@ -199,6 +282,7 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                         AuthRequirement {
                             name: name.clone(),
                             kind: requirement.kind,
+                            identity: Some(expand_auth_identity(&requirement.identity)),
                             scopes: requirement.scopes.clone(),
                         },
                     ))
