@@ -129,7 +129,7 @@ pub(super) struct WireSchema {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum WireAdditionalProperties {
     Forbidden,
     Any,
@@ -226,6 +226,7 @@ pub(super) fn load(contents: &str) -> Result<V4Lock> {
     let raw: serde_yaml::Value =
         serde_yaml::from_str(contents).context("failed to parse api.lock v4 YAML")?;
     validate_raw_observed_shapes(&raw)?;
+    validate_raw_additional_properties(&raw)?;
     let lock = serde_yaml::from_value(raw).context("failed to parse api.lock v4 YAML")?;
     validate_lock(&lock)?;
     Ok(lock)
@@ -252,6 +253,52 @@ fn validate_raw_observed_shapes(raw: &serde_yaml::Value) -> Result<()> {
                 validate_raw_shape(shape)?;
             }
         }
+    }
+    Ok(())
+}
+fn validate_raw_additional_properties(raw: &serde_yaml::Value) -> Result<()> {
+    let Some(apis) = mapping_value(raw, "apis").and_then(serde_yaml::Value::as_mapping) else {
+        return Ok(());
+    };
+    for api in apis.values().filter_map(serde_yaml::Value::as_mapping) {
+        if string_value(api, "provenance") != Some("declared") {
+            continue;
+        }
+        let Some(contract) =
+            mapping_value_from(api, "contract").and_then(serde_yaml::Value::as_mapping)
+        else {
+            continue;
+        };
+        let Some(schemas) =
+            mapping_value_from(contract, "schemas").and_then(serde_yaml::Value::as_mapping)
+        else {
+            continue;
+        };
+        for schema in schemas.values().filter_map(serde_yaml::Value::as_mapping) {
+            if let Some(policy) = mapping_value_from(schema, "additional_properties") {
+                validate_raw_additional_properties_policy(policy)?;
+            }
+        }
+    }
+    Ok(())
+}
+fn validate_raw_additional_properties_policy(value: &serde_yaml::Value) -> Result<()> {
+    let Some(policy) = value.as_mapping() else {
+        return Ok(());
+    };
+    let Some(kind) = string_value(policy, "kind") else {
+        return Ok(());
+    };
+    let allowed: &[&str] = match kind {
+        "forbidden" | "any" => &["kind"],
+        "schema" => &["kind", "schema"],
+        _ => return Ok(()),
+    };
+    if policy
+        .keys()
+        .any(|key| key.as_str().is_some_and(|key| !allowed.contains(&key)))
+    {
+        return Err(anyhow!("unknown field in additionalProperties policy"));
     }
     Ok(())
 }

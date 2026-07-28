@@ -411,6 +411,38 @@ fn phase2_d04_verify_v4_matches_diff_additional_properties_findings() {
 }
 
 #[test]
+fn phase2_d04_verify_rejects_unknown_additional_properties_wire_fields() {
+    let lock = lock_from_v4(
+        "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        "d04",
+    );
+    let rendered = fs::read_to_string(&lock).expect("v4 lock should be readable");
+    let marker = "additional_properties:\n            kind: any";
+    let tampered = rendered.replacen(
+        marker,
+        "additional_properties:\n            kind: any\n            unexpected_field: accepted",
+        1,
+    );
+    assert_ne!(tampered, rendered, "fixture should include an any policy");
+    fs::write(&lock, tampered).expect("tampered v4 lock should write");
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+
+    verify_command(
+        "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        "d04",
+        lock,
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains(
+        "unknown field in additionalProperties policy",
+    ));
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
 fn phase2_d05_verify_v4_matches_diff_format_findings() {
     let lock = lock_from_v4("testdata/openapi/phase2_d05_format_old.yaml", "d05");
     let lock = lock.to_str().expect("temp path should be valid UTF-8");

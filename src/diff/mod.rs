@@ -555,6 +555,7 @@ fn diff_additional_properties(
         }
         (old_policy, new_policy) if old_policy == new_policy => {}
         (old_policy, new_policy) => {
+            let path = field_path(path, "additionalProperties");
             let narrowing = matches!(
                 (old_policy, new_policy),
                 (Any, Forbidden) | (Any, Schema(_)) | (Schema(_), Forbidden)
@@ -569,7 +570,8 @@ fn diff_additional_properties(
                 severity,
                 operation: operation.clone(),
                 message: format!(
-                    "{context} additionalProperties changed from {} to {}",
+                    "{context} {} changed from {} to {}",
+                    schema_target(&path),
                     additional_properties_name(old_policy),
                     additional_properties_name(new_policy)
                 ),

@@ -1221,6 +1221,45 @@ mod tests {
     }
 
     #[test]
+    fn v4_rejects_unknown_fields_in_additional_properties_policies() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        ))
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("d04", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        for (index, (marker, replacement)) in [
+            (
+                "additional_properties:\n            kind: any",
+                "additional_properties:\n            kind: any\n            unexpected_field: accepted",
+            ),
+            (
+                "additional_properties:\n            kind: schema\n            schema: ",
+                "additional_properties:\n            kind: schema\n            unexpected_field: accepted\n            schema: ",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert!(rendered.contains(marker), "fixture should include {index} policy");
+            let tampered = rendered.replacen(marker, replacement, 1);
+            let path = std::env::temp_dir().join(format!(
+                "apiwatch-d04-policy-field-{}-{index}.lock",
+                std::process::id()
+            ));
+            fs::write(&path, tampered).expect("tampered v4 lock should write");
+            let error = load(&path).expect_err("unknown policy fields should fail");
+            fs::remove_file(path).ok();
+
+            assert!(error
+                .to_string()
+                .contains("unknown field in additionalProperties policy"));
+        }
+    }
+
+    #[test]
     fn v3_rejects_a_tampered_schema_digest() {
         let contract =
             crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))

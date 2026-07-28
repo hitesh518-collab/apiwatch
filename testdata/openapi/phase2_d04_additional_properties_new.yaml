@@ -33,6 +33,28 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: false }
+  /nested-response:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  envelope: { type: object, additionalProperties: true }
+  /nested-request:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                envelope: { type: object, additionalProperties: false }
+      responses: { '204': { description: ok } }
   /typed-map:
     post:
       requestBody:
@@ -42,4 +64,16 @@ paths:
             schema:
               type: object
               additionalProperties: { type: integer }
+      responses: { '204': { description: ok } }
+  /typed-map-policy:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: object
+                additionalProperties: false
       responses: { '204': { description: ok } }

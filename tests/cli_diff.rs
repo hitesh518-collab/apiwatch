@@ -221,6 +221,12 @@ fn phase2_d04_diff_reports_additional_properties_direction_and_schema_changes() 
             {
                 "severity": "breaking",
                 "method": "GET",
+                "path": "/nested-response",
+                "message": "response 200 application/json field envelope.additionalProperties changed from forbidden to any"
+            },
+            {
+                "severity": "breaking",
+                "method": "GET",
                 "path": "/response-broadened",
                 "message": "response 200 application/json additionalProperties changed from forbidden to any"
             },
@@ -229,6 +235,12 @@ fn phase2_d04_diff_reports_additional_properties_direction_and_schema_changes() 
                 "method": "GET",
                 "path": "/response-narrowed",
                 "message": "response 200 application/json additionalProperties changed from any to forbidden"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/nested-request",
+                "message": "request application/json field envelope.additionalProperties changed from any to forbidden"
             },
             {
                 "severity": "non_breaking",
@@ -247,6 +259,12 @@ fn phase2_d04_diff_reports_additional_properties_direction_and_schema_changes() 
                 "method": "POST",
                 "path": "/typed-map",
                 "message": "request application/json additionalProperties type changed from string to integer"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/typed-map-policy",
+                "message": "request application/json field additionalProperties.additionalProperties changed from any to forbidden"
             }
         ])
     );
