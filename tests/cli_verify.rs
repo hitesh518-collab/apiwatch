@@ -266,6 +266,62 @@ fn phase2_d01_verify_v4_matches_diff_request_body_findings() {
 }
 
 #[test]
+fn phase2_d02_verify_v4_matches_diff_content_type_findings() {
+    let lock = lock_from_v4("testdata/openapi/phase2_d02_content_type_old.yaml", "d02");
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+    let verify_output = verify_command(
+        "testdata/openapi/phase2_d02_content_type_new.yaml",
+        "d02",
+        lock,
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("Verify command should run");
+    let diff_output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d02_content_type_old.yaml",
+            "testdata/openapi/phase2_d02_content_type_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    fs::remove_file(lock).ok();
+
+    assert_eq!(verify_output.status.code(), Some(1));
+    assert_eq!(diff_output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        parse_json_output(&diff_output)["changes"]
+    );
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/response",
+                "message": "response 200 content type application/problem+json added"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/request",
+                "message": "request content type application/json removed"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/request",
+                "message": "request content type application/xml added"
+            }
+        ])
+    );
+}
+
+#[test]
 fn verify_v3_json_reports_partial_phase_two_coverage() {
     let output = verify_command(
         "testdata/openapi/verify_matching.yaml",

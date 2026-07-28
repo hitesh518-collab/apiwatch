@@ -270,6 +270,26 @@ fn diff_responses(
             continue;
         };
 
+        for content_type in old_response.content.keys() {
+            if !new_response.content.contains_key(content_type) {
+                changes.push(Change {
+                    severity: Severity::Breaking,
+                    operation: operation.clone(),
+                    message: format!("response {status} content type {content_type} removed"),
+                });
+            }
+        }
+
+        for content_type in new_response.content.keys() {
+            if !old_response.content.contains_key(content_type) {
+                changes.push(Change {
+                    severity: Severity::Breaking,
+                    operation: operation.clone(),
+                    message: format!("response {status} content type {content_type} added"),
+                });
+            }
+        }
+
         for (content_type, old_schema) in &old_response.content {
             let Some(new_schema) = new_response.content.get(content_type) else {
                 continue;
@@ -342,6 +362,26 @@ pub fn diff_request_bodies(
                 message: format!(
                     "request body changed from {old_requiredness} to {new_requiredness}"
                 ),
+            });
+        }
+    }
+
+    for content_type in old.content.keys() {
+        if !new.content.contains_key(content_type) {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: format!("request content type {content_type} removed"),
+            });
+        }
+    }
+
+    for content_type in new.content.keys() {
+        if !old.content.contains_key(content_type) {
+            changes.push(Change {
+                severity: Severity::NonBreaking,
+                operation: operation.clone(),
+                message: format!("request content type {content_type} added"),
             });
         }
     }

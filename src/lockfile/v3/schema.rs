@@ -6,6 +6,7 @@ use crate::contract::{
     ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey, Parameter, ParameterKey,
     ParameterLocation, Property, RequestBody, Response, Schema,
 };
+use crate::openapi::identity::canonical_media_type;
 
 use super::{
     canonical, Contract, WireAuth, WireOperation, WireParameter, WireProperty, WireSchema,
@@ -235,7 +236,12 @@ fn expand_content(
 ) -> Result<BTreeMap<String, Schema>> {
     content
         .iter()
-        .map(|(content_type, id)| Ok((content_type.clone(), expand_schema(id, schemas)?)))
+        .map(|(content_type, id)| {
+            Ok((
+                canonical_media_type(content_type)?,
+                expand_schema(id, schemas)?,
+            ))
+        })
         .collect()
 }
 

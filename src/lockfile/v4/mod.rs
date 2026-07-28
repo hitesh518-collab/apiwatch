@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::contract::{AuthSchemeKind, SchemaKind};
 use crate::lockfile::Scope;
+use crate::openapi::identity::canonical_media_type;
 
 pub const DEFAULT_MAX_LOCK_BYTES: u64 = 5_242_880;
 pub(super) type Extensions = BTreeMap<String, serde_json::Value>;
@@ -405,6 +406,9 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
 fn validate_content_types(content: &BTreeMap<String, String>) -> Result<()> {
     for content_type in content.keys() {
         validate_wire_string(content_type, "media type", false)?;
+        if canonical_media_type(content_type)? != *content_type {
+            return Err(anyhow!("media type is not canonical"));
+        }
     }
     Ok(())
 }

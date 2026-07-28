@@ -1,3 +1,5 @@
+pub(crate) mod identity;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
@@ -700,7 +702,7 @@ fn normalize_request_body_ref(
     let mut content = BTreeMap::new();
     for (content_type, media_type) in &request_body.content {
         content.insert(
-            content_type.clone(),
+            identity::canonical_media_type(content_type)?,
             normalize_media_type(media_type, schema_resolver)?,
         );
     }
@@ -733,7 +735,7 @@ fn normalize_response_ref(
     let mut content = BTreeMap::new();
     for (content_type, media_type) in &response.content {
         content.insert(
-            content_type.clone(),
+            identity::canonical_media_type(content_type)?,
             normalize_media_type(media_type, schema_resolver)?,
         );
     }

@@ -1,0 +1,27 @@
+openapi: 3.0.3
+info: { title: D-02, version: '1' }
+paths:
+  /request:
+    post:
+      requestBody:
+        content:
+          application/xml:
+            schema: { type: object }
+      responses: { '204': { description: ok } }
+  /response:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object }
+            application/problem+json:
+              schema: { type: object }
+  /case-only:
+    post:
+      requestBody:
+        content:
+          "application/json; charset=utf-8":
+            schema: { type: object }
+      responses: { '204': { description: ok } }

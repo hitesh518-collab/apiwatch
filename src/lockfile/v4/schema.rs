@@ -10,6 +10,7 @@ use crate::contract::{
     ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey, Parameter, ParameterKey,
     ParameterLocation, Property, RequestBody, Response, Schema,
 };
+use crate::openapi::identity::canonical_media_type;
 
 pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
     let mut schemas = BTreeMap::new();
@@ -90,7 +91,12 @@ fn intern_content(
 ) -> Result<BTreeMap<String, String>> {
     content
         .iter()
-        .map(|(content_type, schema)| Ok((content_type.clone(), intern_schema(schema, schemas)?)))
+        .map(|(content_type, schema)| {
+            Ok((
+                canonical_media_type(content_type)?,
+                intern_schema(schema, schemas)?,
+            ))
+        })
         .collect()
 }
 fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) -> Result<String> {
