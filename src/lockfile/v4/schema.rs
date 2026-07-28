@@ -7,10 +7,11 @@ use super::{
     WireProperty, WireRequestBody, WireSchema,
 };
 use crate::contract::{
-    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey,
-    Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema,
+    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationIdentity,
+    OperationKey, Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response,
+    Schema,
 };
-use crate::openapi::identity::canonical_media_type;
+use crate::openapi::identity::{canonical_media_type, canonical_path_template};
 
 pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
     let mut schemas = BTreeMap::new();
@@ -48,6 +49,7 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
                     Ok((
                         format!("{}:{}", key.location.as_str(), key.name),
                         WireParameter {
+                            name: parameter.name.clone(),
                             required: parameter.required,
                             schema: intern_schema(&parameter.schema, &mut schemas)?,
                         },
@@ -79,6 +81,7 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
             Ok((
                 format!("{} {}", key.method.as_str(), key.path),
                 WireOperation {
+                    display_path: operation.key.path.clone(),
                     auth,
                     servers,
                     parameters,
@@ -176,7 +179,17 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
         .operations
         .iter()
         .map(|(key, operation)| {
-            let key = parse_operation_key(key)?;
+            let identity = parse_operation_key(key)?;
+            let (canonical_display_path, _) = canonical_path_template(&operation.display_path)?;
+            if canonical_display_path != identity.path {
+                return Err(anyhow!(
+                    "v4 operation display path does not match its canonical identity"
+                ));
+            }
+            let key = OperationKey {
+                method: identity.method,
+                path: operation.display_path.clone(),
+            };
             let auth = operation
                 .auth
                 .iter()
@@ -199,7 +212,11 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                     Ok((
                         key.clone(),
                         Parameter {
-                            name: key.name,
+                            name: if parameter.name.is_empty() {
+                                key.name.clone()
+                            } else {
+                                parameter.name.clone()
+                            },
                             required: parameter.required,
                             schema: expand_schema(&parameter.schema, &contract.schemas)?,
                         },
@@ -229,8 +246,9 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                 })
                 .collect::<Result<_>>()?;
             Ok((
-                key,
+                identity,
                 Operation {
+                    key,
                     auth,
                     servers: Some(
                         operation
@@ -364,7 +382,7 @@ fn visit_schema(
     reachable.insert(id.to_string());
     Ok(())
 }
-pub(super) fn parse_operation_key(value: &str) -> Result<OperationKey> {
+pub(super) fn parse_operation_key(value: &str) -> Result<OperationIdentity> {
     let (method, path) = value
         .split_once(' ')
         .ok_or_else(|| anyhow!("invalid v4 operation key"))?;
@@ -388,10 +406,8 @@ pub(super) fn parse_operation_key(value: &str) -> Result<OperationKey> {
         "TRACE" => HttpMethod::Trace,
         _ => return Err(anyhow!("unsupported v4 operation method")),
     };
-    Ok(OperationKey {
-        method,
-        path: path.to_string(),
-    })
+    let (path, _) = canonical_path_template(path)?;
+    Ok(OperationIdentity { method, path })
 }
 pub(super) fn parse_parameter_key(value: &str) -> Result<ParameterKey> {
     let (location, name) = value

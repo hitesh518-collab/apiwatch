@@ -805,7 +805,10 @@ mod tests {
     fn declared_verify_sarif_fingerprints_include_the_api_name() {
         let changes = vec![Change {
             severity: Severity::Breaking,
-            operation: crate::lock_size::parse_operation_selector("GET /users").unwrap(),
+            operation: crate::contract::OperationKey {
+                method: crate::contract::HttpMethod::Get,
+                path: "/users".to_string(),
+            },
             message: "endpoint removed".to_string(),
         }];
         let users: serde_json::Value = serde_json::from_str(

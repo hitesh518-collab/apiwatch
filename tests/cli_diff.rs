@@ -2,6 +2,52 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{json, Value};
 
+const PHASE2_D07_COLLIDING_PATHS: &str = "openapi: 3.0.3\ninfo: { title: D-07 collision, version: '1' }\npaths:\n  /users/{id}:\n    get:\n      parameters:\n        - { name: id, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n  /users/{name}:\n    get:\n      parameters:\n        - { name: name, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n";
+
+#[test]
+fn phase2_d07_ignores_positional_path_placeholder_renames() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+            "testdata/openapi/phase2_d07_path_template_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(parse_json_output(&output)["changes"], json!([]));
+}
+
+#[test]
+fn phase2_d07_rejects_ambiguous_positional_path_template_identity() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    std::fs::write(document.path(), PHASE2_D07_COLLIDING_PATHS)
+        .expect("temporary OpenAPI document should be written");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            document
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "ambiguous operation identity GET /users/{0}",
+        ));
+}
+
 fn phase2_d06_openapi(server: &str) -> String {
     format!(
         "openapi: 3.0.3\ninfo: {{ title: D-06 Regression, version: '1' }}\nservers:\n  - url: {server:?}\npaths:\n  /users:\n    get:\n      responses: {{ '204': {{ description: ok }} }}\n"

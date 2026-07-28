@@ -2,6 +2,40 @@ use anyhow::anyhow;
 use anyhow::{Context, Result};
 use url::Url;
 
+pub(crate) fn canonical_path_template(value: &str) -> Result<(String, Vec<String>)> {
+    let mut canonical = String::new();
+    let mut names = Vec::new();
+    let mut remainder = value;
+
+    while let Some(start) = remainder.find('{') {
+        let (prefix, after_start) = remainder.split_at(start);
+        if prefix.contains('}') {
+            return Err(anyhow!("invalid path template placeholder"));
+        }
+        canonical.push_str(prefix);
+        let Some(end) = after_start.find('}') else {
+            return Err(anyhow!("unclosed path template placeholder"));
+        };
+        let name = &after_start[1..end];
+        if name.is_empty() {
+            return Err(anyhow!("empty path template placeholder"));
+        }
+        if names.iter().any(|existing| existing == name) {
+            return Err(anyhow!("repeated path template placeholder {name}"));
+        }
+        canonical.push('{');
+        canonical.push_str(&names.len().to_string());
+        canonical.push('}');
+        names.push(name.to_string());
+        remainder = &after_start[end + 1..];
+    }
+    if remainder.contains('}') {
+        return Err(anyhow!("invalid path template placeholder"));
+    }
+    canonical.push_str(remainder);
+    Ok((canonical, names))
+}
+
 pub(crate) fn canonical_media_type(value: &str) -> Result<String> {
     let parsed: mime::Mime = value.parse().context("invalid media type")?;
     let mut parameters = parsed

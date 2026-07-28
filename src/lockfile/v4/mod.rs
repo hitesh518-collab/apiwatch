@@ -94,6 +94,7 @@ pub(super) struct Contract {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct WireOperation {
+    display_path: String,
     auth: BTreeMap<String, WireAuth>,
     servers: Vec<String>,
     parameters: BTreeMap<String, WireParameter>,
@@ -115,6 +116,8 @@ pub(super) struct WireAuth {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct WireParameter {
+    #[serde(default)]
+    name: String,
     required: bool,
     schema: String,
 }
@@ -432,6 +435,13 @@ fn validate_contract_semantics(contract: &Contract) -> Result<()> {
         let parsed = schema::parse_operation_key(operation_key)?;
         if operation_key != &format!("{} {}", parsed.method.as_str(), parsed.path) {
             return Err(anyhow!("operation key is not canonical"));
+        }
+        let (display_identity, _) =
+            crate::openapi::identity::canonical_path_template(&operation.display_path)?;
+        if display_identity != parsed.path {
+            return Err(anyhow!(
+                "operation display path does not match its canonical identity"
+            ));
         }
         for (name, auth) in &operation.auth {
             validate_wire_string(name, "auth name", false)?;

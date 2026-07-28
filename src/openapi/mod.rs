@@ -16,8 +16,8 @@ use openapiv3::{
 
 use crate::contract::{
     AdditionalProperties, ApiContract, AuthRequirement, AuthSchemeKind, HttpMethod, Operation,
-    OperationKey, Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response,
-    Schema, SchemaKind,
+    OperationIdentity, OperationKey, Parameter, ParameterKey, ParameterLocation, Property,
+    RequestBody, Response, Schema, SchemaKind,
 };
 
 pub fn load_contract(path: &Path) -> Result<ApiContract> {
@@ -324,6 +324,8 @@ fn insert_operation(
         path_parameters,
         &operation.parameters,
     )?;
+    let (canonical_path, placeholder_names) = identity::canonical_path_template(path)?;
+    let parameters = canonicalize_path_parameters(parameters, &placeholder_names)?;
 
     let request_body = operation
         .request_body
@@ -338,12 +340,25 @@ fn insert_operation(
         responses.insert(status, response);
     }
 
+    let key = OperationKey {
+        method,
+        path: path.to_string(),
+    };
+    let identity = OperationIdentity {
+        method,
+        path: canonical_path,
+    };
+    if contract.operations.contains_key(&identity) {
+        return Err(anyhow!(
+            "ambiguous operation identity {} {}",
+            identity.method.as_str(),
+            identity.path
+        ));
+    }
     contract.operations.insert(
-        OperationKey {
-            method,
-            path: path.to_string(),
-        },
+        identity,
         Operation {
+            key,
             auth,
             servers: Some(servers),
             parameters,
@@ -353,6 +368,43 @@ fn insert_operation(
     );
 
     Ok(())
+}
+
+fn canonicalize_path_parameters(
+    parameters: BTreeMap<ParameterKey, Parameter>,
+    placeholder_names: &[String],
+) -> Result<BTreeMap<ParameterKey, Parameter>> {
+    let mut canonical = BTreeMap::new();
+    for (key, parameter) in parameters {
+        let key = if key.location == ParameterLocation::Path {
+            let slot = placeholder_names
+                .iter()
+                .position(|name| name == &parameter.name)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "path parameter {} is not bound to a path template placeholder",
+                        parameter.name
+                    )
+                })?;
+            ParameterKey {
+                location: ParameterLocation::Path,
+                name: format!("{{{slot}}}"),
+            }
+        } else {
+            key
+        };
+        if canonical.insert(key, parameter).is_some() {
+            return Err(anyhow!("duplicate path parameter binding"));
+        }
+    }
+    for name in placeholder_names {
+        if !canonical.values().any(|parameter| parameter.name == *name) {
+            return Err(anyhow!(
+                "path template placeholder {name} is not bound to a path parameter"
+            ));
+        }
+    }
+    Ok(canonical)
 }
 
 fn normalize_status_code(status: &StatusCode) -> String {

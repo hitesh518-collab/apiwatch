@@ -1,0 +1,21 @@
+openapi: 3.0.3
+info:
+  title: D-07 positional path template identity
+  version: '1'
+paths:
+  /users/{id}/orders/{order}:
+    get:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: order
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: ok

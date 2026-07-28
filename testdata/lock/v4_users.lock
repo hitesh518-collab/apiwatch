@@ -5,11 +5,12 @@ apis:
     source: openapi
     scope: all
     max_lock_bytes: 5242880
-    contract_bytes: 265
-    contract_digest: sha256:343bf8806e3d32458b4cea2b27d25a4b6c95ad3668733d8bf02c0c45b75814a8
+    contract_bytes: 314
+    contract_digest: sha256:97800eb7e631042f31aa90f06405b1034d12980ed16e57112bd3de403cb51129
     contract:
       operations:
         GET /users:
+          display_path: /users
           auth: {}
           servers:
           - /
@@ -18,6 +19,7 @@ apis:
           responses:
             '200': {}
         GET /zeta:
+          display_path: /zeta
           auth: {}
           servers:
           - /

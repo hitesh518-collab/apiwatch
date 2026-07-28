@@ -5,7 +5,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::contract::{
-    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey,
+    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationIdentity,
     ParameterKey, Schema, SchemaKind,
 };
 
@@ -45,7 +45,7 @@ pub fn encode_canonical_json(contract: &ApiContract) -> Result<Vec<u8>> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 struct DeduplicatedContract {
-    operations: BTreeMap<OperationKey, DeduplicatedOperation>,
+    operations: BTreeMap<OperationIdentity, DeduplicatedOperation>,
     schemas: BTreeMap<String, WireSchema>,
 }
 
@@ -331,7 +331,7 @@ where
     Ok(())
 }
 
-pub fn parse_operation_selector(value: &str) -> Result<OperationKey> {
+pub fn parse_operation_selector(value: &str) -> Result<OperationIdentity> {
     let Some((method, path)) = value.split_once(' ') else {
         return Err(anyhow!("operation selector must be METHOD /path"));
     };
@@ -354,10 +354,8 @@ pub fn parse_operation_selector(value: &str) -> Result<OperationKey> {
             "operation selector path must be a safe absolute path"
         ));
     }
-    Ok(OperationKey {
-        method,
-        path: path.to_owned(),
-    })
+    let (path, _) = crate::openapi::identity::canonical_path_template(path)?;
+    Ok(OperationIdentity { method, path })
 }
 
 pub fn scope_contract(contract: &ApiContract, selectors: &[String]) -> Result<ApiContract> {

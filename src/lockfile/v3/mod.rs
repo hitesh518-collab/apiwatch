@@ -256,9 +256,56 @@ pub(super) fn load(contents: &str) -> Result<V3Lock> {
     let raw: serde_yaml::Value =
         serde_yaml::from_str(contents).context("failed to parse api.lock v3 YAML")?;
     validate_raw_observed_shapes(&raw)?;
-    let lock: V3Lock = serde_yaml::from_value(raw).context("failed to parse api.lock v3 YAML")?;
+    let mut lock: V3Lock =
+        serde_yaml::from_value(raw).context("failed to parse api.lock v3 YAML")?;
+    for api in lock.apis.values_mut() {
+        if let V3Api::Declared(entry) = api {
+            validate_legacy_scope_digest(entry)?;
+            canonicalize_scope_on_load(&mut entry.scope)?;
+            entry.contract_digest =
+                canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?;
+        }
+    }
     validate_lock(&lock)?;
     Ok(lock)
+}
+
+fn validate_legacy_scope_digest(entry: &DeclaredEntry) -> Result<()> {
+    let Scope::Operations(scope) = &entry.scope else {
+        return Ok(());
+    };
+    let mut previous = None;
+    for selector in &scope.operations {
+        let identity = crate::lock_size::parse_operation_selector(selector)?;
+        if previous.as_ref().is_some_and(|value| value >= &identity) {
+            return Err(anyhow!(
+                "operation scope must be sorted and contain no duplicates"
+            ));
+        }
+        previous = Some(identity);
+    }
+    canonical::validate_digest(&entry.contract_digest)?;
+    if canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?
+        != entry.contract_digest
+    {
+        return Err(anyhow!("declared api contract digest mismatch"));
+    }
+    Ok(())
+}
+
+fn canonicalize_scope_on_load(scope: &mut Scope) -> Result<()> {
+    let Scope::Operations(scope) = scope else {
+        return Ok(());
+    };
+    scope.operations = scope
+        .operations
+        .iter()
+        .map(|selector| crate::lock_size::parse_operation_selector(selector))
+        .collect::<Result<BTreeSet<_>>>()?
+        .into_iter()
+        .map(|identity| format!("{} {}", identity.method.as_str(), identity.path))
+        .collect();
+    Ok(())
 }
 
 fn validate_raw_observed_shapes(raw: &serde_yaml::Value) -> Result<()> {
@@ -406,7 +453,14 @@ fn validate_scope_contract(scope: &Scope, contract: &Contract) -> Result<()> {
     let stored = contract
         .operations
         .keys()
-        .map(|key| schema::parse_operation_key(key))
+        .map(|key| {
+            let key = schema::parse_operation_key(key)?;
+            let (path, _) = crate::openapi::identity::canonical_path_template(&key.path)?;
+            Ok(crate::contract::OperationIdentity {
+                method: key.method,
+                path,
+            })
+        })
         .collect::<Result<BTreeSet<_>>>()?;
     if scoped != stored {
         return Err(anyhow!(

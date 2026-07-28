@@ -21,28 +21,29 @@ pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
     let mut changes = Vec::new();
     let mut server_changes = Vec::new();
 
-    for key in old.operations.keys() {
-        if !new.operations.contains_key(key) {
+    for (identity, operation) in &old.operations {
+        if !new.operations.contains_key(identity) {
             changes.push(Change {
                 severity: Severity::Breaking,
-                operation: key.clone(),
+                operation: operation.key.clone(),
                 message: "endpoint removed".to_string(),
             });
         }
     }
 
-    for key in new.operations.keys() {
-        if !old.operations.contains_key(key) {
+    for (identity, operation) in &new.operations {
+        if !old.operations.contains_key(identity) {
             changes.push(Change {
                 severity: Severity::NonBreaking,
-                operation: key.clone(),
+                operation: operation.key.clone(),
                 message: "endpoint added".to_string(),
             });
         }
     }
 
-    for (key, old_operation) in &old.operations {
-        if let Some(new_operation) = new.operations.get(key) {
+    for (identity, old_operation) in &old.operations {
+        if let Some(new_operation) = new.operations.get(identity) {
+            let key = &old_operation.key;
             diff_auth_requirements(&mut changes, key, &old_operation.auth, &new_operation.auth);
             diff_servers(
                 &mut server_changes,

@@ -271,7 +271,34 @@ fn lock_accepts_exact_scopes_spanning_multiple_http_methods() {
 
     let rendered = fs::read_to_string(&output).expect("scoped lock should be readable");
     fs::remove_file(output).ok();
-    assert!(rendered.contains("operations:\n      - GET /users\n      - DELETE /users/{id}"));
+    assert!(rendered.contains("operations:\n      - GET /users\n      - DELETE /users/{0}"));
+}
+
+#[test]
+fn phase2_d07_lock_stores_canonical_scoped_path_identity() {
+    let output = temp_lock_path("d07-scoped");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+            "--name",
+            "d07",
+            "--output",
+            output.to_str().expect("temp path should be valid UTF-8"),
+            "--include-operation",
+            "GET /users/{userId}/orders/{orderId}",
+        ])
+        .assert()
+        .success();
+
+    let rendered = fs::read_to_string(&output).expect("scoped lock should be readable");
+    fs::remove_file(output).ok();
+    assert!(rendered.contains("operations:\n      - GET /users/{0}/orders/{1}"));
+    assert!(rendered.contains(
+        "GET /users/{0}/orders/{1}:\n          display_path: /users/{userId}/orders/{orderId}"
+    ));
 }
 
 #[test]

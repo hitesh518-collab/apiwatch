@@ -198,6 +198,30 @@ fn scoped_lock_v3(selector: &str) -> PathBuf {
     lock
 }
 
+fn scoped_lock_v3_from(openapi: &str, selector: &str) -> PathBuf {
+    let lock = observed_lock_path();
+    let selectors = vec![selector.to_owned()];
+    let contract = apiwatch::openapi::load_contract(Path::new(openapi))
+        .expect("scoped v3 fixture contract should load");
+    let scoped = apiwatch::lock_size::scope_contract(&contract, &selectors)
+        .expect("scoped v3 contract should build");
+    let scope =
+        apiwatch::lockfile::scope_from_selectors(&selectors).expect("scoped v3 scope should build");
+    let entry = apiwatch::lockfile::build_v3_declared(
+        &scoped,
+        scope,
+        apiwatch::lockfile::DEFAULT_MAX_LOCK_BYTES,
+    )
+    .expect("scoped v3 declared entry should build");
+    let lockfile = apiwatch::lockfile::new_v3("d07", entry).expect("scoped v3 lock should build");
+    fs::write(
+        &lock,
+        apiwatch::lockfile::render(&lockfile).expect("scoped v3 lock should render"),
+    )
+    .expect("scoped v3 lock should write");
+    lock
+}
+
 fn observed_lock_path() -> PathBuf {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -207,6 +231,53 @@ fn observed_lock_path() -> PathBuf {
         "apiwatch-observed-verify-{}-{suffix}.lock",
         std::process::id()
     ))
+}
+
+#[test]
+fn phase2_d07_verify_scoped_v4_lock_matches_renamed_path_placeholders() {
+    let lock = observed_lock_path();
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+            "--name",
+            "d07",
+            "--output",
+            lock.to_str().expect("temporary path should be valid UTF-8"),
+            "--include-operation",
+            "GET /users/{userId}/orders/{orderId}",
+        ])
+        .assert()
+        .success();
+
+    verify_command(
+        "testdata/openapi/phase2_d07_path_template_new.yaml",
+        "d07",
+        lock.to_str().expect("temporary path should be valid UTF-8"),
+    )
+    .assert()
+    .success()
+    .stdout("Verified d07\n");
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d07_verify_scoped_v3_lock_matches_renamed_path_placeholders() {
+    let lock = scoped_lock_v3_from(
+        "testdata/openapi/phase2_d07_path_template_old.yaml",
+        "GET /users/{userId}/orders/{orderId}",
+    );
+
+    verify_command(
+        "testdata/openapi/phase2_d07_path_template_new.yaml",
+        "d07",
+        lock.to_str().expect("temporary path should be valid UTF-8"),
+    )
+    .assert()
+    .success()
+    .stdout("Verified d07\n");
+    fs::remove_file(lock).ok();
 }
 
 #[test]

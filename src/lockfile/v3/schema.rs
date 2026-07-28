@@ -3,10 +3,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{anyhow, Result};
 
 use crate::contract::{
-    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey,
-    Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema,
+    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationIdentity,
+    OperationKey, Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response,
+    Schema,
 };
-use crate::openapi::{identity::canonical_media_type, merge_all_of};
+use crate::openapi::{
+    identity::{canonical_media_type, canonical_path_template},
+    merge_all_of,
+};
 
 use super::{
     canonical, Contract, WireAuth, WireOperation, WireParameter, WireProperty, WireSchema,
@@ -17,7 +21,7 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
     let operations = contract
         .operations
         .iter()
-        .map(|(key, operation)| {
+        .map(|(_identity, operation)| {
             let auth = operation
                 .auth
                 .iter()
@@ -39,7 +43,15 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
                 .iter()
                 .map(|(parameter_key, parameter)| {
                     Ok((
-                        format!("{}:{}", parameter_key.location.as_str(), parameter_key.name),
+                        format!(
+                            "{}:{}",
+                            parameter_key.location.as_str(),
+                            if parameter_key.location == ParameterLocation::Path {
+                                &parameter.name
+                            } else {
+                                &parameter_key.name
+                            }
+                        ),
                         WireParameter {
                             required: parameter.required,
                             schema: intern_schema(&parameter.schema, &mut schemas)?,
@@ -63,7 +75,7 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
                 })
                 .collect::<Result<_>>()?;
             Ok((
-                format!("{} {}", key.method.as_str(), key.path),
+                format!("{} {}", operation.key.method.as_str(), operation.key.path),
                 WireOperation {
                     auth,
                     parameters,
@@ -183,6 +195,11 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
         .iter()
         .map(|(key, operation)| {
             let key = parse_operation_key(key)?;
+            let (canonical_path, placeholders) = canonical_path_template(&key.path)?;
+            let identity = OperationIdentity {
+                method: key.method,
+                path: canonical_path,
+            };
             let auth = operation
                 .auth
                 .iter()
@@ -202,10 +219,12 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                 .iter()
                 .map(|(key, parameter)| {
                     let key = parse_parameter_key(key)?;
+                    let name = key.name.clone();
+                    let key = canonicalize_parameter_key(key, &placeholders)?;
                     Ok((
                         key.clone(),
                         Parameter {
-                            name: key.name,
+                            name,
                             required: parameter.required,
                             schema: expand_schema(&parameter.schema, &contract.schemas)?,
                         },
@@ -235,8 +254,9 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
                 })
                 .collect::<Result<_>>()?;
             Ok((
-                key,
+                identity,
                 Operation {
+                    key,
                     auth,
                     servers: None,
                     parameters,
@@ -247,6 +267,25 @@ pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
         })
         .collect::<Result<_>>()?;
     Ok(ApiContract { operations })
+}
+
+fn canonicalize_parameter_key(key: ParameterKey, placeholders: &[String]) -> Result<ParameterKey> {
+    if key.location != ParameterLocation::Path {
+        return Ok(key);
+    }
+    let slot = placeholders
+        .iter()
+        .position(|name| name == &key.name)
+        .ok_or_else(|| {
+            anyhow!(
+                "path parameter {} is not bound to a path template placeholder",
+                key.name
+            )
+        })?;
+    Ok(ParameterKey {
+        location: ParameterLocation::Path,
+        name: format!("{{{slot}}}"),
+    })
 }
 
 fn expand_content(

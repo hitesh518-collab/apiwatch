@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct ApiContract {
-    pub operations: BTreeMap<OperationKey, Operation>,
+    pub operations: BTreeMap<OperationIdentity, Operation>,
 }
 
 impl ApiContract {
@@ -18,6 +18,12 @@ impl ApiContract {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OperationKey {
+    pub method: HttpMethod,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OperationIdentity {
     pub method: HttpMethod,
     pub path: String,
 }
@@ -52,6 +58,7 @@ impl HttpMethod {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Operation {
+    pub key: OperationKey,
     pub auth: BTreeMap<String, AuthRequirement>,
     pub servers: Option<BTreeSet<ServerTemplate>>,
     pub parameters: BTreeMap<ParameterKey, Parameter>,
@@ -282,6 +289,15 @@ pub struct Property {
 }
 
 impl Serialize for OperationKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{} {}", self.method.as_str(), self.path))
+    }
+}
+
+impl Serialize for OperationIdentity {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,

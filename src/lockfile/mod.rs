@@ -188,10 +188,10 @@ pub fn from_contract(name: &str, contract: &ApiContract) -> Result<ApiLock> {
 
     let operations = contract
         .operations
-        .keys()
-        .map(|key| LockedOperation {
-            method: key.method.as_str().to_string(),
-            path: key.path.clone(),
+        .values()
+        .map(|operation| LockedOperation {
+            method: operation.key.method.as_str().to_string(),
+            path: operation.key.path.clone(),
         })
         .collect();
 
@@ -619,10 +619,7 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Re
     for operation in target_operations.difference(&current_operations) {
         changes.push(Change {
             severity: Severity::Breaking,
-            operation: crate::lock_size::parse_operation_selector(&format!(
-                "{} {}",
-                operation.method, operation.path
-            ))?,
+            operation: operation_key_from_locked(operation)?,
             message: "endpoint removed".to_string(),
         });
     }
@@ -630,10 +627,7 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Re
     for operation in current_operations.difference(target_operations) {
         changes.push(Change {
             severity: Severity::Warning,
-            operation: crate::lock_size::parse_operation_selector(&format!(
-                "{} {}",
-                operation.method, operation.path
-            ))?,
+            operation: operation_key_from_locked(operation)?,
             message: "endpoint added outside route-only lock".to_string(),
         });
     }
@@ -696,6 +690,25 @@ fn normalized_locked_operation(operation: &LockedOperation) -> Result<LockedOper
     Ok(LockedOperation {
         method,
         path: operation.path.clone(),
+    })
+}
+
+fn operation_key_from_locked(operation: &LockedOperation) -> Result<crate::contract::OperationKey> {
+    let operation = normalized_locked_operation(operation)?;
+    let method = match operation.method.as_str() {
+        "GET" => crate::contract::HttpMethod::Get,
+        "POST" => crate::contract::HttpMethod::Post,
+        "PUT" => crate::contract::HttpMethod::Put,
+        "PATCH" => crate::contract::HttpMethod::Patch,
+        "DELETE" => crate::contract::HttpMethod::Delete,
+        "OPTIONS" => crate::contract::HttpMethod::Options,
+        "HEAD" => crate::contract::HttpMethod::Head,
+        "TRACE" => crate::contract::HttpMethod::Trace,
+        _ => unreachable!("normalized locked operation validates the method"),
+    };
+    Ok(crate::contract::OperationKey {
+        method,
+        path: operation.path,
     })
 }
 
@@ -883,22 +896,38 @@ mod tests {
             vec![
                 Change {
                     severity: Severity::Breaking,
-                    operation: crate::lock_size::parse_operation_selector("GET /users").unwrap(),
+                    operation: operation_key_from_locked(&LockedOperation {
+                        method: "GET".to_string(),
+                        path: "/users".to_string()
+                    })
+                    .unwrap(),
                     message: "endpoint removed".to_string(),
                 },
                 Change {
                     severity: Severity::Breaking,
-                    operation: crate::lock_size::parse_operation_selector("GET /zeta").unwrap(),
+                    operation: operation_key_from_locked(&LockedOperation {
+                        method: "GET".to_string(),
+                        path: "/zeta".to_string()
+                    })
+                    .unwrap(),
                     message: "endpoint removed".to_string(),
                 },
                 Change {
                     severity: Severity::Warning,
-                    operation: crate::lock_size::parse_operation_selector("POST /users").unwrap(),
+                    operation: operation_key_from_locked(&LockedOperation {
+                        method: "POST".to_string(),
+                        path: "/users".to_string()
+                    })
+                    .unwrap(),
                     message: "endpoint added outside route-only lock".to_string(),
                 },
                 Change {
                     severity: Severity::Warning,
-                    operation: crate::lock_size::parse_operation_selector("POST /zeta").unwrap(),
+                    operation: operation_key_from_locked(&LockedOperation {
+                        method: "POST".to_string(),
+                        path: "/zeta".to_string()
+                    })
+                    .unwrap(),
                     message: "endpoint added outside route-only lock".to_string(),
                 },
             ]
@@ -933,7 +962,11 @@ mod tests {
             compare_verify_target(&target, &current).expect("comparison should succeed"),
             vec![Change {
                 severity: Severity::Warning,
-                operation: crate::lock_size::parse_operation_selector("POST /users").unwrap(),
+                operation: operation_key_from_locked(&LockedOperation {
+                    method: "POST".to_string(),
+                    path: "/users".to_string()
+                })
+                .unwrap(),
                 message: "endpoint added outside route-only lock".to_string(),
             }]
         );
@@ -1117,7 +1150,8 @@ mod tests {
     #[test]
     fn v3_interns_repeated_schemas_and_expands_the_original_contract() {
         use crate::contract::{
-            AdditionalProperties, HttpMethod, Operation, OperationKey, Response, Schema, SchemaKind,
+            AdditionalProperties, HttpMethod, Operation, OperationIdentity, OperationKey, Response,
+            Schema, SchemaKind,
         };
 
         let schema = Schema {
@@ -1131,11 +1165,15 @@ mod tests {
         };
         let operation = |path: &str| {
             (
-                OperationKey {
+                OperationIdentity {
                     method: HttpMethod::Get,
                     path: path.to_string(),
                 },
                 Operation {
+                    key: OperationKey {
+                        method: HttpMethod::Get,
+                        path: path.to_string(),
+                    },
                     auth: BTreeMap::new(),
                     servers: None,
                     parameters: BTreeMap::new(),
@@ -1166,8 +1204,8 @@ mod tests {
     #[test]
     fn v3_expands_synthetic_allof_with_outer_nullability() {
         use crate::contract::{
-            AdditionalProperties, HttpMethod, Operation, OperationKey, Property, Response,
-            SchemaKind,
+            AdditionalProperties, HttpMethod, Operation, OperationIdentity, OperationKey, Property,
+            Response, SchemaKind,
         };
 
         let branch = Schema {
@@ -1196,11 +1234,15 @@ mod tests {
         };
         let contract = ApiContract {
             operations: BTreeMap::from([(
-                OperationKey {
+                OperationIdentity {
                     method: HttpMethod::Get,
                     path: "/allof".to_string(),
                 },
                 Operation {
+                    key: OperationKey {
+                        method: HttpMethod::Get,
+                        path: "/allof".to_string(),
+                    },
                     auth: BTreeMap::new(),
                     servers: None,
                     parameters: BTreeMap::new(),
