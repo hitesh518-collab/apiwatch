@@ -524,16 +524,16 @@ fn diff_requiredness(
     old_required: bool,
     new_required: bool,
 ) {
-    if usage != SchemaUsage::Request || old_required == new_required {
-        return;
-    }
+    let severity = match (usage, old_required, new_required) {
+        (SchemaUsage::Request, false, true) => Severity::Breaking,
+        (SchemaUsage::Request, true, false) => Severity::NonBreaking,
+        (SchemaUsage::Response, true, false) => Severity::Breaking,
+        (SchemaUsage::Response, false, true) => Severity::NonBreaking,
+        (_, _, _) => return,
+    };
 
     changes.push(Change {
-        severity: if new_required {
-            Severity::Breaking
-        } else {
-            Severity::NonBreaking
-        },
+        severity,
         operation: operation.clone(),
         message: format!(
             "{context} field {path} changed from {} to {}",

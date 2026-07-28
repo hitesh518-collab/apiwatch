@@ -166,6 +166,40 @@ fn phase2_d02_diff_reports_canonical_media_type_reversals() {
     );
 }
 
+#[test]
+fn phase2_d03_diff_reports_response_requiredness_symmetrically() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d03_response_required_old.yaml",
+            "testdata/openapi/phase2_d03_response_required_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/users",
+                "message": "response 200 application/json field id changed from required to optional"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "GET",
+                "path": "/users",
+                "message": "response 200 application/json field name changed from optional to required"
+            }
+        ])
+    );
+}
+
 fn sarif_rule_ids(rendered: &Value) -> Vec<&str> {
     rendered["runs"][0]["tool"]["driver"]["rules"]
         .as_array()
