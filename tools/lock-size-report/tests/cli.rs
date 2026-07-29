@@ -72,6 +72,15 @@ impl Fixture {
     }
 
     fn run(&self, check: bool, include_v4: bool) -> Output {
+        self.run_with_operations(check, include_v4, &[])
+    }
+
+    fn run_with_operations(
+        &self,
+        check: bool,
+        include_v4: bool,
+        include_operations: &[&str],
+    ) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_apiwatch-lock-size-report"));
         command.args([
             "--manifest",
@@ -94,6 +103,9 @@ impl Fixture {
                 "--v4-markdown-out",
                 path_text(&self.v4_markdown_out),
             ]);
+        }
+        for operation in include_operations {
+            command.args(["--include-operation", operation]);
         }
         if check {
             command.arg("--check");
@@ -193,6 +205,72 @@ fn writes_deterministic_reports_and_checks_existing_bytes() {
     fs::write(&fixture.markdown_out, &markdown).unwrap();
     fs::write(&fixture.v4_json_out, "changed\n").unwrap();
     assert_eq!(fixture.run(true, true).status.code(), Some(1));
+}
+
+#[test]
+fn scoped_reports_use_current_measurements_instead_of_full_corpus_pins() {
+    let fixture = Fixture::new();
+    let operations = ["GET /users"];
+    let generated = fixture.run_with_operations(false, true, &operations);
+    assert!(
+        generated.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+
+    let phase_1: serde_json::Value =
+        serde_json::from_slice(&fs::read(&fixture.json_out).unwrap()).unwrap();
+    assert_eq!(phase_1["corpus"][0]["operation_count"], 1);
+    assert_eq!(
+        phase_1["corpus"][0]["measurements"]["expanded_yaml"]["bytes"],
+        170
+    );
+    assert_eq!(
+        phase_1["corpus"][0]["measurements"]["canonical_json"]["bytes"],
+        148
+    );
+    assert_eq!(
+        phase_1["corpus"][0]["measurements"]["deduplicated_yaml"]["bytes"],
+        145
+    );
+    let phase_2: serde_json::Value =
+        serde_json::from_slice(&fs::read(&fixture.v4_json_out).unwrap()).unwrap();
+    assert_eq!(phase_2["corpus"][0]["operation_count"], 1);
+    assert_eq!(phase_2["corpus"][0]["v4_contract_bytes"], 170);
+
+    let checked = fixture.run_with_operations(true, true, &operations);
+    assert!(
+        checked.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+}
+
+#[test]
+fn unscoped_reports_still_validate_full_corpus_pin_operation_count() {
+    let fixture = Fixture::new();
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&fixture.manifest).unwrap()).unwrap();
+    manifest["specs"][0]["phase1_measurement"]["operation_count"] = json!(3);
+    fs::write(
+        &fixture.manifest,
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+
+    let output = fixture.run(false, false);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("historical Phase 1 operation count 3 does not match"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

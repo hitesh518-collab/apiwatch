@@ -155,8 +155,11 @@ fn run(args: &Args) -> Result<(), Failure> {
                     .map_err(|error| Failure::input(format!("{}: {error}", entry.name)))?;
                 let current_measurement = measure_contract(&contract, args.max_lock_bytes)
                     .map_err(|error| Failure::behavior(format!("{}: {error:#}", entry.name)))?;
-                let measurement =
-                    phase1_measurement(entry, &current_measurement, args.max_lock_bytes)?;
+                let measurement = if args.include_operations.is_empty() {
+                    phase1_measurement(entry, &current_measurement, args.max_lock_bytes)?
+                } else {
+                    current_measurement.clone()
+                };
                 let v4_contract_bytes = apiwatch::lockfile::measure_v4_contract_payload(&contract)
                     .map_err(|error| {
                         Failure::behavior(format!(
