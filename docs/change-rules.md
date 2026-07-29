@@ -4,22 +4,87 @@
 
 ## Implementation Status
 
-The catalog below is the intended semantic contract, not a claim that every
-rule is implemented correctly in the current release.
+The catalog below is the implemented semantic contract for `apiwatch diff` and
+current v4 declared Verify. Both call the same comparison engine.
 
-- `apiwatch diff` implements many rules but has confirmed false-negative and
-  false-positive gaps.
-- Declared version 1 and version 2 locks contain routes only, so current
-  declared Verify compares added and removed operations rather than applying
-  this full catalog.
-- [Roadmap Phase 1](../ROADMAP.md#phase-1--make-verify-meaningful) will make
-  declared Verify use the same comparison engine as `diff`.
-- [Roadmap Phase 2](../ROADMAP.md#phase-2--make-the-comparison-engine-trustworthy)
-  will resolve the audited comparison gaps with regression fixtures.
+- Version 3 declared Verify uses the older normalized contract and reports
+  `coverage: partial` with `phase2_relock_required`.
+- Version 1 and version 2 declared locks contain routes only and report
+  `coverage: routes` with `route_only_lock`.
+- Re-lock from the original OpenAPI source to obtain full v4 coverage.
 
-Until those exit criteria pass, callers should consult the
-[README known limitations](../README.md#known-limitations) before treating a
-clean result as proof that every listed change class was checked.
+## Approved Phase 2 Matrices
+
+### Request bodies and media types
+
+| Change | Classification |
+|---|---|
+| Add a required request body | Breaking |
+| Add an optional request body | Non-breaking |
+| Remove a request body | Breaking |
+| Request body optional → required | Breaking |
+| Request body required → optional | Non-breaking |
+| Remove a canonical request media type | Breaking |
+| Add a canonical request media type | Non-breaking |
+| Add or remove a canonical response media type for an existing status | Breaking |
+
+Media types are compared after MIME canonicalization. Schemas under media
+types present on both sides continue through the schema matrix.
+
+### Field requiredness
+
+| Schema use | Change | Classification |
+|---|---|---|
+| Request | Optional → required | Breaking |
+| Request | Required → optional | Non-breaking |
+| Response | Required → optional | Breaking |
+| Response | Optional → required | Non-breaking |
+
+### Enum values and composition alternatives
+
+| Schema use | Set change | Classification |
+|---|---|---|
+| Request | Value or `oneOf`/`anyOf` branch added | Non-breaking |
+| Request | Value or `oneOf`/`anyOf` branch removed | Breaking |
+| Response | Value or `oneOf`/`anyOf` branch added | Breaking |
+| Response | Value or `oneOf`/`anyOf` branch removed | Non-breaking |
+
+String, integer, number, and boolean enum values use the same directional
+policy. Duplicate normalized values do not produce duplicate findings.
+
+### `additionalProperties`
+
+The normalized policies are `forbidden`, `any`, `schema`, and `unknown`.
+`schema` → `schema` recursively compares the value schemas. If either side is
+`unknown`, no policy finding is emitted.
+
+| Policy direction | Request schema | Response schema |
+|---|---|---|
+| Narrowing: `any` → `schema`/`forbidden`, or `schema` → `forbidden` | Breaking | Non-breaking |
+| Widening: the reverse directions | Non-breaking | Breaking |
+
+### Effective servers
+
+| Change | Classification |
+|---|---|
+| Effective server template removed | Breaking |
+| Effective server template added | Non-breaking |
+
+Operation servers override path servers, which override root servers.
+Identity retains scheme, authority, port, path structure, query-key identity,
+and variable positions while redacting literal query values and rejecting
+credentials. Server variables are compared by placeholder position, not
+source label.
+
+### Composition
+
+`allOf` is normalized as a semantic intersection. Object constraints,
+requiredness, enums, items, and dictionary policies are merged; incompatible
+intersections are input errors. `oneOf` and `anyOf` branches are canonical
+sets: reordering is unchanged, exact branches match first, and one
+unambiguous same-shape replacement is recursively compared. Metadata-only
+`allOf` branches are unconstrained identities, including around a composed
+schema.
 
 ## Breaking
 
@@ -43,7 +108,8 @@ clean result as proof that every listed change class was checked.
 - Response field became nullable.
 - Response enum value added.
 - Successful status code removed.
-- Content type changed.
+- Request media type removed.
+- Response media type added or removed.
 
 ## Warning
 
@@ -87,8 +153,9 @@ Local `#/components/responses/...` references are resolved for normalized respon
 Local `#/components/requestBodies/...` references are resolved for normalized request bodies.
 Local `#/components/securitySchemes/...` references are resolved for normalized authentication schemes.
 Local `#/paths/...` references are resolved for normalized path items.
-Array item schemas are diffed under the synthetic `items` path, for example `items.name`.
-Composed schemas using `oneOf`, `allOf`, and `anyOf` are diffed by branch index paths such as `oneOf[0]`.
+Array item schemas are first-class and diffed under the `items` path, for
+example `items.name`. `oneOf` and `anyOf` findings use canonical branch paths
+such as `oneOf[0]`; `allOf` is intersected before comparison.
 
 See [ROADMAP.md](../ROADMAP.md) for the correctness sequence and phase exit
 criteria.

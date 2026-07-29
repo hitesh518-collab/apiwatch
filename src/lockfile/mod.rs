@@ -12,8 +12,51 @@ use crate::observed::{apply_map_annotations, merge as merge_shapes, Shape};
 mod atomic;
 #[doc(hidden)]
 pub mod v3;
+#[doc(hidden)]
+pub mod v4;
 
 pub const DEFAULT_MAX_LOCK_BYTES: u64 = v3::DEFAULT_MAX_LOCK_BYTES;
+
+#[doc(hidden)]
+pub fn measure_v4_contract_payload(contract: &ApiContract) -> anyhow::Result<u64> {
+    v4::measure_contract_payload(contract)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Scope {
+    All(AllScope),
+    Operations(OperationScope),
+}
+
+impl Scope {
+    pub(crate) fn all() -> Self {
+        Self::All(AllScope::All)
+    }
+
+    pub(crate) fn operations(operations: Vec<String>) -> Self {
+        Self::Operations(OperationScope { operations })
+    }
+
+    pub(crate) fn selectors(&self) -> &[String] {
+        match self {
+            Self::All(_) => &[],
+            Self::Operations(scope) => &scope.operations,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AllScope {
+    #[serde(rename = "all")]
+    All,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OperationScope {
+    operations: Vec<String>,
+}
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApiLock {
@@ -21,7 +64,9 @@ pub struct ApiLock {
     #[serde(rename = "apis")]
     legacy_declared: BTreeMap<String, LockedApi>,
     #[serde(skip)]
-    declared: BTreeMap<String, v3::DeclaredEntry>,
+    declared_v3: BTreeMap<String, v3::DeclaredEntry>,
+    #[serde(skip)]
+    declared_v4: BTreeMap<String, v4::DeclaredEntry>,
     #[serde(skip)]
     observed: BTreeMap<String, Shape>,
 }
@@ -88,13 +133,20 @@ pub enum VerifyTargetKind {
     LegacyDeclared {
         operations: BTreeSet<LockedOperation>,
     },
-    FullDeclared {
+    Declared {
         contract: ApiContract,
-        scope: v3::Scope,
+        scope: Scope,
+        coverage: DeclaredCoverage,
     },
     Observed {
         shape: Shape,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclaredCoverage {
+    PartialV3,
+    FullV4,
 }
 
 impl VerifyTarget {
@@ -141,10 +193,10 @@ pub fn from_contract(name: &str, contract: &ApiContract) -> Result<ApiLock> {
 
     let operations = contract
         .operations
-        .keys()
-        .map(|key| LockedOperation {
-            method: key.method.as_str().to_string(),
-            path: key.path.clone(),
+        .values()
+        .map(|operation| LockedOperation {
+            method: operation.key.method.as_str().to_string(),
+            path: operation.key.path.clone(),
         })
         .collect();
 
@@ -160,7 +212,8 @@ pub fn from_contract(name: &str, contract: &ApiContract) -> Result<ApiLock> {
     Ok(ApiLock {
         version: 1,
         legacy_declared: apis,
-        declared: BTreeMap::new(),
+        declared_v3: BTreeMap::new(),
+        declared_v4: BTreeMap::new(),
         observed: BTreeMap::new(),
     })
 }
@@ -171,7 +224,13 @@ pub fn render(lock: &ApiLock) -> Result<String> {
     }
     if lock.version == 3 {
         return v3::render(&v3::V3Lock::from_parts(
-            lock.declared.clone(),
+            lock.declared_v3.clone(),
+            lock.observed.clone(),
+        ));
+    }
+    if lock.version == 4 {
+        return v4::render(&v4::V4Lock::from_parts(
+            lock.declared_v4.clone(),
             lock.observed.clone(),
         ));
     }
@@ -215,7 +274,18 @@ pub fn load(path: &Path) -> Result<ApiLock> {
             Ok(ApiLock {
                 version: 3,
                 legacy_declared: BTreeMap::new(),
-                declared,
+                declared_v3: declared,
+                declared_v4: BTreeMap::new(),
+                observed,
+            })
+        }
+        4 => {
+            let (declared_v4, observed) = v4::load(&contents)?.into_parts();
+            Ok(ApiLock {
+                version: 4,
+                legacy_declared: BTreeMap::new(),
+                declared_v3: BTreeMap::new(),
+                declared_v4,
                 observed,
             })
         }
@@ -228,19 +298,20 @@ pub fn new_v3(name: &str, entry: v3::DeclaredEntry) -> Result<ApiLock> {
     let lock = ApiLock {
         version: 3,
         legacy_declared: BTreeMap::new(),
-        declared: BTreeMap::from([(name, entry)]),
+        declared_v3: BTreeMap::from([(name, entry)]),
+        declared_v4: BTreeMap::new(),
         observed: BTreeMap::new(),
     };
     v3::render(&v3::V3Lock::from_parts(
-        lock.declared.clone(),
+        lock.declared_v3.clone(),
         BTreeMap::new(),
     ))?;
     Ok(lock)
 }
 
-pub fn scope_from_selectors(selectors: &[String]) -> Result<v3::Scope> {
+pub fn scope_from_selectors(selectors: &[String]) -> Result<Scope> {
     if selectors.is_empty() {
-        return Ok(v3::Scope::all());
+        return Ok(Scope::all());
     }
     let mut operations = BTreeSet::new();
     for selector in selectors {
@@ -249,7 +320,7 @@ pub fn scope_from_selectors(selectors: &[String]) -> Result<v3::Scope> {
             return Err(anyhow!("duplicate operation selector"));
         }
     }
-    Ok(v3::Scope::operations(
+    Ok(Scope::operations(
         operations
             .into_iter()
             .map(|key| format!("{} {}", key.method.as_str(), key.path))
@@ -259,10 +330,34 @@ pub fn scope_from_selectors(selectors: &[String]) -> Result<v3::Scope> {
 
 pub fn build_v3_declared(
     contract: &ApiContract,
-    scope: v3::Scope,
+    scope: Scope,
     max_lock_bytes: u64,
 ) -> Result<v3::DeclaredEntry> {
     v3::build_declared(contract, scope, max_lock_bytes, BTreeMap::new())
+}
+
+pub fn new_v4(name: &str, entry: v4::DeclaredEntry) -> Result<ApiLock> {
+    let name = normalized_name(name)?.to_owned();
+    let lock = ApiLock {
+        version: 4,
+        legacy_declared: BTreeMap::new(),
+        declared_v3: BTreeMap::new(),
+        declared_v4: BTreeMap::from([(name, entry)]),
+        observed: BTreeMap::new(),
+    };
+    v4::render(&v4::V4Lock::from_parts(
+        lock.declared_v4.clone(),
+        BTreeMap::new(),
+    ))?;
+    Ok(lock)
+}
+
+pub fn build_v4_declared(
+    contract: &ApiContract,
+    scope: Scope,
+    max_lock_bytes: u64,
+) -> Result<v4::DeclaredEntry> {
+    v4::build_declared(contract, scope, max_lock_bytes, BTreeMap::new())
 }
 
 pub fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -307,9 +402,52 @@ pub fn replace_declared(
         lock.legacy_declared.clear();
     }
     lock.version = 3;
-    lock.declared.insert(name, entry);
+    lock.declared_v3.insert(name, entry);
     v3::render(&v3::V3Lock::from_parts(
-        lock.declared.clone(),
+        lock.declared_v3.clone(),
+        lock.observed.clone(),
+    ))?;
+    Ok(lock)
+}
+
+pub fn replace_declared_v4(
+    mut lock: ApiLock,
+    name: &str,
+    entry: v4::DeclaredEntry,
+) -> Result<ApiLock> {
+    let name = normalized_name(name)?.to_owned();
+    if lock.observed.contains_key(&name) {
+        return Err(anyhow!(
+            "api {name} is observed and cannot be replaced as declared"
+        ));
+    }
+    if lock.version < 4 {
+        let named_old_entry =
+            lock.legacy_declared.contains_key(&name) || lock.declared_v3.contains_key(&name);
+        if !named_old_entry {
+            return Err(anyhow!("declared api {name} not found"));
+        }
+        let mut remaining = lock
+            .legacy_declared
+            .keys()
+            .chain(lock.declared_v3.keys())
+            .filter(|candidate| candidate.as_str() != name)
+            .map(|name| sanitized(name))
+            .collect::<Vec<_>>();
+        remaining.sort();
+        if !remaining.is_empty() {
+            return Err(anyhow!(
+                "cannot migrate api.lock to v4; migration requires original sources for: {}",
+                remaining.join(", ")
+            ));
+        }
+        lock.legacy_declared.clear();
+        lock.declared_v3.clear();
+        lock.version = 4;
+    }
+    lock.declared_v4.insert(name, entry);
+    v4::render(&v4::V4Lock::from_parts(
+        lock.declared_v4.clone(),
         lock.observed.clone(),
     ))?;
     Ok(lock)
@@ -323,7 +461,10 @@ pub fn record_observed(
     map_paths: &[String],
 ) -> Result<()> {
     let name = normalized_name(name)?;
-    if lock.legacy_declared.contains_key(name) || lock.declared.contains_key(name) {
+    if lock.legacy_declared.contains_key(name)
+        || lock.declared_v3.contains_key(name)
+        || lock.declared_v4.contains_key(name)
+    {
         return Err(anyhow!(
             "api {name} is declared and cannot be recorded as observed"
         ));
@@ -359,7 +500,8 @@ pub fn load_or_create_for_record(path: &Path) -> Result<ApiLock> {
         Ok(ApiLock {
             version: 2,
             legacy_declared: BTreeMap::new(),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         })
     }
@@ -397,7 +539,8 @@ fn load_v2(contents: &str) -> Result<ApiLock> {
     Ok(ApiLock {
         version: 2,
         legacy_declared: apis,
-        declared: BTreeMap::new(),
+        declared_v3: BTreeMap::new(),
+        declared_v4: BTreeMap::new(),
         observed,
     })
 }
@@ -412,12 +555,23 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
             },
         });
     }
-    if let Some(entry) = lock.declared.get(name) {
+    if let Some(entry) = lock.declared_v4.get(name) {
         return Ok(VerifyTarget {
             name: name.to_string(),
-            kind: VerifyTargetKind::FullDeclared {
+            kind: VerifyTargetKind::Declared {
+                contract: v4::validate_declared(name, entry)?,
+                scope: entry.scope().clone(),
+                coverage: DeclaredCoverage::FullV4,
+            },
+        });
+    }
+    if let Some(entry) = lock.declared_v3.get(name) {
+        return Ok(VerifyTarget {
+            name: name.to_string(),
+            kind: VerifyTargetKind::Declared {
                 contract: v3::validate_declared(name, entry)?,
                 scope: entry.scope().clone(),
+                coverage: DeclaredCoverage::PartialV3,
             },
         });
     }
@@ -457,34 +611,35 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Re
     else {
         return Ok(Vec::new());
     };
-    let current_operations: BTreeSet<_> = current
+    let target_operations = target_operations
+        .iter()
+        .map(|operation| Ok((operation_identity_from_locked(operation)?, operation)))
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    let current_operations = current
         .operations
-        .keys()
-        .map(|key| LockedOperation {
-            method: key.method.as_str().to_string(),
-            path: key.path.clone(),
-        })
-        .collect();
+        .iter()
+        .map(|(identity, operation)| (identity.clone(), operation))
+        .collect::<BTreeMap<_, _>>();
     let mut changes = Vec::new();
 
-    for operation in target_operations.difference(&current_operations) {
+    for (identity, operation) in &target_operations {
+        if current_operations.contains_key(identity) {
+            continue;
+        }
         changes.push(Change {
             severity: Severity::Breaking,
-            operation: crate::lock_size::parse_operation_selector(&format!(
-                "{} {}",
-                operation.method, operation.path
-            ))?,
+            operation: operation_key_from_locked(operation)?,
             message: "endpoint removed".to_string(),
         });
     }
 
-    for operation in current_operations.difference(target_operations) {
+    for (identity, operation) in &current_operations {
+        if target_operations.contains_key(identity) {
+            continue;
+        }
         changes.push(Change {
             severity: Severity::Warning,
-            operation: crate::lock_size::parse_operation_selector(&format!(
-                "{} {}",
-                operation.method, operation.path
-            ))?,
+            operation: operation.key.clone(),
             message: "endpoint added outside route-only lock".to_string(),
         });
     }
@@ -492,7 +647,7 @@ pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Re
     Ok(changes)
 }
 
-pub fn scope_current_for_verify(current: &ApiContract, scope: &v3::Scope) -> Result<ApiContract> {
+pub fn scope_current_for_verify(current: &ApiContract, scope: &Scope) -> Result<ApiContract> {
     crate::lock_size::scope_current_for_verify(current, scope.selectors())
 }
 
@@ -550,6 +705,32 @@ fn normalized_locked_operation(operation: &LockedOperation) -> Result<LockedOper
     })
 }
 
+fn operation_key_from_locked(operation: &LockedOperation) -> Result<crate::contract::OperationKey> {
+    let operation = normalized_locked_operation(operation)?;
+    let method = match operation.method.as_str() {
+        "GET" => crate::contract::HttpMethod::Get,
+        "POST" => crate::contract::HttpMethod::Post,
+        "PUT" => crate::contract::HttpMethod::Put,
+        "PATCH" => crate::contract::HttpMethod::Patch,
+        "DELETE" => crate::contract::HttpMethod::Delete,
+        "OPTIONS" => crate::contract::HttpMethod::Options,
+        "HEAD" => crate::contract::HttpMethod::Head,
+        "TRACE" => crate::contract::HttpMethod::Trace,
+        _ => unreachable!("normalized locked operation validates the method"),
+    };
+    Ok(crate::contract::OperationKey {
+        method,
+        path: operation.path,
+    })
+}
+
+fn operation_identity_from_locked(
+    operation: &LockedOperation,
+) -> Result<crate::contract::OperationIdentity> {
+    let operation = normalized_locked_operation(operation)?;
+    crate::lock_size::parse_operation_selector(&format!("{} {}", operation.method, operation.path))
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -557,9 +738,35 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::contract::Schema;
 
     fn canonical_lines(value: &str) -> String {
         value.replace("\r\n", "\n")
+    }
+
+    fn with_unknown_additional_properties(contract: &mut ApiContract) {
+        for operation in contract.operations.values_mut() {
+            for parameter in operation.parameters.values_mut() {
+                mark_schema_additional_properties_unknown(&mut parameter.schema);
+            }
+            if let Some(request_body) = &mut operation.request_body {
+                for schema in request_body.content.values_mut() {
+                    mark_schema_additional_properties_unknown(schema);
+                }
+            }
+            for response in operation.responses.values_mut() {
+                for schema in response.content.values_mut() {
+                    mark_schema_additional_properties_unknown(schema);
+                }
+            }
+        }
+    }
+
+    fn mark_schema_additional_properties_unknown(schema: &mut Schema) {
+        schema.additional_properties = crate::contract::AdditionalProperties::Unknown;
+        for property in schema.properties.values_mut() {
+            mark_schema_additional_properties_unknown(&mut property.schema);
+        }
     }
 
     fn v3_declared_fixture() -> v3::DeclaredEntry {
@@ -588,7 +795,7 @@ mod tests {
         assert!(rendered.starts_with("version: 3\n"));
         assert!(rendered.contains("provenance: declared"));
         assert!(rendered.contains("provenance: observed"));
-        assert_eq!(migrated.declared["users"], entry);
+        assert_eq!(migrated.declared_v3["users"], entry);
     }
 
     #[test]
@@ -623,7 +830,8 @@ mod tests {
                     },
                 ),
             ]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
 
@@ -691,7 +899,8 @@ mod tests {
                     ],
                 },
             )]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
         let current =
@@ -706,22 +915,38 @@ mod tests {
             vec![
                 Change {
                     severity: Severity::Breaking,
-                    operation: crate::lock_size::parse_operation_selector("GET /users").unwrap(),
+                    operation: operation_key_from_locked(&LockedOperation {
+                        method: "GET".to_string(),
+                        path: "/users".to_string()
+                    })
+                    .unwrap(),
                     message: "endpoint removed".to_string(),
                 },
                 Change {
                     severity: Severity::Breaking,
-                    operation: crate::lock_size::parse_operation_selector("GET /zeta").unwrap(),
+                    operation: operation_key_from_locked(&LockedOperation {
+                        method: "GET".to_string(),
+                        path: "/zeta".to_string()
+                    })
+                    .unwrap(),
                     message: "endpoint removed".to_string(),
                 },
                 Change {
                     severity: Severity::Warning,
-                    operation: crate::lock_size::parse_operation_selector("POST /users").unwrap(),
+                    operation: operation_key_from_locked(&LockedOperation {
+                        method: "POST".to_string(),
+                        path: "/users".to_string()
+                    })
+                    .unwrap(),
                     message: "endpoint added outside route-only lock".to_string(),
                 },
                 Change {
                     severity: Severity::Warning,
-                    operation: crate::lock_size::parse_operation_selector("POST /zeta").unwrap(),
+                    operation: operation_key_from_locked(&LockedOperation {
+                        method: "POST".to_string(),
+                        path: "/zeta".to_string()
+                    })
+                    .unwrap(),
                     message: "endpoint added outside route-only lock".to_string(),
                 },
             ]
@@ -742,7 +967,8 @@ mod tests {
                     }],
                 },
             )]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
         let current =
@@ -755,7 +981,11 @@ mod tests {
             compare_verify_target(&target, &current).expect("comparison should succeed"),
             vec![Change {
                 severity: Severity::Warning,
-                operation: crate::lock_size::parse_operation_selector("POST /users").unwrap(),
+                operation: operation_key_from_locked(&LockedOperation {
+                    method: "POST".to_string(),
+                    path: "/users".to_string()
+                })
+                .unwrap(),
                 message: "endpoint added outside route-only lock".to_string(),
             }]
         );
@@ -775,7 +1005,8 @@ mod tests {
                     }],
                 },
             )]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
 
@@ -801,7 +1032,8 @@ mod tests {
                     }],
                 },
             )]),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
 
@@ -817,11 +1049,13 @@ mod tests {
     }
 
     #[test]
-    fn load_rejects_an_unsupported_lockfile_version() {
+    fn load_rejects_an_invalid_v4_lockfile() {
         let error = load(Path::new("testdata/lock/verify_unsupported_version.lock"))
-            .expect_err("version 3 lockfile should be rejected");
+            .expect_err("invalid version 4 lockfile should be rejected");
 
-        assert!(error.to_string().contains("unsupported api.lock version 4"));
+        assert!(error
+            .to_string()
+            .contains("failed to parse api.lock v4 YAML"));
     }
 
     #[test]
@@ -849,7 +1083,8 @@ mod tests {
         let mut lock = ApiLock {
             version: 2,
             legacy_declared: BTreeMap::new(),
-            declared: BTreeMap::new(),
+            declared_v3: BTreeMap::new(),
+            declared_v4: BTreeMap::new(),
             observed: BTreeMap::new(),
         };
         record_observed(
@@ -933,7 +1168,10 @@ mod tests {
 
     #[test]
     fn v3_interns_repeated_schemas_and_expands_the_original_contract() {
-        use crate::contract::{HttpMethod, Operation, OperationKey, Response, Schema, SchemaKind};
+        use crate::contract::{
+            AdditionalProperties, HttpMethod, Operation, OperationIdentity, OperationKey, Response,
+            Schema, SchemaKind,
+        };
 
         let schema = Schema {
             kind: SchemaKind::String,
@@ -941,15 +1179,23 @@ mod tests {
             format: Some("uuid".to_string()),
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            items: None,
+            additional_properties: AdditionalProperties::Unknown,
+            branches: Vec::new(),
         };
         let operation = |path: &str| {
             (
-                OperationKey {
+                OperationIdentity {
                     method: HttpMethod::Get,
                     path: path.to_string(),
                 },
                 Operation {
+                    key: OperationKey {
+                        method: HttpMethod::Get,
+                        path: path.to_string(),
+                    },
                     auth: BTreeMap::new(),
+                    servers: None,
                     parameters: BTreeMap::new(),
                     request_body: None,
                     responses: BTreeMap::from([(
@@ -973,6 +1219,253 @@ mod tests {
 
         assert_eq!(schema_count, 1);
         assert_eq!(expanded, contract);
+    }
+
+    #[test]
+    fn v3_expands_synthetic_allof_with_outer_nullability() {
+        use crate::contract::{
+            AdditionalProperties, HttpMethod, Operation, OperationIdentity, OperationKey, Property,
+            Response, SchemaKind,
+        };
+
+        let branch = Schema {
+            kind: SchemaKind::Object,
+            nullable: true,
+            format: None,
+            enum_values: Vec::new(),
+            properties: BTreeMap::new(),
+            items: None,
+            additional_properties: AdditionalProperties::Unknown,
+            branches: Vec::new(),
+        };
+        let schema = Schema {
+            kind: SchemaKind::AllOf,
+            nullable: false,
+            format: None,
+            enum_values: Vec::new(),
+            properties: BTreeMap::from([(
+                "allOf[0]".to_string(),
+                Property {
+                    required: true,
+                    schema: Box::new(branch),
+                },
+            )]),
+            items: None,
+            additional_properties: AdditionalProperties::Unknown,
+            branches: Vec::new(),
+        };
+        let contract = ApiContract {
+            operations: BTreeMap::from([(
+                OperationIdentity {
+                    method: HttpMethod::Get,
+                    path: "/allof".to_string(),
+                },
+                Operation {
+                    key: OperationKey {
+                        method: HttpMethod::Get,
+                        path: "/allof".to_string(),
+                    },
+                    auth: BTreeMap::new(),
+                    servers: None,
+                    parameters: BTreeMap::new(),
+                    request_body: None,
+                    responses: BTreeMap::from([(
+                        "200".to_string(),
+                        Response {
+                            content: BTreeMap::from([("application/json".to_string(), schema)]),
+                        },
+                    )]),
+                },
+            )]),
+        };
+
+        let (_, expanded) =
+            super::v3::intern_and_expand_for_test(&contract).expect("legacy v3 should expand");
+        let expanded = &expanded.operations.values().next().unwrap().responses["200"].content
+            ["application/json"];
+
+        assert!(
+            !expanded.nullable,
+            "outer allOf nullability must constrain branches"
+        );
+    }
+
+    #[test]
+    fn v4_round_trips_schema_valued_additional_properties() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        ))
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let lock = new_v4("d04", entry).expect("v4 lock should build");
+        let rendered = render(&lock).expect("v4 lock should render");
+
+        assert!(
+            rendered.contains("additional_properties:\n            kind: schema"),
+            "schema-valued additionalProperties must be represented on the v4 wire"
+        );
+
+        let path = std::env::temp_dir().join(format!("apiwatch-d04-{}.lock", std::process::id()));
+        fs::write(&path, &rendered).expect("v4 lock should write");
+        let parsed = load(&path).expect("v4 lock should load");
+        fs::remove_file(path).ok();
+        let target = select_verify_target(&parsed, "d04").expect("target should select");
+
+        assert_eq!(
+            target.kind(),
+            &VerifyTargetKind::Declared {
+                contract: source,
+                scope: Scope::all(),
+                coverage: DeclaredCoverage::FullV4,
+            }
+        );
+    }
+
+    #[test]
+    fn v4_rejects_a_tampered_schema_valued_additional_properties_reference() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        ))
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("d04", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        let marker = "additional_properties:\n            kind: schema\n            schema: ";
+        assert!(
+            rendered.contains(marker),
+            "schema-valued additionalProperties must be represented on the v4 wire"
+        );
+        let tampered = rendered.replacen(marker, &format!("{marker}sha256:tampered"), 1);
+        let path =
+            std::env::temp_dir().join(format!("apiwatch-d04-tampered-{}.lock", std::process::id()));
+        fs::write(&path, tampered).expect("tampered v4 lock should write");
+        let error = load(&path).expect_err("tampered nested schema reference should fail");
+        fs::remove_file(path).ok();
+
+        assert!(error
+            .chain()
+            .any(|cause| cause.to_string().contains("schema digest mismatch")));
+    }
+
+    #[test]
+    fn v4_rejects_unknown_fields_in_additional_properties_policies() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        ))
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("d04", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        for (index, (marker, replacement)) in [
+            (
+                "additional_properties:\n            kind: any",
+                "additional_properties:\n            kind: any\n            unexpected_field: accepted",
+            ),
+            (
+                "additional_properties:\n            kind: schema\n            schema: ",
+                "additional_properties:\n            kind: schema\n            unexpected_field: accepted\n            schema: ",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert!(rendered.contains(marker), "fixture should include {index} policy");
+            let tampered = rendered.replacen(marker, replacement, 1);
+            let path = std::env::temp_dir().join(format!(
+                "apiwatch-d04-policy-field-{}-{index}.lock",
+                std::process::id()
+            ));
+            fs::write(&path, tampered).expect("tampered v4 lock should write");
+            let error = load(&path).expect_err("unknown policy fields should fail");
+            fs::remove_file(path).ok();
+
+            assert!(error
+                .to_string()
+                .contains("unknown field in additionalProperties policy"));
+        }
+    }
+
+    #[test]
+    fn v4_rejects_path_parameter_names_that_do_not_match_display_slots() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+        ))
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("d07", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        let tampered = rendered.replacen("name: userId", "name: orderId", 1);
+        let path = std::env::temp_dir().join(format!(
+            "apiwatch-d07-v4-binding-{}.lock",
+            std::process::id()
+        ));
+        fs::write(&path, tampered).expect("tampered v4 lock should write");
+        let error = load(&path).expect_err("inconsistent path parameter name should fail");
+        fs::remove_file(path).ok();
+
+        assert!(error
+            .to_string()
+            .contains("path parameter bindings do not match display path"));
+    }
+
+    #[test]
+    fn v4_rejects_authentication_kind_that_disagrees_with_its_identity_before_digest_checks() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("private", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        let tampered = rendered.replacen("kind: bearer", "kind: basic", 1);
+        let path = std::env::temp_dir().join(format!(
+            "apiwatch-d08-auth-kind-{}.lock",
+            std::process::id()
+        ));
+        fs::write(&path, tampered).expect("tampered v4 lock should write");
+        let error = load(&path).expect_err("inconsistent authentication kind should fail");
+        fs::remove_file(path).ok();
+
+        assert!(error
+            .to_string()
+            .contains("authentication kind does not match identity"));
+    }
+
+    #[test]
+    fn v4_rejects_duplicate_oauth_flow_kinds_even_when_endpoints_differ() {
+        let source = crate::openapi::load_contract_text(
+            "openapi: 3.0.3\ninfo: { title: D-08 OAuth, version: '1' }\ncomponents:\n  securitySchemes:\n    oauth:\n      type: oauth2\n      flows:\n        password:\n          tokenUrl: https://auth.example.test/token\n          scopes: {}\npaths:\n  /users:\n    get:\n      security:\n        - oauth: []\n      responses: { '200': { description: OK } }\n",
+            false,
+            "D-08 OAuth fixture",
+        )
+        .expect("fixture should load");
+        let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)
+            .expect("v4 entry should build");
+        let rendered = render(&new_v4("oauth", entry).expect("v4 lock should build"))
+            .expect("v4 lock should render");
+        let marker = "flows:\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/token\n                  refresh: null";
+        assert!(
+            rendered.contains(marker),
+            "fixture should store the OAuth flow"
+        );
+        let replacement = "flows:\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/alternate\n                  refresh: null\n                - kind: password\n                  authorization: null\n                  token: https://auth.example.test/token\n                  refresh: null"
+            .to_string();
+        let tampered = rendered.replacen(marker, &replacement, 1);
+        let path = std::env::temp_dir().join(format!(
+            "apiwatch-d08-oauth-flow-{}.lock",
+            std::process::id()
+        ));
+        fs::write(&path, tampered).expect("tampered v4 lock should write");
+        let error = load(&path).expect_err("duplicate OAuth flow kinds should fail");
+        fs::remove_file(path).ok();
+
+        assert!(error
+            .to_string()
+            .contains("OAuth authentication flows contain duplicate kinds"));
     }
 
     #[test]
@@ -1038,7 +1531,15 @@ mod tests {
             )
         );
         assert_eq!(first, second);
-        assert_eq!(expanded, source);
+        let mut expected = source;
+        with_unknown_additional_properties(&mut expected);
+        for operation in expected.operations.values_mut() {
+            operation.servers = None;
+            for auth in operation.auth.values_mut() {
+                auth.identity = None;
+            }
+        }
+        assert_eq!(expanded, expected);
         for sentinel in crate::lock_size::PRIVACY_SENTINELS {
             assert!(!first.contains(sentinel), "leaked {sentinel}");
         }
@@ -1083,6 +1584,50 @@ mod tests {
             .expect_err("tampered contract digest should fail")
             .to_string()
             .contains("contract digest mismatch"));
+    }
+
+    #[test]
+    fn v3_scope_all_rejects_digest_and_same_length_contract_tampering() {
+        let source =
+            crate::openapi::load_contract(Path::new("testdata/openapi/privacy_sentinels.yaml"))
+                .expect("fixture should load");
+        let entry = super::v3::build_declared(
+            &source,
+            super::v3::Scope::all(),
+            super::v3::DEFAULT_MAX_LOCK_BYTES,
+            BTreeMap::new(),
+        )
+        .expect("entry should build");
+        let rendered = super::v3::render(
+            &super::v3::V3Lock::single_declared("private", entry).expect("lock should build"),
+        )
+        .expect("lock should render");
+        let digest = rendered
+            .lines()
+            .find(|line| line.trim_start().starts_with("contract_digest:"))
+            .expect("lock should contain a digest");
+        let replacement = format!("{}0", &digest[..digest.len() - 1]);
+        let digest_tampered = rendered.replacen(digest, &replacement, 1);
+        assert!(super::v3::load(&digest_tampered)
+            .expect_err("digest-only tampering must fail")
+            .to_string()
+            .contains("contract digest mismatch"));
+
+        let semantic_tampered = rendered.replacen("'200':", "'201':", 1);
+        assert!(super::v3::load(&semantic_tampered)
+            .expect_err("same-length contract tampering must fail")
+            .to_string()
+            .contains("contract digest mismatch"));
+    }
+
+    #[test]
+    fn v3_loads_legacy_scoped_path_selectors_after_validating_their_digest() {
+        let source = crate::openapi::load_contract(Path::new(
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+        ))
+        .expect("fixture should load");
+        super::v3::legacy_scoped_path_selector_loads_for_test(&source)
+            .expect("legacy scoped selector should remain compatible");
     }
 
     #[test]

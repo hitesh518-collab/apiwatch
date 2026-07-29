@@ -18,6 +18,15 @@ fn corpus_file(filename: &str) -> PathBuf {
 
 fn assert_clean_self_diff(filename: &str) {
     let path = corpus_file(filename);
+    let contract =
+        apiwatch::openapi::load_contract(&path).expect("compatibility contract should normalize");
+    let payload_bytes = apiwatch::lockfile::measure_v4_contract_payload(&contract)
+        .expect("production v4 contract payload should serialize");
+    assert!(
+        payload_bytes <= apiwatch::lockfile::DEFAULT_MAX_LOCK_BYTES,
+        "{filename} v4 contract payload is {payload_bytes} bytes and exceeds {}",
+        apiwatch::lockfile::DEFAULT_MAX_LOCK_BYTES
+    );
     let path = path.to_str().expect("compatibility path should be UTF-8");
     Command::cargo_bin("apiwatch")
         .expect("binary should build")

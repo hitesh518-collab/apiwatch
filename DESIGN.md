@@ -17,14 +17,19 @@ diff / lock / Verify
 text, JSON, or SARIF
 ```
 
-`diff` compares two normalized contracts. Current v1 and v2 declared locks
-store only normalized operation routes, so current declared Verify detects
-route drift rather than complete semantic drift.
+`diff` compares two normalized contracts. The normalized `ApiContract`
+boundary owns semantic operation identity, effective server templates,
+authentication wire identity, parameters, request/response media, schema
+requiredness and nullability, formats, enums, composition branches,
+first-class array items, and `additionalProperties` policy. Input-specific
+OpenAPI labels, branch order, examples, defaults, and literal server values do
+not cross that boundary.
 
-Phase 1 will design lockfile v3 and store enough normalized contract data for
-declared Verify to deserialize the lock and call the same `diff_contracts`
-comparison path as `diff`. This is an approved direction, not an implemented
-format. The exact v3 representation remains a separate design decision.
+Current v4 declared locks encode that complete normalized model in a
+content-addressed, value-free wire contract. Declared Verify reconstructs an
+`ApiContract` and calls the same `diff_contracts` comparison path as `diff`.
+Version 3 reconstructs its older model but reports partial Phase 2 coverage;
+versions 1 and 2 remain route-only.
 
 ### Observed Contracts
 
@@ -50,6 +55,10 @@ and dynamic map keys.
 ## Stable Boundaries
 
 - Normalized contracts isolate input parsing from comparison.
+- The comparison engine consumes only normalized contracts; it does not parse
+  OpenAPI or inspect lockfile wire structures.
+- Lockfile v4 owns deterministic interning, wire validation, digest
+  revalidation, size enforcement, and reconstruction back to `ApiContract`.
 - Lock entries carry explicit declared or observed provenance.
 - Text, versioned JSON, and SARIF formatters present comparison results.
 - Exit code `0` means clean, `1` means drift or breaking change, and `2` means

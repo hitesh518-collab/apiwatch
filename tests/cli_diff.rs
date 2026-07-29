@@ -2,8 +2,856 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::{json, Value};
 
+const PHASE2_D07_COLLIDING_PATHS: &str = "openapi: 3.0.3\ninfo: { title: D-07 collision, version: '1' }\npaths:\n  /users/{id}:\n    get:\n      parameters:\n        - { name: id, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n  /users/{name}:\n    get:\n      parameters:\n        - { name: name, in: path, required: true, schema: { type: string } }\n      responses: { '200': { description: ok } }\n";
+
+const PHASE2_D10_ITEM_DIRECTION_OLD: &str = "openapi: 3.0.3\ninfo: { title: D-10 directions, version: '1' }\npaths:\n  /request-add:\n    post:\n      requestBody: { content: { application/json: { schema: { type: array } } } }\n      responses: { '200': { description: OK } }\n  /request-remove:\n    post:\n      requestBody: { content: { application/json: { schema: { type: array, items: { type: string } } } } }\n      responses: { '200': { description: OK } }\n  /response-add:\n    get:\n      responses: { '200': { description: OK, content: { application/json: { schema: { type: array } } } } }\n  /response-remove:\n    get:\n      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: string } } } } } }\n";
+const PHASE2_D10_ITEM_DIRECTION_NEW: &str = "openapi: 3.0.3\ninfo: { title: D-10 directions, version: '2' }\npaths:\n  /request-add:\n    post:\n      requestBody: { content: { application/json: { schema: { type: array, items: { type: string } } } } }\n      responses: { '200': { description: OK } }\n  /request-remove:\n    post:\n      requestBody: { content: { application/json: { schema: { type: array } } } }\n      responses: { '200': { description: OK } }\n  /response-add:\n    get:\n      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { type: string } } } } } }\n  /response-remove:\n    get:\n      responses: { '200': { description: OK, content: { application/json: { schema: { type: array } } } } }\n";
+
+#[test]
+fn phase2_d10_classifies_array_item_presence_directionally() {
+    let old = tempfile::NamedTempFile::new().expect("old document should be created");
+    let new = tempfile::NamedTempFile::new().expect("new document should be created");
+    std::fs::write(old.path(), PHASE2_D10_ITEM_DIRECTION_OLD).expect("old document should write");
+    std::fs::write(new.path(), PHASE2_D10_ITEM_DIRECTION_NEW).expect("new document should write");
+
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("old path should be UTF-8"),
+            new.path().to_str().expect("new path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            { "severity": "non_breaking", "method": "GET", "path": "/response-add", "message": "response 200 application/json field items added" },
+            { "severity": "breaking", "method": "GET", "path": "/response-remove", "message": "response 200 application/json field items removed" },
+            { "severity": "breaking", "method": "POST", "path": "/request-add", "message": "request application/json field items added as required" },
+            { "severity": "non_breaking", "method": "POST", "path": "/request-remove", "message": "request application/json field items removed" },
+        ])
+    );
+}
+
+#[test]
+fn phase2_d10_compares_first_class_array_items_directionally() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d10_array_items_old.yaml",
+            "testdata/openapi/phase2_d10_array_items_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            { "severity": "warning", "method": "GET", "path": "/nested", "message": "response 200 application/json field items.items format changed from uuid to date-time" },
+            { "severity": "breaking", "method": "GET", "path": "/users", "message": "response 200 application/json field items.name removed" },
+            { "severity": "breaking", "method": "POST", "path": "/users", "message": "request application/json field items.email added as required" }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d08_matches_authentication_by_wire_identity() {
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d08_auth_identity_old.yaml",
+            "testdata/openapi/phase2_d08_auth_identity_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "GET /keyed: authentication apiKeyAuth changed identity",
+        ))
+        .stdout(predicate::str::contains("GET /renamed").not());
+}
+
+#[test]
+fn phase2_d08_rejects_duplicate_authentication_identity_without_echoing_controls() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    std::fs::write(
+        document.path(),
+        "openapi: 3.0.3\ninfo: { title: D-08 duplicate, version: '1' }\ncomponents:\n  securitySchemes:\n    bearerAuth:\n      type: http\n      scheme: bearer\n    \"duplicate\\e\":\n      type: http\n      scheme: bearer\npaths:\n  /duplicate:\n    get:\n      security:\n        - bearerAuth: []\n          \"duplicate\\e\": []\n      responses: { '200': { description: OK } }\n",
+    )
+    .expect("temporary OpenAPI document should be written");
+
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            document
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "testdata/openapi/phase2_d08_auth_identity_old.yaml",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("duplicate authentication identity"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+}
+
+#[test]
+fn phase2_d07_ignores_positional_path_placeholder_renames() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+            "testdata/openapi/phase2_d07_path_template_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(parse_json_output(&output)["changes"], json!([]));
+}
+
+#[test]
+fn phase2_d07_rejects_ambiguous_positional_path_template_identity() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    std::fs::write(document.path(), PHASE2_D07_COLLIDING_PATHS)
+        .expect("temporary OpenAPI document should be written");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            document
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "ambiguous operation identity GET /users/{0}",
+        ));
+}
+
+#[test]
+fn phase2_d07_rejects_duplicate_same_layer_parameters() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    std::fs::write(
+        document.path(),
+        "openapi: 3.0.3\ninfo: { title: D-07 duplicate parameters, version: '1' }\npaths:\n  /users:\n    get:\n      parameters:\n        - { name: page, in: query, schema: { type: integer } }\n        - { name: page, in: query, schema: { type: integer } }\n      responses: { '200': { description: ok } }\n",
+    )
+    .expect("temporary OpenAPI document should be written");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            document
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("duplicate parameter query:page"));
+}
+
+fn phase2_d06_openapi(server: &str) -> String {
+    format!(
+        "openapi: 3.0.3\ninfo: {{ title: D-06 Regression, version: '1' }}\nservers:\n  - url: {server:?}\npaths:\n  /users:\n    get:\n      responses: {{ '204': {{ description: ok }} }}\n"
+    )
+}
+
+fn phase2_d06_source(server: &str) -> tempfile::NamedTempFile {
+    let source = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary source should be created");
+    std::fs::write(source.path(), phase2_d06_openapi(server))
+        .expect("temporary source should be written");
+    source
+}
+
+#[test]
+fn phase2_d06_redacts_entire_query_values_that_mix_variables_and_literals() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let source = phase2_d06_source(
+        "https://api.example.com/v1?tenant={tenant}-literal-secret&token=plain-secret",
+    );
+    let lock = directory.path().join("private.lock");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            source
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--name",
+            "private",
+            "--output",
+            lock.to_str().expect("temporary path should be UTF-8"),
+        ])
+        .assert()
+        .success();
+
+    let rendered = std::fs::read_to_string(&lock).expect("lock should be readable");
+    assert!(rendered.contains("tenant={tenant}{redacted}"));
+    assert!(rendered.contains("token={redacted}"));
+    assert!(!rendered.contains("literal-secret"));
+    assert!(!rendered.contains("plain-secret"));
+
+    let changed = phase2_d06_source(
+        "https://api.example.com/v1?tenant={tenant}-other-secret&token=other-secret",
+    );
+    let diff = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            source
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            changed
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    assert_eq!(diff.status.code(), Some(0));
+    let findings = String::from_utf8_lossy(&diff.stdout);
+    for secret in ["literal-secret", "plain-secret", "other-secret"] {
+        assert!(!findings.contains(secret), "finding leaked {secret}");
+    }
+}
+
+#[test]
+fn phase2_d06_treats_percent_encoded_braces_as_literal_query_data() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let old = phase2_d06_source("https://api.example.com/v1?token=%7Bliteral-secret%7D");
+    let new = phase2_d06_source("https://api.example.com/v1?token=%7Bcounterpart-secret%7D");
+    let lock = directory.path().join("encoded-braces.lock");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            "--name",
+            "encoded-braces",
+            "--output",
+            lock.to_str().expect("temporary path should be UTF-8"),
+        ])
+        .assert()
+        .success();
+    let lock_bytes = std::fs::read(&lock).expect("lock should be readable");
+    let rendered_lock = String::from_utf8_lossy(&lock_bytes);
+    assert!(rendered_lock.contains("token={redacted}"));
+
+    let diff = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    assert_eq!(diff.status.code(), Some(0));
+    let findings = String::from_utf8_lossy(&diff.stdout);
+    for secret in ["literal-secret", "counterpart-secret"] {
+        assert!(!rendered_lock.contains(secret), "lock leaked {secret}");
+        assert!(!findings.contains(secret), "finding leaked {secret}");
+    }
+}
+
+#[test]
+fn phase2_d06_keeps_query_placeholder_identity_while_redacting_literal_portions() {
+    let old = phase2_d06_source("https://api.example.com/v1?tenant={tenant}");
+    let new = phase2_d06_source("https://api.example.com/v1?tenant={organization}");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {"severity": "breaking", "method": "GET", "path": "/users", "message": "server https://api.example.com/v1?tenant={tenant} removed"},
+            {"severity": "non_breaking", "method": "GET", "path": "/users", "message": "server https://api.example.com/v1?tenant={organization} added"}
+        ])
+    );
+}
+
+#[test]
+fn phase2_d06_does_not_restore_placeholders_into_percent_decoded_query_keys() {
+    let old = phase2_d06_source("https://api.example.com/v1?%61piwatchplaceholder0x={name}");
+    let new = phase2_d06_source("https://api.example.com/v1?{name}={name}");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+}
+
+#[test]
+fn phase2_d06_preserves_network_relative_authority_in_server_changes() {
+    let old = phase2_d06_source("//old.example.com/v1");
+    let new = phase2_d06_source("//new.example.com/v1");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {"severity": "breaking", "method": "GET", "path": "/users", "message": "server //old.example.com/v1 removed"},
+            {"severity": "non_breaking", "method": "GET", "path": "/users", "message": "server //new.example.com/v1 added"}
+        ])
+    );
+}
+
+#[test]
+fn phase2_d06_preserves_template_ports() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let source = phase2_d06_source("https://api.example.com:{port}/v1");
+    let lock = directory.path().join("port.lock");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            source
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--name",
+            "port",
+            "--output",
+            lock.to_str().expect("temporary path should be UTF-8"),
+        ])
+        .assert()
+        .success();
+
+    assert!(std::fs::read_to_string(lock)
+        .expect("lock should be readable")
+        .contains("https://api.example.com:{port}/v1"));
+}
+
+#[test]
+fn phase2_d06_does_not_collide_placeholder_tokens_with_literal_url_text() {
+    let old = phase2_d06_source("https://api.example.com/apiwatchplaceholder0/{name}");
+    let new = phase2_d06_source("https://api.example.com/{name}/{name}");
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("temporary path should be UTF-8"),
+            new.path().to_str().expect("temporary path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+}
+
+#[test]
+fn phase2_d06_reencodes_query_keys_for_v4_canonical_validation() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let source = phase2_d06_source("https://api.example.com/v1?a%26b=value");
+    let lock = directory.path().join("encoded-key.lock");
+    let source_path = source
+        .path()
+        .to_str()
+        .expect("temporary path should be UTF-8");
+    let lock_path = lock.to_str().expect("temporary path should be UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            source_path,
+            "--name",
+            "encoded",
+            "--output",
+            lock_path,
+        ])
+        .assert()
+        .success();
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "verify",
+            source_path,
+            "--name",
+            "encoded",
+            "--lock",
+            lock_path,
+        ])
+        .assert()
+        .success();
+    assert!(std::fs::read_to_string(lock)
+        .expect("lock should be readable")
+        .contains("a%26b={redacted}"));
+}
+
+#[test]
+fn phase2_d06_diff_reports_effective_server_changes_without_leaking_values() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d06_servers_old.yaml",
+            "testdata/openapi/phase2_d06_servers_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/removed",
+                "message": "server https://api.example.com/v1 removed"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "GET",
+                "path": "/added",
+                "message": "server https://backup.example.com/v1 added"
+            }
+        ])
+    );
+    let rendered = String::from_utf8_lossy(&output.stdout);
+    assert!(!rendered.contains("tenant=old"));
+    assert!(!rendered.contains("tenant=new"));
+}
+
+#[test]
+fn phase2_d06_rejects_server_credentials_without_echoing_them() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let source = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary source should be created");
+    std::fs::write(
+        source.path(),
+        "openapi: 3.0.3\ninfo: { title: Private, version: '1' }\nservers:\n  - url: https://user:secret@example.com/v1\npaths:\n  /users:\n    get:\n      responses: { '204': { description: ok } }\n",
+    )
+    .expect("temporary source should be written");
+    let lock = directory.path().join("private.lock");
+
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            source
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
+            "--name",
+            "private",
+            "--output",
+            lock.to_str().expect("temporary path should be UTF-8"),
+        ])
+        .output()
+        .expect("Lock command should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("credentials"));
+    assert!(!stderr.contains("secret"));
+    assert!(!std::fs::read(&lock)
+        .unwrap_or_default()
+        .windows(b"secret".len())
+        .any(|bytes| bytes == b"secret"));
+}
+
 fn parse_json_output(output: &std::process::Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("stdout should be JSON")
+}
+
+#[test]
+fn phase2_d01_diff_reports_request_body_presence_and_requiredness() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d01_request_body_old.yaml",
+            "testdata/openapi/phase2_d01_request_body_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/optional-added",
+                "message": "request body added as optional"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/required-added",
+                "message": "request body added as required"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/requiredness",
+                "message": "request body changed from optional to required"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d01_diff_reports_request_body_removal_and_relaxed_requiredness() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d01_request_body_new.yaml",
+            "testdata/openapi/phase2_d01_request_body_old.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/optional-added",
+                "message": "request body removed"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/required-added",
+                "message": "request body removed"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/requiredness",
+                "message": "request body changed from required to optional"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d02_diff_reports_canonical_media_type_changes() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d02_content_type_old.yaml",
+            "testdata/openapi/phase2_d02_content_type_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/response",
+                "message": "response 200 content type application/problem+json added"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/request",
+                "message": "request content type application/json removed"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/request",
+                "message": "request content type application/xml added"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d02_diff_reports_canonical_media_type_reversals() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d02_content_type_new.yaml",
+            "testdata/openapi/phase2_d02_content_type_old.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/response",
+                "message": "response 200 content type application/problem+json removed"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/request",
+                "message": "request content type application/xml removed"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/request",
+                "message": "request content type application/json added"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d03_diff_reports_response_requiredness_symmetrically() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d03_response_required_old.yaml",
+            "testdata/openapi/phase2_d03_response_required_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/users",
+                "message": "response 200 application/json field id changed from required to optional"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "GET",
+                "path": "/users",
+                "message": "response 200 application/json field name changed from optional to required"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d04_diff_reports_additional_properties_direction_and_schema_changes() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+            "testdata/openapi/phase2_d04_additional_properties_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/nested-response",
+                "message": "response 200 application/json field envelope.additionalProperties changed from forbidden to any"
+            },
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/response-broadened",
+                "message": "response 200 application/json additionalProperties changed from forbidden to any"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "GET",
+                "path": "/response-narrowed",
+                "message": "response 200 application/json additionalProperties changed from any to forbidden"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/nested-request",
+                "message": "request application/json field envelope.additionalProperties changed from any to forbidden"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/request-broadened",
+                "message": "request application/json additionalProperties changed from forbidden to any"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/request-narrowed",
+                "message": "request application/json additionalProperties changed from any to forbidden"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/typed-map",
+                "message": "request application/json additionalProperties type changed from string to integer"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/typed-map-policy",
+                "message": "request application/json field additionalProperties.additionalProperties changed from any to forbidden"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d05_diff_reports_schema_format_changes_as_warnings() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d05_format_old.yaml",
+            "testdata/openapi/phase2_d05_format_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            {
+                "severity": "warning",
+                "method": "GET",
+                "path": "/events",
+                "message": "response 200 application/json field created_at format changed from date to date-time"
+            },
+            {
+                "severity": "warning",
+                "method": "POST",
+                "path": "/users",
+                "message": "request application/json field count format changed from int32 to int64"
+            },
+            {
+                "severity": "warning",
+                "method": "POST",
+                "path": "/users",
+                "message": "request application/json field id format changed from none to uuid"
+            }
+        ])
+    );
 }
 
 fn sarif_rule_ids(rendered: &Value) -> Vec<&str> {
@@ -1022,7 +1870,7 @@ fn diff_exits_two_for_circular_schema_ref() {
 }
 
 #[test]
-fn diff_detects_oneof_branch_type_change() {
+fn diff_classifies_oneof_branch_type_replacement() {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
 
     command
@@ -1035,7 +1883,7 @@ fn diff_detects_oneof_branch_type_change() {
         .code(1)
         .stdout(predicate::str::contains("Breaking changes"))
         .stdout(predicate::str::contains(
-            "GET /search: response 200 application/json field oneOf[0] type changed from string to integer",
+            "GET /search: response 200 application/json field oneOf[1] added",
         ));
 }
 
@@ -1053,7 +1901,7 @@ fn diff_detects_allof_branch_field_removed() {
         .code(1)
         .stdout(predicate::str::contains("Breaking changes"))
         .stdout(predicate::str::contains(
-            "GET /users: response 200 application/json field allOf[0].name removed",
+            "GET /users: response 200 application/json field name removed",
         ));
 }
 
@@ -1071,8 +1919,66 @@ fn diff_detects_anyof_branch_field_type_change() {
         .code(1)
         .stdout(predicate::str::contains("Breaking changes"))
         .stdout(predicate::str::contains(
-            "GET /search: response 200 application/json field anyOf[0].result type changed from string to integer",
+            "GET /search: response 200 application/json field anyOf[1].result type changed from string to integer",
         ));
+}
+
+#[test]
+fn phase2_d09_compares_composition_branches_semantically() {
+    let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
+
+    command
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d09_composition_old.yaml",
+            "testdata/openapi/phase2_d09_composition_new.yaml",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains(
+            "POST /request-branch-removal: request application/json field oneOf[1] removed",
+        ))
+        .stdout(predicate::str::contains(
+            "GET /response-branch-addition: response 200 application/json field anyOf[1] added",
+        ))
+        .stdout(predicate::str::contains(
+            "GET /allof-required-change: response 200 application/json field name changed from required to optional",
+        ))
+        .stdout(predicate::str::contains("GET /allof-reordered").not())
+        .stdout(predicate::str::contains("GET /allof-empty-neutral").not())
+        .stdout(predicate::str::contains("GET /oneof-reordered").not())
+        .stdout(predicate::str::contains("GET /anyof-reordered").not())
+        .stdout(predicate::str::contains("GET /enum-branch-dedup").not());
+}
+
+#[test]
+fn phase2_d11_classifies_enum_changes_directionally_without_duplicates() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d11_enum_policy_old.yaml",
+            "testdata/openapi/phase2_d11_enum_policy_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&output)["changes"],
+        json!([
+            { "severity": "breaking", "method": "GET", "path": "/response-added", "message": "response 200 application/json field response_added enum value current added" },
+            { "severity": "breaking", "method": "GET", "path": "/response-added", "message": "response 200 application/json field response_boolean_added enum value true added" },
+            { "severity": "non_breaking", "method": "GET", "path": "/response-removed", "message": "response 200 application/json field response_boolean_removed enum value true removed" },
+            { "severity": "non_breaking", "method": "GET", "path": "/response-removed", "message": "response 200 application/json field response_removed enum value legacy removed" },
+            { "severity": "non_breaking", "method": "POST", "path": "/request-added", "message": "request application/json field request_added enum value current added" },
+            { "severity": "non_breaking", "method": "POST", "path": "/request-added", "message": "request application/json field request_boolean_added enum value true added" },
+            { "severity": "breaking", "method": "POST", "path": "/request-removed", "message": "request application/json field request_boolean_removed enum value true removed" },
+            { "severity": "breaking", "method": "POST", "path": "/request-removed", "message": "request application/json field request_removed enum value legacy removed" },
+        ])
+    );
 }
 
 #[test]

@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
+pub use super::Scope;
 use crate::contract::{AuthSchemeKind, SchemaKind};
 
 pub const DEFAULT_MAX_LOCK_BYTES: u64 = 5_242_880;
@@ -86,42 +87,6 @@ pub(super) enum V3Api {
 #[serde(deny_unknown_fields)]
 pub(super) struct ObservedEntry {
     shape: crate::observed::Shape,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Scope {
-    All(AllScope),
-    Operations(OperationScope),
-}
-
-impl Scope {
-    pub(super) fn all() -> Self {
-        Self::All(AllScope::All)
-    }
-
-    pub(super) fn operations(operations: Vec<String>) -> Self {
-        Self::Operations(OperationScope { operations })
-    }
-
-    pub(super) fn selectors(&self) -> &[String] {
-        match self {
-            Self::All(_) => &[],
-            Self::Operations(scope) => &scope.operations,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AllScope {
-    #[serde(rename = "all")]
-    All,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OperationScope {
-    operations: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -291,9 +256,44 @@ pub(super) fn load(contents: &str) -> Result<V3Lock> {
     let raw: serde_yaml::Value =
         serde_yaml::from_str(contents).context("failed to parse api.lock v3 YAML")?;
     validate_raw_observed_shapes(&raw)?;
-    let lock: V3Lock = serde_yaml::from_value(raw).context("failed to parse api.lock v3 YAML")?;
+    let mut lock: V3Lock =
+        serde_yaml::from_value(raw).context("failed to parse api.lock v3 YAML")?;
+    for api in lock.apis.values_mut() {
+        if let V3Api::Declared(entry) = api {
+            validate_stored_contract_digest(entry)?;
+            canonicalize_scope_on_load(&mut entry.scope)?;
+            entry.contract_digest =
+                canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?;
+        }
+    }
     validate_lock(&lock)?;
     Ok(lock)
+}
+
+fn validate_stored_contract_digest(entry: &DeclaredEntry) -> Result<()> {
+    canonical::validate_extensions(&entry.extensions)?;
+    canonical::validate_digest(&entry.contract_digest)?;
+    if canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?
+        != entry.contract_digest
+    {
+        return Err(anyhow!("declared api contract digest mismatch"));
+    }
+    Ok(())
+}
+
+fn canonicalize_scope_on_load(scope: &mut Scope) -> Result<()> {
+    let Scope::Operations(scope) = scope else {
+        return Ok(());
+    };
+    scope.operations = scope
+        .operations
+        .iter()
+        .map(|selector| crate::lock_size::parse_operation_selector(selector))
+        .collect::<Result<BTreeSet<_>>>()?
+        .into_iter()
+        .map(|identity| format!("{} {}", identity.method.as_str(), identity.path))
+        .collect();
+    Ok(())
 }
 
 fn validate_raw_observed_shapes(raw: &serde_yaml::Value) -> Result<()> {
@@ -441,7 +441,14 @@ fn validate_scope_contract(scope: &Scope, contract: &Contract) -> Result<()> {
     let stored = contract
         .operations
         .keys()
-        .map(|key| schema::parse_operation_key(key))
+        .map(|key| {
+            let key = schema::parse_operation_key(key)?;
+            let (path, _) = crate::openapi::identity::canonical_path_template(&key.path)?;
+            Ok(crate::contract::OperationIdentity {
+                method: key.method,
+                path,
+            })
+        })
         .collect::<Result<BTreeSet<_>>>()?;
     if scoped != stored {
         return Err(anyhow!(
@@ -752,4 +759,22 @@ pub(super) fn tampered_contract_digest_error_for_test(
     let mut entry = build_declared(contract, Scope::all(), u64::MAX, BTreeMap::new())?;
     entry.contract_digest = format!("sha256:{}", "0".repeat(64));
     validate_declared("test", &entry).map(|_| ())
+}
+
+#[cfg(test)]
+pub(super) fn legacy_scoped_path_selector_loads_for_test(
+    contract: &crate::contract::ApiContract,
+) -> anyhow::Result<()> {
+    let mut entry = build_declared(
+        contract,
+        Scope::operations(vec!["GET /users/{0}/orders/{1}".to_string()]),
+        DEFAULT_MAX_LOCK_BYTES,
+        BTreeMap::new(),
+    )?;
+    entry.scope = Scope::operations(vec!["GET /users/{userId}/orders/{orderId}".to_string()]);
+    entry.contract_digest =
+        canonical::contract_digest(&entry.scope, &entry.contract, &entry.extensions)?;
+    let lock = V3Lock::single_declared("d07", entry)?;
+    let legacy = serde_yaml::to_string(&lock)?;
+    load(&legacy).map(|_| ())
 }

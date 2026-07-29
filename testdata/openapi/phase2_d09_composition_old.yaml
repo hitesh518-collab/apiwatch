@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: D-09 composition old
+  version: 1.0.0
+paths:
+  /allof-reordered:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    required: [name]
+                    properties:
+                      name: { type: string }
+                  - type: object
+                    properties:
+                      age: { type: integer }
+  /oneof-reordered:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { type: string }
+                  - { type: integer }
+  /anyof-reordered:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    properties:
+                      alpha: { type: string }
+                  - type: object
+                    properties:
+                      beta: { type: integer }
+  /request-branch-removal:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - { type: string }
+                - { type: integer }
+      responses:
+        '204': { description: Done }
+  /response-branch-addition:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - { type: string }
+  /allof-required-change:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - type: object
+                    required: [name]
+                    properties:
+                      name: { type: string }
+                  - type: object
+                    properties:
+                      age: { type: integer }
+  /allof-empty-neutral:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+  /enum-branch-dedup:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: string
+                    enum: [alpha, beta]
+                  - type: string
+                    enum: [beta, alpha]

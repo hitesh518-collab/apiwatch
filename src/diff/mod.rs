@@ -1,6 +1,6 @@
 use crate::contract::{
-    ApiContract, AuthRequirement, OperationKey, Parameter, ParameterKey, RequestBody, Response,
-    Schema, SchemaKind,
+    AdditionalProperties, ApiContract, AuthRequirement, OperationKey, Parameter, ParameterKey,
+    RequestBody, Response, Schema, SchemaKind,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,30 +19,38 @@ pub struct Change {
 
 pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
     let mut changes = Vec::new();
+    let mut server_changes = Vec::new();
 
-    for key in old.operations.keys() {
-        if !new.operations.contains_key(key) {
+    for (identity, operation) in &old.operations {
+        if !new.operations.contains_key(identity) {
             changes.push(Change {
                 severity: Severity::Breaking,
-                operation: key.clone(),
+                operation: operation.key.clone(),
                 message: "endpoint removed".to_string(),
             });
         }
     }
 
-    for key in new.operations.keys() {
-        if !old.operations.contains_key(key) {
+    for (identity, operation) in &new.operations {
+        if !old.operations.contains_key(identity) {
             changes.push(Change {
                 severity: Severity::NonBreaking,
-                operation: key.clone(),
+                operation: operation.key.clone(),
                 message: "endpoint added".to_string(),
             });
         }
     }
 
-    for (key, old_operation) in &old.operations {
-        if let Some(new_operation) = new.operations.get(key) {
+    for (identity, old_operation) in &old.operations {
+        if let Some(new_operation) = new.operations.get(identity) {
+            let key = &old_operation.key;
             diff_auth_requirements(&mut changes, key, &old_operation.auth, &new_operation.auth);
+            diff_servers(
+                &mut server_changes,
+                key,
+                old_operation.servers.as_ref(),
+                new_operation.servers.as_ref(),
+            );
             diff_parameters(
                 &mut changes,
                 key,
@@ -64,7 +72,44 @@ pub fn diff_contracts(old: &ApiContract, new: &ApiContract) -> Vec<Change> {
         }
     }
 
+    server_changes.sort_by(|left, right| {
+        let severity = |change: &Change| match change.severity {
+            Severity::Breaking => 0,
+            Severity::Warning => 1,
+            Severity::NonBreaking => 2,
+        };
+        severity(left)
+            .cmp(&severity(right))
+            .then_with(|| left.operation.cmp(&right.operation))
+            .then_with(|| left.message.cmp(&right.message))
+    });
+    changes.extend(server_changes);
     changes
+}
+
+fn diff_servers(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    old: Option<&std::collections::BTreeSet<crate::contract::ServerTemplate>>,
+    new: Option<&std::collections::BTreeSet<crate::contract::ServerTemplate>>,
+) {
+    let (Some(old), Some(new)) = (old, new) else {
+        return;
+    };
+    for server in old.difference(new) {
+        changes.push(Change {
+            severity: Severity::Breaking,
+            operation: operation.clone(),
+            message: format!("server {} removed", server.0),
+        });
+    }
+    for server in new.difference(old) {
+        changes.push(Change {
+            severity: Severity::NonBreaking,
+            operation: operation.clone(),
+            message: format!("server {} added", server.0),
+        });
+    }
 }
 
 fn diff_auth_requirements(
@@ -73,19 +118,36 @@ fn diff_auth_requirements(
     old: &std::collections::BTreeMap<String, AuthRequirement>,
     new: &std::collections::BTreeMap<String, AuthRequirement>,
 ) {
-    for (name, old_requirement) in old {
-        let Some(new_requirement) = new.get(name) else {
-            changes.push(Change {
-                severity: Severity::NonBreaking,
-                operation: operation.clone(),
-                message: format!(
-                    "authentication {} ({}) removed",
-                    old_requirement.name,
-                    old_requirement.kind.as_str()
-                ),
-            });
+    let mut matched_old = std::collections::BTreeSet::new();
+    let mut matched_new = std::collections::BTreeSet::new();
+
+    for (old_name, old_requirement) in old {
+        let Some(old_identity) = old_requirement.identity.as_ref() else {
             continue;
         };
+        if matches!(old_identity, crate::contract::AuthIdentity::Unknown { .. }) {
+            continue;
+        }
+        if let Some((new_name, new_requirement)) = new.iter().find(|(new_name, new_requirement)| {
+            !matched_new.contains(*new_name)
+                && new_requirement.identity.as_ref() == Some(old_identity)
+        }) {
+            matched_old.insert(old_name.clone());
+            matched_new.insert(new_name.clone());
+            diff_auth_scopes(changes, operation, old_requirement, new_requirement);
+        }
+    }
+
+    for (name, old_requirement) in old {
+        if matched_old.contains(name) {
+            continue;
+        }
+        let Some(new_requirement) = new.get(name).filter(|_| !matched_new.contains(name)) else {
+            continue;
+        };
+
+        matched_old.insert(name.clone());
+        matched_new.insert(name.clone());
 
         if old_requirement.kind != new_requirement.kind {
             changes.push(Change {
@@ -98,13 +160,37 @@ fn diff_auth_requirements(
                     new_requirement.kind.as_str()
                 ),
             });
+        } else if old_requirement.identity.is_some()
+            && new_requirement.identity.is_some()
+            && old_requirement.identity != new_requirement.identity
+        {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: format!("authentication {} changed identity", new_requirement.name),
+            });
         }
 
         diff_auth_scopes(changes, operation, old_requirement, new_requirement);
     }
 
+    for (name, old_requirement) in old {
+        if matched_old.contains(name) {
+            continue;
+        }
+        changes.push(Change {
+            severity: Severity::NonBreaking,
+            operation: operation.clone(),
+            message: format!(
+                "authentication {} ({}) removed",
+                old_requirement.name,
+                old_requirement.kind.as_str()
+            ),
+        });
+    }
+
     for (name, new_requirement) in new {
-        if !old.contains_key(name) {
+        if !matched_new.contains(name) {
             changes.push(Change {
                 severity: Severity::Breaking,
                 operation: operation.clone(),
@@ -270,6 +356,26 @@ fn diff_responses(
             continue;
         };
 
+        for content_type in old_response.content.keys() {
+            if !new_response.content.contains_key(content_type) {
+                changes.push(Change {
+                    severity: Severity::Breaking,
+                    operation: operation.clone(),
+                    message: format!("response {status} content type {content_type} removed"),
+                });
+            }
+        }
+
+        for content_type in new_response.content.keys() {
+            if !old_response.content.contains_key(content_type) {
+                changes.push(Change {
+                    severity: Severity::Breaking,
+                    operation: operation.clone(),
+                    message: format!("response {status} content type {content_type} added"),
+                });
+            }
+        }
+
         for (content_type, old_schema) in &old_response.content {
             let Some(new_schema) = new_response.content.get(content_type) else {
                 continue;
@@ -297,15 +403,74 @@ fn is_error_status(status: &str) -> bool {
     status.starts_with('4') || status.starts_with('5') || status == "default"
 }
 
-fn diff_request_bodies(
+pub fn diff_request_bodies(
     changes: &mut Vec<Change>,
     operation: &OperationKey,
     old: Option<&RequestBody>,
     new: Option<&RequestBody>,
 ) {
-    let (Some(old), Some(new)) = (old, new) else {
-        return;
+    let (old, new) = match (old, new) {
+        (None, Some(new)) => {
+            let (severity, requiredness) = if new.required == Some(true) {
+                (Severity::Breaking, "required")
+            } else {
+                (Severity::NonBreaking, "optional")
+            };
+            changes.push(Change {
+                severity,
+                operation: operation.clone(),
+                message: format!("request body added as {requiredness}"),
+            });
+            return;
+        }
+        (Some(_), None) => {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: "request body removed".to_string(),
+            });
+            return;
+        }
+        (None, None) => return,
+        (Some(old), Some(new)) => (old, new),
     };
+
+    if let (Some(old_required), Some(new_required)) = (old.required, new.required) {
+        if old_required != new_required {
+            let (severity, old_requiredness, new_requiredness) = if new_required {
+                (Severity::Breaking, "optional", "required")
+            } else {
+                (Severity::NonBreaking, "required", "optional")
+            };
+            changes.push(Change {
+                severity,
+                operation: operation.clone(),
+                message: format!(
+                    "request body changed from {old_requiredness} to {new_requiredness}"
+                ),
+            });
+        }
+    }
+
+    for content_type in old.content.keys() {
+        if !new.content.contains_key(content_type) {
+            changes.push(Change {
+                severity: Severity::Breaking,
+                operation: operation.clone(),
+                message: format!("request content type {content_type} removed"),
+            });
+        }
+    }
+
+    for content_type in new.content.keys() {
+        if !old.content.contains_key(content_type) {
+            changes.push(Change {
+                severity: Severity::NonBreaking,
+                operation: operation.clone(),
+                message: format!("request content type {content_type} added"),
+            });
+        }
+    }
 
     for (content_type, old_schema) in &old.content {
         let Some(new_schema) = new.content.get(content_type) else {
@@ -329,6 +494,12 @@ fn diff_request_bodies(
 enum SchemaUsage {
     Request,
     Response,
+}
+
+#[derive(Clone, Copy)]
+enum SetChange {
+    Added,
+    Removed,
 }
 
 fn diff_schema(
@@ -366,10 +537,23 @@ fn diff_schema(
         });
     }
 
+    if old.format != new.format {
+        changes.push(Change {
+            severity: Severity::Warning,
+            operation: operation.clone(),
+            message: format!(
+                "{context} {} format changed from {} to {}",
+                schema_target(path),
+                format_name(old.format.as_deref()),
+                format_name(new.format.as_deref())
+            ),
+        });
+    }
+
     for value in &new.enum_values {
         if !old.enum_values.contains(value) {
             changes.push(Change {
-                severity: enum_value_added_severity(usage),
+                severity: enum_change_severity(usage, SetChange::Added),
                 operation: operation.clone(),
                 message: format!("{context} {} enum value {value} added", schema_target(path)),
             });
@@ -379,7 +563,7 @@ fn diff_schema(
     for value in &old.enum_values {
         if !new.enum_values.contains(value) {
             changes.push(Change {
-                severity: enum_value_removed_severity(usage),
+                severity: enum_change_severity(usage, SetChange::Removed),
                 operation: operation.clone(),
                 message: format!(
                     "{context} {} enum value {value} removed",
@@ -387,6 +571,11 @@ fn diff_schema(
                 ),
             });
         }
+    }
+
+    if matches!(old.kind, SchemaKind::OneOf | SchemaKind::AnyOf) && old.kind == new.kind {
+        diff_branches(changes, operation, usage, context, path, old, new);
+        return;
     }
 
     for name in old.properties.keys() {
@@ -434,6 +623,169 @@ fn diff_schema(
             &new_property.schema,
         );
     }
+
+    match (&old.items, &new.items) {
+        (Some(old_items), Some(new_items)) => diff_schema(
+            changes,
+            operation,
+            usage,
+            context,
+            &field_path(path, "items"),
+            old_items,
+            new_items,
+        ),
+        (Some(_), None) => changes.push(Change {
+            severity: item_removed_severity(usage),
+            operation: operation.clone(),
+            message: format!("{context} field {} removed", field_path(path, "items")),
+        }),
+        (None, Some(_)) => changes.push(Change {
+            severity: field_added_severity(usage, true),
+            operation: operation.clone(),
+            message: field_added_message(context, path, "items", usage, true),
+        }),
+        (None, None) => {}
+    }
+
+    diff_additional_properties(changes, operation, usage, context, path, old, new);
+}
+
+fn diff_branches(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    usage: SchemaUsage,
+    context: &str,
+    path: &str,
+    old: &Schema,
+    new: &Schema,
+) {
+    let mut old_remaining: Vec<_> = old.branches.iter().enumerate().collect();
+    let mut new_remaining: Vec<_> = new.branches.iter().enumerate().collect();
+    old_remaining.retain(|(_, old_branch)| {
+        if let Some(index) = new_remaining
+            .iter()
+            .position(|(_, new_branch)| old_branch.structural_key() == new_branch.structural_key())
+        {
+            new_remaining.remove(index);
+            false
+        } else {
+            true
+        }
+    });
+    let mut pairs = Vec::new();
+    for old_position in (0..old_remaining.len()).rev() {
+        let (_, old_branch) = old_remaining[old_position];
+        let shape = old_branch.shape_key();
+        let old_count = old_remaining
+            .iter()
+            .filter(|(_, branch)| branch.shape_key() == shape)
+            .count();
+        let matching: Vec<_> = new_remaining
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, branch))| branch.shape_key() == shape)
+            .map(|(index, _)| index)
+            .collect();
+        if old_count == 1 && matching.len() == 1 {
+            let new_branch = new_remaining.remove(matching[0]);
+            pairs.push((old_remaining.remove(old_position), new_branch));
+        }
+    }
+    let name = schema_kind_name(&new.kind);
+    for ((_, old_branch), (new_index, new_branch)) in pairs {
+        let branch_path = field_path(path, &format!("{name}[{new_index}]"));
+        diff_schema(
+            changes,
+            operation,
+            usage,
+            context,
+            &branch_path,
+            old_branch,
+            new_branch,
+        );
+    }
+    for (old_index, _) in old_remaining {
+        changes.push(Change {
+            severity: enum_change_severity(usage, SetChange::Removed),
+            operation: operation.clone(),
+            message: format!(
+                "{context} field {} removed",
+                field_path(
+                    path,
+                    &format!("{}[{old_index}]", schema_kind_name(&old.kind))
+                )
+            ),
+        });
+    }
+    for (new_index, _) in new_remaining {
+        changes.push(Change {
+            severity: enum_change_severity(usage, SetChange::Added),
+            operation: operation.clone(),
+            message: format!(
+                "{context} field {} added",
+                field_path(path, &format!("{name}[{new_index}]"))
+            ),
+        });
+    }
+}
+
+fn diff_additional_properties(
+    changes: &mut Vec<Change>,
+    operation: &OperationKey,
+    usage: SchemaUsage,
+    context: &str,
+    path: &str,
+    old: &Schema,
+    new: &Schema,
+) {
+    use AdditionalProperties::{Any, Forbidden, Schema, Unknown};
+
+    if matches!(old.additional_properties, Unknown) || matches!(new.additional_properties, Unknown)
+    {
+        return;
+    }
+
+    match (&old.additional_properties, &new.additional_properties) {
+        (Schema(old_schema), Schema(new_schema)) => {
+            let path = field_path(path, "additionalProperties");
+            diff_schema(
+                changes, operation, usage, context, &path, old_schema, new_schema,
+            );
+        }
+        (old_policy, new_policy) if old_policy == new_policy => {}
+        (old_policy, new_policy) => {
+            let path = field_path(path, "additionalProperties");
+            let narrowing = matches!(
+                (old_policy, new_policy),
+                (Any, Forbidden) | (Any, Schema(_)) | (Schema(_), Forbidden)
+            );
+            let severity = match (usage, narrowing) {
+                (SchemaUsage::Request, true) | (SchemaUsage::Response, false) => Severity::Breaking,
+                (SchemaUsage::Request, false) | (SchemaUsage::Response, true) => {
+                    Severity::NonBreaking
+                }
+            };
+            changes.push(Change {
+                severity,
+                operation: operation.clone(),
+                message: format!(
+                    "{context} {} changed from {} to {}",
+                    schema_target(&path),
+                    additional_properties_name(old_policy),
+                    additional_properties_name(new_policy)
+                ),
+            });
+        }
+    }
+}
+
+fn additional_properties_name(policy: &AdditionalProperties) -> &'static str {
+    match policy {
+        AdditionalProperties::Unknown => "unknown",
+        AdditionalProperties::Forbidden => "forbidden",
+        AdditionalProperties::Any => "any",
+        AdditionalProperties::Schema(_) => "schema",
+    }
 }
 
 fn diff_requiredness(
@@ -445,16 +797,16 @@ fn diff_requiredness(
     old_required: bool,
     new_required: bool,
 ) {
-    if usage != SchemaUsage::Request || old_required == new_required {
-        return;
-    }
+    let severity = match (usage, old_required, new_required) {
+        (SchemaUsage::Request, false, true) => Severity::Breaking,
+        (SchemaUsage::Request, true, false) => Severity::NonBreaking,
+        (SchemaUsage::Response, true, false) => Severity::Breaking,
+        (SchemaUsage::Response, false, true) => Severity::NonBreaking,
+        (_, _, _) => return,
+    };
 
     changes.push(Change {
-        severity: if new_required {
-            Severity::Breaking
-        } else {
-            Severity::NonBreaking
-        },
+        severity,
         operation: operation.clone(),
         message: format!(
             "{context} field {path} changed from {} to {}",
@@ -487,22 +839,24 @@ fn nullable_change_severity(
     }
 }
 
-fn enum_value_added_severity(usage: SchemaUsage) -> Severity {
-    match usage {
-        SchemaUsage::Request => Severity::NonBreaking,
-        SchemaUsage::Response => Severity::Breaking,
-    }
-}
-
-fn enum_value_removed_severity(usage: SchemaUsage) -> Severity {
-    match usage {
-        SchemaUsage::Request => Severity::Breaking,
-        SchemaUsage::Response => Severity::NonBreaking,
+fn enum_change_severity(usage: SchemaUsage, direction: SetChange) -> Severity {
+    match (usage, direction) {
+        (SchemaUsage::Request, SetChange::Added) => Severity::NonBreaking,
+        (SchemaUsage::Request, SetChange::Removed) => Severity::Breaking,
+        (SchemaUsage::Response, SetChange::Added) => Severity::Breaking,
+        (SchemaUsage::Response, SetChange::Removed) => Severity::NonBreaking,
     }
 }
 
 fn field_removed_severity(_usage: SchemaUsage) -> Severity {
     Severity::Breaking
+}
+
+fn item_removed_severity(usage: SchemaUsage) -> Severity {
+    match usage {
+        SchemaUsage::Request => Severity::NonBreaking,
+        SchemaUsage::Response => Severity::Breaking,
+    }
 }
 
 fn field_added_severity(usage: SchemaUsage, required: bool) -> Severity {
@@ -554,9 +908,15 @@ fn required_name(required: bool) -> &'static str {
 fn schema_target(path: &str) -> String {
     if path.is_empty() {
         "schema".to_string()
+    } else if path == "additionalProperties" {
+        path.to_string()
     } else {
         format!("field {path}")
     }
+}
+
+fn format_name(format: Option<&str>) -> &str {
+    format.unwrap_or("none")
 }
 
 fn schema_kind_name(kind: &SchemaKind) -> &'static str {
@@ -576,9 +936,11 @@ fn schema_kind_name(kind: &SchemaKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::path::Path;
 
-    use super::{diff_contracts, Severity};
+    use super::{diff_auth_requirements, diff_contracts, Severity};
+    use crate::contract::{AuthRequirement, AuthSchemeKind, HttpMethod, OperationKey};
     use crate::openapi::load_contract;
 
     #[test]
@@ -611,5 +973,46 @@ mod tests {
         assert_eq!(changes[0].operation.method.as_str(), "GET");
         assert_eq!(changes[0].operation.path, "/teams");
         assert_eq!(changes[0].message, "endpoint added");
+    }
+
+    #[test]
+    fn authentication_fallback_pairs_precede_removals_and_additions() {
+        let requirement = |name: &str, scopes: Vec<&str>| AuthRequirement {
+            name: name.to_string(),
+            kind: AuthSchemeKind::Unknown,
+            identity: None,
+            scopes: scopes.into_iter().map(str::to_string).collect(),
+        };
+        let old = BTreeMap::from([
+            ("removed".to_string(), requirement("removed", vec![])),
+            ("stable".to_string(), requirement("stable", vec!["write"])),
+        ]);
+        let new = BTreeMap::from([
+            ("added".to_string(), requirement("added", vec![])),
+            ("stable".to_string(), requirement("stable", vec![])),
+        ]);
+        let mut changes = Vec::new();
+
+        diff_auth_requirements(
+            &mut changes,
+            &OperationKey {
+                method: HttpMethod::Get,
+                path: "/users".to_string(),
+            },
+            &old,
+            &new,
+        );
+
+        assert_eq!(
+            changes
+                .into_iter()
+                .map(|change| change.message)
+                .collect::<Vec<_>>(),
+            vec![
+                "authentication stable scope write removed",
+                "authentication removed (unknown) removed",
+                "authentication added (unknown) added",
+            ]
+        );
     }
 }

@@ -53,17 +53,17 @@ fn run() -> Result<i32> {
             let contract = openapi::load_contract(&openapi)?;
             let scoped = apiwatch::lock_size::scope_contract(&contract, &include_operations)?;
             let scope = lockfile::scope_from_selectors(&include_operations)?;
-            let entry = lockfile::build_v3_declared(&scoped, scope, max_lock_bytes)?;
+            let entry = lockfile::build_v4_declared(&scoped, scope, max_lock_bytes)?;
 
             let rendered = if update {
                 if !output.exists() {
                     anyhow::bail!("--update requires an existing lockfile");
                 }
                 let existing = lockfile::load(&output)?;
-                let updated = lockfile::replace_declared(existing, &name, entry)?;
+                let updated = lockfile::replace_declared_v4(existing, &name, entry)?;
                 lockfile::render(&updated)?
             } else {
-                let created = lockfile::new_v3(&name, entry)?;
+                let created = lockfile::new_v4(&name, entry)?;
                 lockfile::render(&created)?
             };
 
@@ -124,27 +124,40 @@ fn run() -> Result<i32> {
                     print!("{rendered}");
                     Ok(if has_changes { 1 } else { 0 })
                 }
-                lockfile::VerifyTargetKind::FullDeclared {
+                lockfile::VerifyTargetKind::Declared {
                     contract: locked,
                     scope,
+                    coverage,
                 } => {
                     let current = openapi::load_contract_input(&openapi)?;
                     let current = lockfile::scope_current_for_verify(&current, scope)?;
                     let changes = diff::diff_contracts(locked, &current);
+                    let (coverage, limitation) = match coverage {
+                        lockfile::DeclaredCoverage::PartialV3 => (
+                            output::Coverage::Partial,
+                            Some(output::Limitation::Phase2RelockRequired),
+                        ),
+                        lockfile::DeclaredCoverage::FullV4 => (output::Coverage::Full, None),
+                    };
                     let rendered = match format {
                         OutputFormat::Text => {
+                            if limitation.is_some() {
+                                eprintln!(
+                                    "warning: api.lock v3 lacks Phase 2 contract fields; re-lock from the original OpenAPI source for full coverage"
+                                );
+                            }
                             output::render_declared_verify_text(target.name(), &changes)
                         }
                         OutputFormat::Json => output::render_declared_verify_json(
                             target.name(),
-                            output::Coverage::Full,
-                            None,
+                            coverage,
+                            limitation,
                             &changes,
                         )?,
                         OutputFormat::Sarif => output::render_declared_verify_sarif(
                             &lock_path,
                             target.name(),
-                            None,
+                            limitation,
                             &changes,
                         )?,
                     };

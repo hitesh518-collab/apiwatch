@@ -1,0 +1,33 @@
+openapi: 3.0.3
+info: { title: D-06, version: '1' }
+servers:
+  - url: /
+  - url: https://stable.example.com/v1?region=eu&tenant=new
+  - url: https://api.example.com/v1
+paths:
+  /root:
+    get:
+      responses: { '204': { description: ok } }
+  /relative:
+    get:
+      responses: { '204': { description: ok } }
+  /removed:
+    servers:
+      - url: https://stable.example.com/v1
+    get:
+      responses: { '204': { description: ok } }
+  /added:
+    servers:
+      - url: https://stable.example.com/v1
+    get:
+      servers:
+        - url: https://backup.example.com/v1
+        - url: https://stable.example.com/v1
+      responses: { '204': { description: ok } }
+  /operation:
+    servers:
+      - url: https://backup.example.com/v1
+    get:
+      servers:
+        - url: https://stable.example.com/v1
+      responses: { '204': { description: ok } }

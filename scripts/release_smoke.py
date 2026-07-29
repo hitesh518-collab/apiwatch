@@ -70,6 +70,44 @@ def main():
                 declared_lock,
             ]
         )
+        declared_json = json.loads(
+            run(
+                [
+                    binary,
+                    "verify",
+                    ROOT / "testdata/openapi/verify_matching.yaml",
+                    "--name",
+                    "users",
+                    "--lock",
+                    declared_lock,
+                    "--format",
+                    "json",
+                ]
+            ).stdout
+        )
+        if (
+            declared_json["coverage"] != "full"
+            or declared_json["limitations"] != []
+            or declared_json["changes"] != []
+        ):
+            raise RuntimeError("matching v4 JSON Verify did not report full coverage")
+        declared_sarif = json.loads(
+            run(
+                [
+                    binary,
+                    "verify",
+                    ROOT / "testdata/openapi/verify_matching.yaml",
+                    "--name",
+                    "users",
+                    "--lock",
+                    declared_lock,
+                    "--format",
+                    "sarif",
+                ]
+            ).stdout
+        )
+        if declared_sarif["runs"][0]["results"] != []:
+            raise RuntimeError("matching v4 SARIF Verify reported findings")
         run(
             [
                 binary,
@@ -93,6 +131,71 @@ def main():
             ],
             expected=1,
         )
+
+        phase2_lock = temporary / "phase2.lock"
+        run(
+            [
+                binary,
+                "lock",
+                ROOT / "testdata/openapi/phase2_d01_request_body_old.yaml",
+                "--name",
+                "phase2",
+                "--output",
+                phase2_lock,
+            ]
+        )
+        run(
+            [
+                binary,
+                "verify",
+                ROOT / "testdata/openapi/phase2_d01_request_body_new.yaml",
+                "--name",
+                "phase2",
+                "--lock",
+                phase2_lock,
+            ],
+            expected=1,
+        )
+
+        legacy_v3 = json.loads(
+            run(
+                [
+                    binary,
+                    "verify",
+                    ROOT / "testdata/openapi/verify_matching.yaml",
+                    "--name",
+                    "users",
+                    "--lock",
+                    ROOT / "testdata/lock/v3_users.lock",
+                    "--format",
+                    "json",
+                ]
+            ).stdout
+        )
+        if (
+            legacy_v3["coverage"] != "partial"
+            or legacy_v3["limitations"][0]["code"] != "phase2_relock_required"
+        ):
+            raise RuntimeError("v3 Verify did not report partial Phase 2 coverage")
+
+        original_v4_bytes = declared_lock.read_bytes()
+        run(
+            [
+                binary,
+                "lock",
+                ROOT / "testdata/openapi/verify_matching.yaml",
+                "--name",
+                "users",
+                "--output",
+                declared_lock,
+                "--max-lock-bytes",
+                "1",
+                "--update",
+            ],
+            expected=2,
+        )
+        if declared_lock.read_bytes() != original_v4_bytes:
+            raise RuntimeError("failed v4 update changed existing lock bytes")
 
         d16_lock = temporary / "d16.lock"
         run(

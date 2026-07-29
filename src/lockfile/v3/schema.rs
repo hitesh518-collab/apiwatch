@@ -3,8 +3,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{anyhow, Result};
 
 use crate::contract::{
-    ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey, Parameter, ParameterKey,
-    ParameterLocation, Property, RequestBody, Response, Schema,
+    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationIdentity,
+    OperationKey, Parameter, ParameterKey, ParameterLocation, Property, RequestBody, Response,
+    Schema,
+};
+use crate::openapi::{
+    identity::{canonical_media_type, canonical_path_template},
+    merge_all_of,
 };
 
 use super::{
@@ -15,8 +20,8 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
     let mut schemas = BTreeMap::new();
     let operations = contract
         .operations
-        .iter()
-        .map(|(key, operation)| {
+        .values()
+        .map(|operation| {
             let auth = operation
                 .auth
                 .iter()
@@ -38,7 +43,15 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
                 .iter()
                 .map(|(parameter_key, parameter)| {
                     Ok((
-                        format!("{}:{}", parameter_key.location.as_str(), parameter_key.name),
+                        format!(
+                            "{}:{}",
+                            parameter_key.location.as_str(),
+                            if parameter_key.location == ParameterLocation::Path {
+                                &parameter.name
+                            } else {
+                                &parameter_key.name
+                            }
+                        ),
                         WireParameter {
                             required: parameter.required,
                             schema: intern_schema(&parameter.schema, &mut schemas)?,
@@ -62,7 +75,7 @@ pub(super) fn intern_contract(contract: &ApiContract) -> Result<Contract> {
                 })
                 .collect::<Result<_>>()?;
             Ok((
-                format!("{} {}", key.method.as_str(), key.path),
+                format!("{} {}", operation.key.method.as_str(), operation.key.path),
                 WireOperation {
                     auth,
                     parameters,
@@ -89,7 +102,7 @@ fn intern_content(
 }
 
 fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) -> Result<String> {
-    let properties = schema
+    let mut properties: BTreeMap<String, WireProperty> = schema
         .properties
         .iter()
         .map(|(name, property)| {
@@ -102,6 +115,33 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
             ))
         })
         .collect::<Result<_>>()?;
+    if let Some(items) = &schema.items {
+        properties.insert(
+            "items".to_string(),
+            WireProperty {
+                required: true,
+                schema: intern_schema(items, schemas)?,
+            },
+        );
+    }
+    if matches!(
+        schema.kind,
+        crate::contract::SchemaKind::OneOf | crate::contract::SchemaKind::AnyOf
+    ) {
+        let prefix = match schema.kind {
+            crate::contract::SchemaKind::OneOf => "oneOf",
+            _ => "anyOf",
+        };
+        for (index, branch) in schema.branches.iter().enumerate() {
+            properties.insert(
+                format!("{prefix}[{index}]"),
+                WireProperty {
+                    required: true,
+                    schema: intern_schema(branch, schemas)?,
+                },
+            );
+        }
+    }
     let mut enum_values = schema.enum_values.clone();
     enum_values.sort();
     enum_values.dedup();
@@ -159,73 +199,104 @@ pub(super) fn forced_collision_error() -> Result<()> {
 
 pub(super) fn expand_contract(contract: &Contract) -> Result<ApiContract> {
     validate_schema_table(contract)?;
-    let operations = contract
-        .operations
-        .iter()
-        .map(|(key, operation)| {
-            let key = parse_operation_key(key)?;
-            let auth = operation
-                .auth
-                .iter()
-                .map(|(name, requirement)| {
-                    Ok((
-                        name.clone(),
-                        AuthRequirement {
-                            name: name.clone(),
-                            kind: requirement.kind,
-                            scopes: requirement.scopes.clone(),
-                        },
-                    ))
+    let mut operations = BTreeMap::new();
+    for (key, operation) in &contract.operations {
+        let key = parse_operation_key(key)?;
+        let (canonical_path, placeholders) = canonical_path_template(&key.path)?;
+        let identity = OperationIdentity {
+            method: key.method,
+            path: canonical_path,
+        };
+        let auth = operation
+            .auth
+            .iter()
+            .map(|(name, requirement)| {
+                Ok((
+                    name.clone(),
+                    AuthRequirement {
+                        name: name.clone(),
+                        kind: requirement.kind,
+                        identity: None,
+                        scopes: requirement.scopes.clone(),
+                    },
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let parameters = operation
+            .parameters
+            .iter()
+            .map(|(key, parameter)| {
+                let key = parse_parameter_key(key)?;
+                let name = key.name.clone();
+                let key = canonicalize_parameter_key(key, &placeholders)?;
+                Ok((
+                    key.clone(),
+                    Parameter {
+                        name,
+                        required: parameter.required,
+                        schema: expand_schema(&parameter.schema, &contract.schemas)?,
+                    },
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let request_body = operation
+            .request_body
+            .as_ref()
+            .map(|content| -> Result<RequestBody> {
+                Ok(RequestBody {
+                    required: None,
+                    content: expand_content(content, &contract.schemas)?,
                 })
-                .collect::<Result<_>>()?;
-            let parameters = operation
-                .parameters
-                .iter()
-                .map(|(key, parameter)| {
-                    let key = parse_parameter_key(key)?;
-                    Ok((
-                        key.clone(),
-                        Parameter {
-                            name: key.name,
-                            required: parameter.required,
-                            schema: expand_schema(&parameter.schema, &contract.schemas)?,
-                        },
-                    ))
-                })
-                .collect::<Result<_>>()?;
-            let request_body = operation
-                .request_body
-                .as_ref()
-                .map(|content| -> Result<RequestBody> {
-                    Ok(RequestBody {
+            })
+            .transpose()?;
+        let responses = operation
+            .responses
+            .iter()
+            .map(|(status, content)| {
+                Ok((
+                    status.clone(),
+                    Response {
                         content: expand_content(content, &contract.schemas)?,
-                    })
-                })
-                .transpose()?;
-            let responses = operation
-                .responses
-                .iter()
-                .map(|(status, content)| {
-                    Ok((
-                        status.clone(),
-                        Response {
-                            content: expand_content(content, &contract.schemas)?,
-                        },
-                    ))
-                })
-                .collect::<Result<_>>()?;
-            Ok((
-                key,
-                Operation {
-                    auth,
-                    parameters,
-                    request_body,
-                    responses,
-                },
-            ))
-        })
-        .collect::<Result<_>>()?;
+                    },
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let operation = Operation {
+            key,
+            auth,
+            servers: None,
+            parameters,
+            request_body,
+            responses,
+        };
+        if operations.insert(identity.clone(), operation).is_some() {
+            return Err(anyhow!(
+                "ambiguous operation identity {} {}",
+                identity.method.as_str(),
+                identity.path
+            ));
+        }
+    }
     Ok(ApiContract { operations })
+}
+
+fn canonicalize_parameter_key(key: ParameterKey, placeholders: &[String]) -> Result<ParameterKey> {
+    if key.location != ParameterLocation::Path {
+        return Ok(key);
+    }
+    let slot = placeholders
+        .iter()
+        .position(|name| name == &key.name)
+        .ok_or_else(|| {
+            anyhow!(
+                "path parameter {} is not bound to a path template placeholder",
+                key.name
+            )
+        })?;
+    Ok(ParameterKey {
+        location: ParameterLocation::Path,
+        name: format!("{{{slot}}}"),
+    })
 }
 
 fn expand_content(
@@ -234,7 +305,12 @@ fn expand_content(
 ) -> Result<BTreeMap<String, Schema>> {
     content
         .iter()
-        .map(|(content_type, id)| Ok((content_type.clone(), expand_schema(id, schemas)?)))
+        .map(|(content_type, id)| {
+            Ok((
+                canonical_media_type(content_type)?,
+                expand_schema(id, schemas)?,
+            ))
+        })
         .collect()
 }
 
@@ -242,7 +318,7 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
     let wire = schemas
         .get(id)
         .ok_or_else(|| anyhow!("missing schema reference"))?;
-    let properties = wire
+    let mut properties: BTreeMap<String, crate::contract::Property> = wire
         .properties
         .iter()
         .map(|(name, property)| {
@@ -255,13 +331,90 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
             ))
         })
         .collect::<Result<_>>()?;
+    let branches = match wire.kind {
+        crate::contract::SchemaKind::OneOf | crate::contract::SchemaKind::AnyOf => {
+            let prefix = if matches!(wire.kind, crate::contract::SchemaKind::OneOf) {
+                "oneOf"
+            } else {
+                "anyOf"
+            };
+            let mut legacy = properties
+                .iter()
+                .filter_map(|(name, property)| {
+                    parse_legacy_branch(name, prefix).map(|index| (index, *property.schema.clone()))
+                })
+                .collect::<Vec<_>>();
+            legacy.sort_by_key(|(index, _)| *index);
+            for (index, _) in &legacy {
+                properties.remove(&format!("{prefix}[{index}]"));
+            }
+            let mut branches = legacy
+                .into_iter()
+                .map(|(_, branch)| Ok(branch))
+                .collect::<Result<Vec<_>>>()?;
+            branches.sort_by_key(Schema::structural_key);
+            branches.dedup_by(|left, right| left.structural_key() == right.structural_key());
+            branches
+        }
+        crate::contract::SchemaKind::AllOf => {
+            let mut legacy = properties
+                .iter()
+                .filter_map(|(name, property)| {
+                    parse_legacy_branch(name, "allOf")
+                        .map(|index| (index, *property.schema.clone()))
+                })
+                .collect::<Vec<_>>();
+            if legacy.is_empty() {
+                Vec::new()
+            } else {
+                legacy.sort_by_key(|(index, _)| *index);
+                for (index, _) in &legacy {
+                    properties.remove(&format!("allOf[{index}]"));
+                }
+                let mut branches = legacy
+                    .into_iter()
+                    .map(|(_, branch)| branch)
+                    .collect::<Vec<_>>();
+                let mut merged = merge_all_of(std::mem::take(&mut branches))?;
+                merged.nullable &= wire.nullable;
+                properties.extend(merged.properties);
+                return Ok(Schema {
+                    kind: merged.kind,
+                    nullable: merged.nullable,
+                    format: merged.format,
+                    enum_values: merged.enum_values,
+                    properties,
+                    items: merged.items,
+                    additional_properties: merged.additional_properties,
+                    branches: Vec::new(),
+                });
+            }
+        }
+        _ => Vec::new(),
+    };
+    let items = if matches!(wire.kind, crate::contract::SchemaKind::Array) {
+        properties.remove("items").map(|property| property.schema)
+    } else {
+        None
+    };
     Ok(Schema {
         kind: wire.kind.clone(),
         nullable: wire.nullable,
         format: wire.format.clone(),
         enum_values: wire.enum_values.clone(),
         properties,
+        items,
+        additional_properties: AdditionalProperties::Unknown,
+        branches,
     })
+}
+
+fn parse_legacy_branch(name: &str, prefix: &str) -> Option<usize> {
+    name.strip_prefix(prefix)?
+        .strip_prefix('[')?
+        .strip_suffix(']')?
+        .parse()
+        .ok()
 }
 
 pub(super) fn validate_schema_table(contract: &Contract) -> Result<()> {
@@ -379,4 +532,42 @@ fn sanitized(value: &str) -> String {
         .chars()
         .filter(|character| !character.is_control())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::{expand_contract, Contract, WireOperation};
+
+    #[test]
+    fn rejects_operations_that_collide_after_path_template_canonicalization() {
+        let contract = Contract {
+            operations: BTreeMap::from([
+                (
+                    "GET /users/{id}".to_string(),
+                    WireOperation {
+                        auth: BTreeMap::new(),
+                        parameters: BTreeMap::new(),
+                        request_body: None,
+                        responses: BTreeMap::new(),
+                    },
+                ),
+                (
+                    "GET /users/{name}".to_string(),
+                    WireOperation {
+                        auth: BTreeMap::new(),
+                        parameters: BTreeMap::new(),
+                        request_body: None,
+                        responses: BTreeMap::new(),
+                    },
+                ),
+            ]),
+            schemas: BTreeMap::new(),
+        };
+
+        let error = expand_contract(&contract)
+            .expect_err("canonical operation identities must not overwrite each other");
+        assert!(error.to_string().contains("ambiguous operation identity"));
+    }
 }

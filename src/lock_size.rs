@@ -5,8 +5,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::contract::{
-    ApiContract, AuthRequirement, HttpMethod, Operation, OperationKey, ParameterKey, Schema,
-    SchemaKind,
+    AdditionalProperties, ApiContract, AuthRequirement, HttpMethod, Operation, OperationIdentity,
+    ParameterKey, Schema, SchemaKind,
 };
 
 pub const PRIVACY_SENTINELS: &[&str] = &[
@@ -45,13 +45,14 @@ pub fn encode_canonical_json(contract: &ApiContract) -> Result<Vec<u8>> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 struct DeduplicatedContract {
-    operations: BTreeMap<OperationKey, DeduplicatedOperation>,
+    operations: BTreeMap<OperationIdentity, DeduplicatedOperation>,
     schemas: BTreeMap<String, WireSchema>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 struct DeduplicatedOperation {
     auth: BTreeMap<String, AuthRequirement>,
+    servers: Option<std::collections::BTreeSet<crate::contract::ServerTemplate>>,
     parameters: BTreeMap<ParameterKey, WireParameter>,
     request_body: Option<BTreeMap<String, String>>,
     responses: BTreeMap<String, BTreeMap<String, String>>,
@@ -71,6 +72,18 @@ struct WireSchema {
     format: Option<String>,
     enum_values: Vec<String>,
     properties: BTreeMap<String, WireProperty>,
+    items: Option<String>,
+    additional_properties: WireAdditionalProperties,
+    branches: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum WireAdditionalProperties {
+    Unknown,
+    Forbidden,
+    Any,
+    Schema { schema: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -103,12 +116,35 @@ where
             },
         );
     }
+    let additional_properties = match &schema.additional_properties {
+        AdditionalProperties::Unknown => WireAdditionalProperties::Unknown,
+        AdditionalProperties::Forbidden => WireAdditionalProperties::Forbidden,
+        AdditionalProperties::Any => WireAdditionalProperties::Any,
+        AdditionalProperties::Schema(schema) => WireAdditionalProperties::Schema {
+            schema: intern_schema(schema, schemas, canonical, digest)?,
+        },
+    };
+    let items = schema
+        .items
+        .as_ref()
+        .map(|items| intern_schema(items, schemas, canonical, digest))
+        .transpose()?;
+    let mut branches = schema
+        .branches
+        .iter()
+        .map(|branch| intern_schema(branch, schemas, canonical, digest))
+        .collect::<Result<Vec<_>>>()?;
+    branches.sort();
+    branches.dedup();
     let wire = WireSchema {
         kind: schema.kind.clone(),
         nullable: schema.nullable,
         format: schema.format.clone(),
         enum_values: schema.enum_values.clone(),
         properties,
+        items,
+        additional_properties,
+        branches,
     };
     let bytes = serde_json::to_vec(&wire).context("failed to canonicalize schema")?;
     let id = digest(&bytes);
@@ -181,6 +217,7 @@ where
         .collect::<Result<_>>()?;
     Ok(DeduplicatedOperation {
         auth: operation.auth.clone(),
+        servers: operation.servers.clone(),
         parameters,
         request_body,
         responses,
@@ -301,7 +338,7 @@ where
     Ok(())
 }
 
-pub fn parse_operation_selector(value: &str) -> Result<OperationKey> {
+pub fn parse_operation_selector(value: &str) -> Result<OperationIdentity> {
     let Some((method, path)) = value.split_once(' ') else {
         return Err(anyhow!("operation selector must be METHOD /path"));
     };
@@ -324,10 +361,8 @@ pub fn parse_operation_selector(value: &str) -> Result<OperationKey> {
             "operation selector path must be a safe absolute path"
         ));
     }
-    Ok(OperationKey {
-        method,
-        path: path.to_owned(),
-    })
+    let (path, _) = crate::openapi::identity::canonical_path_template(path)?;
+    Ok(OperationIdentity { method, path })
 }
 
 pub fn scope_contract(contract: &ApiContract, selectors: &[String]) -> Result<ApiContract> {
@@ -383,7 +418,7 @@ mod tests {
         intern_schemas_for_test, parse_operation_selector, recommend, scope_contract, sha256_id,
         CandidateMeasurement, ContractMeasurement, Recommendation, PRIVACY_SENTINELS,
     };
-    use crate::contract::{HttpMethod, Schema, SchemaKind};
+    use crate::contract::{AdditionalProperties, HttpMethod, Schema, SchemaKind};
     use crate::openapi::load_contract;
 
     #[test]
@@ -481,6 +516,9 @@ mod tests {
             format: None,
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            items: None,
+            additional_properties: AdditionalProperties::Forbidden,
+            branches: Vec::new(),
         };
         let second = Schema {
             kind: SchemaKind::Boolean,
@@ -488,6 +526,9 @@ mod tests {
             format: None,
             enum_values: Vec::new(),
             properties: BTreeMap::new(),
+            items: None,
+            additional_properties: AdditionalProperties::Forbidden,
+            branches: Vec::new(),
         };
         let error =
             intern_schemas_for_test(&[first, second], |_| "sha256:forced".into()).unwrap_err();

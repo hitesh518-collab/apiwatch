@@ -1,6 +1,30 @@
 # Changelog
 
-## Unreleased
+## v0.9.0 - Unreleased
+
+### Added
+
+- Current `api.lock` version 4 entries covering request bodies, canonical
+  media types, response requiredness, schema formats, `additionalProperties`,
+  effective servers, positional path identity, authentication wire identity,
+  semantic composition, first-class array items, and directional enums.
+- Reproducible production-v4 payload-size evidence for the commit-pinned
+  GitHub, Asana, and Box compatibility corpus.
+
+### Changed
+
+- `diff` and v4 declared Verify now share the completed Phase 2 comparison
+  rules and deterministic findings.
+- Version 3 declared Verify reports partial Phase 2 coverage and instructs
+  users to re-lock from the original OpenAPI source.
+
+### Security
+
+- Version 4 preserves value-free contract payloads, canonicalizes and
+  validates server/authentication identities, rejects ambiguous duplicates,
+  and revalidates domain-separated schema and contract digests.
+
+## v0.8.0 - Unreleased
 
 ### Added
 

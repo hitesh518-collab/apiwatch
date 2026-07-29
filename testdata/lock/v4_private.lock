@@ -1,0 +1,49 @@
+version: 4
+apis:
+  private:
+    provenance: declared
+    source: openapi
+    scope: all
+    max_lock_bytes: 5242880
+    contract_bytes: 971
+    contract_digest: sha256:9a477890c1c486b217a893eb0a7c0459b7e23d58a08145f32d982b3ac15f5968
+    contract:
+      operations:
+        GET /accounts:
+          display_path: /accounts
+          auth:
+            bearerAuth:
+              kind: bearer
+              identity:
+                type: http
+                scheme: bearer
+              scopes: []
+          servers:
+          - /
+          parameters: {}
+          request_body: null
+          responses:
+            '200':
+              application/json: sha256:49330b89bad120f5928c12e372d2f71598f9e496dd95d03c5977ff999a62eb08
+      schemas:
+        sha256:49330b89bad120f5928c12e372d2f71598f9e496dd95d03c5977ff999a62eb08:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            token:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90:
+          kind: string
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []

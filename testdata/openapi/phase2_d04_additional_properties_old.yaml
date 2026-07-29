@@ -1,0 +1,79 @@
+openapi: 3.0.3
+info: { title: D-04, version: '1' }
+paths:
+  /request-narrowed:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses: { '204': { description: ok } }
+  /request-broadened:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses: { '204': { description: ok } }
+  /response-broadened:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: false }
+  /response-narrowed:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+  /nested-response:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  envelope: { type: object, additionalProperties: false }
+  /nested-request:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                envelope: { type: object, additionalProperties: true }
+      responses: { '204': { description: ok } }
+  /typed-map:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: { type: string }
+      responses: { '204': { description: ok } }
+  /typed-map-policy:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: object
+                additionalProperties: true
+      responses: { '204': { description: ok } }

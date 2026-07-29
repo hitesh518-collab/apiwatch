@@ -136,7 +136,7 @@ fn verify_command(openapi: &str, name: &str, lock: &str) -> Command {
     command
 }
 
-fn lock_from(openapi: &str, name: &str) -> PathBuf {
+fn lock_from_v4(openapi: &str, name: &str) -> PathBuf {
     let lock = observed_lock_path();
     Command::cargo_bin("apiwatch")
         .expect("binary should build")
@@ -153,22 +153,257 @@ fn lock_from(openapi: &str, name: &str) -> PathBuf {
     lock
 }
 
-fn scoped_lock(selector: &str) -> PathBuf {
+fn lock_from_v3(openapi: &str, name: &str) -> PathBuf {
     let lock = observed_lock_path();
+    let contract = apiwatch::openapi::load_contract(Path::new(openapi))
+        .expect("v3 fixture contract should load");
+    let scope = apiwatch::lockfile::scope_from_selectors(&[]).expect("full v3 scope should build");
+    let entry = apiwatch::lockfile::build_v3_declared(
+        &contract,
+        scope,
+        apiwatch::lockfile::DEFAULT_MAX_LOCK_BYTES,
+    )
+    .expect("v3 declared entry should build");
+    let lockfile = apiwatch::lockfile::new_v3(name, entry).expect("v3 lock should build");
+    fs::write(
+        &lock,
+        apiwatch::lockfile::render(&lockfile).expect("v3 lock should render"),
+    )
+    .expect("v3 lock should write");
+    lock
+}
+
+#[test]
+fn phase2_d08_v4_verify_matches_authentication_by_wire_identity() {
+    let lock = lock_from_v4("testdata/openapi/phase2_d08_auth_identity_old.yaml", "d08");
+
+    verify_command(
+        "testdata/openapi/phase2_d08_auth_identity_new.yaml",
+        "d08",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .code(1)
+    .stdout(predicate::str::contains(
+        "GET /keyed: authentication apiKeyAuth changed identity",
+    ))
+    .stdout(predicate::str::contains("GET /renamed").not());
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d08_v3_verify_retains_label_based_authentication_matching() {
+    let lock = lock_from_v3("testdata/openapi/phase2_d08_auth_identity_old.yaml", "d08");
+
+    verify_command(
+        "testdata/openapi/phase2_d08_auth_identity_new.yaml",
+        "d08",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+    )
+    .assert()
+    .code(1)
+    .stdout(predicate::str::contains(
+        "GET /renamed: authentication accessToken (bearer) added",
+    ));
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d08_v4_allows_distinct_unresolved_authentication_labels() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    fs::write(
+        document.path(),
+        "openapi: 3.0.3\ninfo: { title: D-08 unresolved, version: '1' }\npaths:\n  /users:\n    get:\n      security:\n        - firstUnknown: []\n          secondUnknown: []\n      responses: { '200': { description: OK } }\n",
+    )
+    .expect("temporary OpenAPI document should be written");
+    let lock = observed_lock_path();
+
     Command::cargo_bin("apiwatch")
         .expect("binary should build")
         .args([
             "lock",
-            "testdata/openapi/v3_scoped.yaml",
+            document
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
             "--name",
-            "scoped",
+            "unresolved",
             "--output",
-            lock.to_str().expect("temp path should be valid UTF-8"),
-            "--include-operation",
-            selector,
+            lock.to_str().expect("temporary path should be UTF-8"),
         ])
         .assert()
         .success();
+
+    verify_command(
+        document
+            .path()
+            .to_str()
+            .expect("temporary path should be UTF-8"),
+        "unresolved",
+        lock.to_str().expect("temporary path should be UTF-8"),
+    )
+    .assert()
+    .success();
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d08_rejects_known_identity_duplicates_across_security_alternatives() {
+    let document = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("temporary OpenAPI document should be created");
+    fs::write(
+        document.path(),
+        "openapi: 3.0.3\ninfo: { title: D-08 alternatives, version: '1' }\ncomponents:\n  securitySchemes:\n    readOAuth:\n      type: oauth2\n      flows:\n        password:\n          tokenUrl: https://auth.example.test/token\n          scopes: { read: read, write: write }\n    writeOAuth:\n      type: oauth2\n      flows:\n        password:\n          tokenUrl: https://auth.example.test/token\n          scopes: { read: read, write: write }\npaths:\n  /users:\n    get:\n      security:\n        - readOAuth: [read]\n        - writeOAuth: [write]\n      responses: { '200': { description: OK } }\n",
+    )
+    .expect("temporary OpenAPI document should be written");
+    let input = document
+        .path()
+        .to_str()
+        .expect("temporary path should be UTF-8");
+    let lock = observed_lock_path();
+    let lock_path = lock.to_str().expect("temporary lock path should be UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["diff", input, input])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "duplicate authentication identity",
+        ));
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            input,
+            "--name",
+            "alternatives",
+            "--output",
+            lock_path,
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "duplicate authentication identity",
+        ));
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d08_v4_verify_deduplicates_source_authentication_scopes() {
+    let old = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("old OpenAPI document should be created");
+    let new = tempfile::Builder::new()
+        .suffix(".yaml")
+        .tempfile()
+        .expect("new OpenAPI document should be created");
+    let template = |scopes: &str| {
+        format!(
+        "openapi: 3.0.3\ninfo: {{ title: D-08 scopes, version: '1' }}\ncomponents:\n  securitySchemes:\n    oauth:\n      type: oauth2\n      flows:\n        password:\n          tokenUrl: https://auth.example.test/token\n          scopes: {{ read: read, write: write }}\npaths:\n  /users:\n    get:\n      security:\n        - oauth: [{scopes}]\n      responses: {{ '200': {{ description: OK }} }}\n"
+    )
+    };
+    fs::write(old.path(), template("write, read, write")).expect("old document should write");
+    fs::write(new.path(), template("read")).expect("new document should write");
+    let lock = lock_from_v4(
+        old.path().to_str().expect("old path should be UTF-8"),
+        "scopes",
+    );
+
+    let diff = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            old.path().to_str().expect("old path should be UTF-8"),
+            new.path().to_str().expect("new path should be UTF-8"),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+    let verify = verify_command(
+        new.path().to_str().expect("new path should be UTF-8"),
+        "scopes",
+        lock.to_str().expect("lock path should be UTF-8"),
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("verify command should run");
+    fs::remove_file(lock).ok();
+
+    assert_eq!(diff.status.code(), Some(0));
+    assert_eq!(verify.status.code(), Some(0));
+    assert_eq!(
+        parse_json_output(&diff)["changes"],
+        json!([{
+            "severity": "non_breaking",
+            "method": "GET",
+            "path": "/users",
+            "message": "authentication oauth scope write removed"
+        }])
+    );
+    assert_eq!(
+        parse_json_output(&verify)["changes"],
+        parse_json_output(&diff)["changes"]
+    );
+}
+
+fn scoped_lock_v3(selector: &str) -> PathBuf {
+    let lock = observed_lock_path();
+    let selectors = vec![selector.to_owned()];
+    let contract = apiwatch::openapi::load_contract(Path::new("testdata/openapi/v3_scoped.yaml"))
+        .expect("scoped v3 fixture contract should load");
+    let scoped = apiwatch::lock_size::scope_contract(&contract, &selectors)
+        .expect("scoped v3 contract should build");
+    let scope =
+        apiwatch::lockfile::scope_from_selectors(&selectors).expect("scoped v3 scope should build");
+    let entry = apiwatch::lockfile::build_v3_declared(
+        &scoped,
+        scope,
+        apiwatch::lockfile::DEFAULT_MAX_LOCK_BYTES,
+    )
+    .expect("scoped v3 declared entry should build");
+    let lockfile =
+        apiwatch::lockfile::new_v3("scoped", entry).expect("scoped v3 lock should build");
+    fs::write(
+        &lock,
+        apiwatch::lockfile::render(&lockfile).expect("scoped v3 lock should render"),
+    )
+    .expect("scoped v3 lock should write");
+    lock
+}
+
+fn scoped_lock_v3_from(openapi: &str, selector: &str) -> PathBuf {
+    let lock = observed_lock_path();
+    let selectors = vec![selector.to_owned()];
+    let contract = apiwatch::openapi::load_contract(Path::new(openapi))
+        .expect("scoped v3 fixture contract should load");
+    let scoped = apiwatch::lock_size::scope_contract(&contract, &selectors)
+        .expect("scoped v3 contract should build");
+    let scope =
+        apiwatch::lockfile::scope_from_selectors(&selectors).expect("scoped v3 scope should build");
+    let entry = apiwatch::lockfile::build_v3_declared(
+        &scoped,
+        scope,
+        apiwatch::lockfile::DEFAULT_MAX_LOCK_BYTES,
+    )
+    .expect("scoped v3 declared entry should build");
+    let lockfile = apiwatch::lockfile::new_v3("d07", entry).expect("scoped v3 lock should build");
+    fs::write(
+        &lock,
+        apiwatch::lockfile::render(&lockfile).expect("scoped v3 lock should render"),
+    )
+    .expect("scoped v3 lock should write");
     lock
 }
 
@@ -184,8 +419,583 @@ fn observed_lock_path() -> PathBuf {
 }
 
 #[test]
+fn phase2_d07_verify_scoped_v4_lock_matches_renamed_path_placeholders() {
+    let lock = observed_lock_path();
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+            "--name",
+            "d07",
+            "--output",
+            lock.to_str().expect("temporary path should be valid UTF-8"),
+            "--include-operation",
+            "GET /users/{userId}/orders/{orderId}",
+        ])
+        .assert()
+        .success();
+
+    verify_command(
+        "testdata/openapi/phase2_d07_path_template_new.yaml",
+        "d07",
+        lock.to_str().expect("temporary path should be valid UTF-8"),
+    )
+    .assert()
+    .success()
+    .stdout("Verified d07\n");
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d07_verify_scoped_v3_lock_matches_renamed_path_placeholders() {
+    let lock = scoped_lock_v3_from(
+        "testdata/openapi/phase2_d07_path_template_old.yaml",
+        "GET /users/{userId}/orders/{orderId}",
+    );
+
+    verify_command(
+        "testdata/openapi/phase2_d07_path_template_new.yaml",
+        "d07",
+        lock.to_str().expect("temporary path should be valid UTF-8"),
+    )
+    .assert()
+    .success()
+    .stdout("Verified d07\n");
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d07_verify_legacy_v1_and_v2_locks_use_path_template_identity() {
+    for contents in [
+        "version: 1\napis:\n  d07:\n    source: openapi\n    operations:\n      - method: GET\n        path: /users/{userId}/orders/{orderId}\n",
+        "version: 2\napis:\n  d07:\n    provenance: declared\n    source: openapi\n    operations:\n      - method: GET\n        path: /users/{userId}/orders/{orderId}\n",
+    ] {
+        let lock = observed_lock_path();
+        fs::write(&lock, contents).expect("legacy lock should be written");
+
+        verify_command(
+            "testdata/openapi/phase2_d07_path_template_old.yaml",
+            "d07",
+            lock.to_str().expect("temporary path should be valid UTF-8"),
+        )
+        .assert()
+        .success()
+        .stdout("Verified d07\n");
+        fs::remove_file(lock).ok();
+    }
+}
+
+#[test]
+fn phase2_d01_verify_v4_matches_diff_request_body_findings() {
+    let lock = lock_from_v4("testdata/openapi/phase2_d01_request_body_old.yaml", "d01");
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+    let verify_output = verify_command(
+        "testdata/openapi/phase2_d01_request_body_new.yaml",
+        "d01",
+        lock,
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("Verify command should run");
+    let diff_output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d01_request_body_old.yaml",
+            "testdata/openapi/phase2_d01_request_body_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    fs::remove_file(lock).ok();
+
+    assert_eq!(verify_output.status.code(), Some(1));
+    assert_eq!(diff_output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        parse_json_output(&diff_output)["changes"]
+    );
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        json!([
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/optional-added",
+                "message": "request body added as optional"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/required-added",
+                "message": "request body added as required"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/requiredness",
+                "message": "request body changed from optional to required"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d09_verify_v4_and_v3_preserve_composition_findings() {
+    let expected = [
+        "GET /allof-required-change: response 200 application/json field name changed from required to optional",
+        "GET /response-branch-addition: response 200 application/json field anyOf[1] added",
+        "POST /request-branch-removal: request application/json field oneOf[1] removed",
+    ];
+    for (name, lock) in [
+        (
+            "d09-v4",
+            lock_from_v4("testdata/openapi/phase2_d09_composition_old.yaml", "d09-v4"),
+        ),
+        (
+            "d09-v3",
+            lock_from_v3("testdata/openapi/phase2_d09_composition_old.yaml", "d09-v3"),
+        ),
+    ] {
+        let output = verify_command(
+            "testdata/openapi/phase2_d09_composition_new.yaml",
+            name,
+            lock.to_str().expect("temp path should be valid UTF-8"),
+        )
+        .assert()
+        .code(1)
+        .get_output()
+        .stdout
+        .clone();
+        let text = String::from_utf8(output).expect("verify output should be UTF-8");
+        for finding in expected {
+            assert!(text.contains(finding), "missing {finding}: {text}");
+        }
+        assert!(
+            !text.contains("/allof-reordered"),
+            "reordered allOf must be silent: {text}"
+        );
+        assert!(
+            !text.contains("/allof-empty-neutral"),
+            "empty allOf branch must be neutral: {text}"
+        );
+        assert!(
+            !text.contains("/oneof-reordered"),
+            "reordered oneOf must be silent: {text}"
+        );
+        assert!(
+            !text.contains("/anyof-reordered"),
+            "reordered anyOf must be silent: {text}"
+        );
+        assert!(
+            !text.contains("/enum-branch-dedup"),
+            "semantic duplicate anyOf branches must be silent: {text}"
+        );
+    }
+}
+
+#[test]
+fn phase2_d10_verify_v4_and_v3_preserve_array_item_findings() {
+    let diff = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d10_array_items_old.yaml",
+            "testdata/openapi/phase2_d10_array_items_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff command should run");
+    assert_eq!(diff.status.code(), Some(1));
+    let expected = json!([
+        { "severity": "warning", "method": "GET", "path": "/nested", "message": "response 200 application/json field items.items format changed from uuid to date-time" },
+        { "severity": "breaking", "method": "GET", "path": "/users", "message": "response 200 application/json field items.name removed" },
+        { "severity": "breaking", "method": "POST", "path": "/users", "message": "request application/json field items.email added as required" }
+    ]);
+    assert_eq!(parse_json_output(&diff)["changes"], expected);
+
+    for (name, lock) in [
+        (
+            "d10-v4",
+            lock_from_v4("testdata/openapi/phase2_d10_array_items_old.yaml", "d10-v4"),
+        ),
+        (
+            "d10-v3",
+            lock_from_v3("testdata/openapi/phase2_d10_array_items_old.yaml", "d10-v3"),
+        ),
+    ] {
+        let output = verify_command(
+            "testdata/openapi/phase2_d10_array_items_new.yaml",
+            name,
+            lock.to_str().expect("temp path should be valid UTF-8"),
+        )
+        .args(["--format", "json"])
+        .output()
+        .expect("verify command should run");
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(parse_json_output(&output)["changes"], expected);
+        assert_eq!(
+            parse_json_output(&output)["changes"],
+            parse_json_output(&diff)["changes"]
+        );
+        fs::remove_file(lock).ok();
+    }
+}
+
+#[test]
+fn phase2_d11_verify_v4_and_v3_match_directional_enum_findings() {
+    let expected = json!([
+        { "severity": "breaking", "method": "GET", "path": "/response-added", "message": "response 200 application/json field response_added enum value current added" },
+        { "severity": "breaking", "method": "GET", "path": "/response-added", "message": "response 200 application/json field response_boolean_added enum value true added" },
+        { "severity": "non_breaking", "method": "GET", "path": "/response-removed", "message": "response 200 application/json field response_boolean_removed enum value true removed" },
+        { "severity": "non_breaking", "method": "GET", "path": "/response-removed", "message": "response 200 application/json field response_removed enum value legacy removed" },
+        { "severity": "non_breaking", "method": "POST", "path": "/request-added", "message": "request application/json field request_added enum value current added" },
+        { "severity": "non_breaking", "method": "POST", "path": "/request-added", "message": "request application/json field request_boolean_added enum value true added" },
+        { "severity": "breaking", "method": "POST", "path": "/request-removed", "message": "request application/json field request_boolean_removed enum value true removed" },
+        { "severity": "breaking", "method": "POST", "path": "/request-removed", "message": "request application/json field request_removed enum value legacy removed" },
+    ]);
+
+    for (name, lock) in [
+        (
+            "d11-v4",
+            lock_from_v4("testdata/openapi/phase2_d11_enum_policy_old.yaml", "d11-v4"),
+        ),
+        (
+            "d11-v3",
+            lock_from_v3("testdata/openapi/phase2_d11_enum_policy_old.yaml", "d11-v3"),
+        ),
+    ] {
+        let output = verify_command(
+            "testdata/openapi/phase2_d11_enum_policy_new.yaml",
+            name,
+            lock.to_str().expect("temp path should be valid UTF-8"),
+        )
+        .args(["--format", "json"])
+        .output()
+        .expect("verify command should run");
+        fs::remove_file(lock).ok();
+
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(parse_json_output(&output)["changes"], expected);
+    }
+}
+
+#[test]
+fn phase2_d10_loads_and_verifies_pre_task_v4_lock() {
+    verify_command(
+        "testdata/openapi/privacy_sentinels.yaml",
+        "private",
+        "testdata/lock/v4_private.lock",
+    )
+    .assert()
+    .success();
+}
+
+#[test]
+fn phase2_d02_verify_v4_matches_diff_content_type_findings() {
+    let lock = lock_from_v4("testdata/openapi/phase2_d02_content_type_old.yaml", "d02");
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+    let verify_output = verify_command(
+        "testdata/openapi/phase2_d02_content_type_new.yaml",
+        "d02",
+        lock,
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("Verify command should run");
+    let diff_output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d02_content_type_old.yaml",
+            "testdata/openapi/phase2_d02_content_type_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    fs::remove_file(lock).ok();
+
+    assert_eq!(verify_output.status.code(), Some(1));
+    assert_eq!(diff_output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        parse_json_output(&diff_output)["changes"]
+    );
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/response",
+                "message": "response 200 content type application/problem+json added"
+            },
+            {
+                "severity": "breaking",
+                "method": "POST",
+                "path": "/request",
+                "message": "request content type application/json removed"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "POST",
+                "path": "/request",
+                "message": "request content type application/xml added"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d03_verify_v4_matches_diff_response_requiredness_findings() {
+    let lock = lock_from_v4(
+        "testdata/openapi/phase2_d03_response_required_old.yaml",
+        "d03",
+    );
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+    let verify_output = verify_command(
+        "testdata/openapi/phase2_d03_response_required_new.yaml",
+        "d03",
+        lock,
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("Verify command should run");
+    let diff_output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d03_response_required_old.yaml",
+            "testdata/openapi/phase2_d03_response_required_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    fs::remove_file(lock).ok();
+
+    assert_eq!(verify_output.status.code(), Some(1));
+    assert_eq!(diff_output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        parse_json_output(&diff_output)["changes"]
+    );
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        json!([
+            {
+                "severity": "breaking",
+                "method": "GET",
+                "path": "/users",
+                "message": "response 200 application/json field id changed from required to optional"
+            },
+            {
+                "severity": "non_breaking",
+                "method": "GET",
+                "path": "/users",
+                "message": "response 200 application/json field name changed from optional to required"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d04_verify_v4_matches_diff_additional_properties_findings() {
+    let lock = lock_from_v4(
+        "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        "d04",
+    );
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+    let verify_output = verify_command(
+        "testdata/openapi/phase2_d04_additional_properties_new.yaml",
+        "d04",
+        lock,
+    )
+    .args(["--format", "json"])
+    .output()
+    .expect("Verify command should run");
+    let diff_output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+            "testdata/openapi/phase2_d04_additional_properties_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    fs::remove_file(lock).ok();
+
+    assert_eq!(verify_output.status.code(), Some(1));
+    assert_eq!(diff_output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        parse_json_output(&diff_output)["changes"]
+    );
+}
+
+#[test]
+fn phase2_d04_verify_rejects_unknown_additional_properties_wire_fields() {
+    let lock = lock_from_v4(
+        "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        "d04",
+    );
+    let rendered = fs::read_to_string(&lock).expect("v4 lock should be readable");
+    let marker = "additional_properties:\n            kind: any";
+    let tampered = rendered.replacen(
+        marker,
+        "additional_properties:\n            kind: any\n            unexpected_field: accepted",
+        1,
+    );
+    assert_ne!(tampered, rendered, "fixture should include an any policy");
+    fs::write(&lock, tampered).expect("tampered v4 lock should write");
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+
+    verify_command(
+        "testdata/openapi/phase2_d04_additional_properties_old.yaml",
+        "d04",
+        lock,
+    )
+    .assert()
+    .code(2)
+    .stdout(predicate::str::is_empty())
+    .stderr(predicate::str::contains(
+        "unknown field in additionalProperties policy",
+    ));
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase2_d05_verify_v4_matches_diff_format_findings() {
+    let lock = lock_from_v4("testdata/openapi/phase2_d05_format_old.yaml", "d05");
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+    let verify_output = verify_command("testdata/openapi/phase2_d05_format_new.yaml", "d05", lock)
+        .args(["--format", "json"])
+        .output()
+        .expect("Verify command should run");
+    let diff_output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d05_format_old.yaml",
+            "testdata/openapi/phase2_d05_format_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+    fs::remove_file(lock).ok();
+
+    assert_eq!(verify_output.status.code(), Some(0));
+    assert_eq!(diff_output.status.code(), Some(0));
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        parse_json_output(&diff_output)["changes"]
+    );
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        json!([
+            {
+                "severity": "warning",
+                "method": "GET",
+                "path": "/events",
+                "message": "response 200 application/json field created_at format changed from date to date-time"
+            },
+            {
+                "severity": "warning",
+                "method": "POST",
+                "path": "/users",
+                "message": "request application/json field count format changed from int32 to int64"
+            },
+            {
+                "severity": "warning",
+                "method": "POST",
+                "path": "/users",
+                "message": "request application/json field id format changed from none to uuid"
+            }
+        ])
+    );
+}
+
+#[test]
+fn phase2_d06_verify_v4_matches_diff_effective_server_findings() {
+    let lock = lock_from_v4("testdata/openapi/phase2_d06_servers_old.yaml", "d06");
+    let lock = lock.to_str().expect("temp path should be valid UTF-8");
+    let verify_output = verify_command("testdata/openapi/phase2_d06_servers_new.yaml", "d06", lock)
+        .args(["--format", "json"])
+        .output()
+        .expect("Verify command should run");
+    let diff_output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase2_d06_servers_old.yaml",
+            "testdata/openapi/phase2_d06_servers_new.yaml",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Diff command should run");
+
+    assert_eq!(verify_output.status.code(), Some(1));
+    assert_eq!(diff_output.status.code(), Some(1));
+    assert_eq!(
+        parse_json_output(&verify_output)["changes"],
+        parse_json_output(&diff_output)["changes"]
+    );
+}
+
+#[test]
+fn verify_v3_json_reports_partial_phase_two_coverage() {
+    let output = verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/v3_users.lock",
+    )
+    .args(["--format", "json"])
+    .output()
+    .unwrap();
+    let rendered: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rendered["coverage"], "partial");
+    assert_eq!(rendered["limitations"][0]["code"], "phase2_relock_required");
+}
+
+#[test]
+fn verify_v3_text_and_sarif_report_the_phase_two_relock_limitation() {
+    verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/v3_users.lock",
+    )
+    .assert()
+    .stderr(predicate::str::contains(
+        "api.lock v3 lacks Phase 2 contract fields; re-lock from the original OpenAPI source for full coverage",
+    ));
+
+    let output = verify_command(
+        "testdata/openapi/verify_matching.yaml",
+        "users",
+        "testdata/lock/v3_users.lock",
+    )
+    .args(["--format", "sarif"])
+    .output()
+    .unwrap();
+    let rendered: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        rendered["runs"][0]["invocations"][0]["toolExecutionNotifications"][0]["descriptor"]["id"],
+        "apiwatch/phase2-relock-required"
+    );
+}
+
+#[test]
 fn verify_v3_d16_reports_four_breaking_findings() {
-    let lock = lock_from("testdata/openapi/v3_d16_old.yaml", "d16");
+    let lock = lock_from_v3("testdata/openapi/v3_d16_old.yaml", "d16");
     let output = Command::cargo_bin("apiwatch")
         .expect("binary should build")
         .args([
@@ -225,7 +1035,7 @@ fn verify_v3_d16_reports_four_breaking_findings() {
 
 #[test]
 fn verify_v3_scope_ignores_unselected_additions() {
-    let lock = scoped_lock("GET /users");
+    let lock = scoped_lock_v3("GET /users");
 
     verify_command(
         "testdata/openapi/v3_scoped_added_unrelated.yaml",
@@ -241,7 +1051,7 @@ fn verify_v3_scope_ignores_unselected_additions() {
 
 #[test]
 fn verify_v3_selected_operation_removal_is_breaking() {
-    let lock = scoped_lock("GET /users");
+    let lock = scoped_lock_v3("GET /users");
 
     verify_command(
         "testdata/openapi/v3_scoped_without_users.yaml",
@@ -257,7 +1067,7 @@ fn verify_v3_selected_operation_removal_is_breaking() {
 
 #[test]
 fn verify_v3_warning_only_change_exits_zero() {
-    let lock = lock_from("testdata/openapi/status_error_added_old.yaml", "users");
+    let lock = lock_from_v3("testdata/openapi/status_error_added_old.yaml", "users");
 
     verify_command(
         "testdata/openapi/status_error_added_new.yaml",
@@ -272,8 +1082,8 @@ fn verify_v3_warning_only_change_exits_zero() {
 }
 
 #[test]
-fn verify_v3_json_uses_full_coverage_and_diff_findings() {
-    let lock = lock_from("testdata/openapi/v3_d16_old.yaml", "d16");
+fn verify_v4_json_uses_full_coverage_and_diff_findings() {
+    let lock = lock_from_v4("testdata/openapi/v3_d16_old.yaml", "d16");
     let output = Command::cargo_bin("apiwatch")
         .expect("binary should build")
         .args([
@@ -1284,7 +2094,7 @@ fn verify_exits_two_for_invalid_openapi_input() {
 }
 
 #[test]
-fn verify_exits_two_for_an_unsupported_lockfile_version() {
+fn verify_exits_two_for_an_invalid_v4_lockfile() {
     verify_command(
         "testdata/openapi/verify_matching.yaml",
         "users",
@@ -1293,7 +2103,7 @@ fn verify_exits_two_for_an_unsupported_lockfile_version() {
     .assert()
     .code(2)
     .stdout(predicate::str::is_empty())
-    .stderr(predicate::str::contains("unsupported api.lock version 4"));
+    .stderr(predicate::str::contains("failed to parse api.lock v4 YAML"));
 }
 
 #[test]

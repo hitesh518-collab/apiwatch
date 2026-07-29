@@ -25,10 +25,12 @@ explicit `--map-at` annotations. It also adds output-format parity, an explicit
 Rust 1.86 floor, accurate OpenAPI 3.1 rejection, and a pinned real-world
 compatibility smoke suite.
 
-Current v3 declared locks contain complete normalized contracts. Declared
-`verify` uses the same semantic comparison engine as `diff`, covering
-operations, schemas, parameters, authentication, content types, and
-responses. Versions 1 and 2 remain readable as route-only legacy formats.
+Current v4 declared locks contain the complete Phase 2 normalized contract.
+Declared `verify` uses the same semantic comparison engine as `diff`, covering
+operations, schemas, parameters, authentication, servers, content types,
+composition, and responses. Version 3 remains readable with partial coverage
+and requires re-locking from the original OpenAPI source for full Phase 2
+coverage. Versions 1 and 2 remain readable as route-only legacy formats.
 
 ## CLI
 
@@ -45,17 +47,18 @@ apiwatch verify https://api.example.com/openapi.yaml --name users --lock api.loc
 
 The declared-contract path currently targets OpenAPI 3.0 YAML and JSON.
 `apiwatch diff` normalizes two documents and reports semantic changes.
-`apiwatch lock` creates a deterministic v3 full-contract entry and refuses to
+`apiwatch lock` creates a deterministic v4 full-contract entry and refuses to
 overwrite an existing file. Use `--update` for deliberate atomic replacement.
 Repeatable `--include-operation` options scope large APIs; the default
 per-entry payload ceiling is 5,242,880 bytes.
 
-`apiwatch verify` reconstructs a v3 declared contract and runs the same
+`apiwatch verify` reconstructs a v4 declared contract and runs the same
 `diff_contracts` path used by `diff`. Warning-only and non-breaking changes
-exit `0`; breaking changes exit `1`. Updating a v1/v2 lock requires the
-original OpenAPI source and is refused when other legacy declared entries
-would be left partially migrated. Legacy Verify remains route-only and reports
-that limitation in text, JSON, and SARIF.
+exit `0`; breaking changes exit `1`. Updating a v1, v2, or v3 lock requires the
+original OpenAPI source and is refused when other older declared entries would
+be left partially migrated. Version 3 Verify reports partial Phase 2 coverage;
+v1/v2 Verify remains route-only. Each limitation is reported in text, JSON,
+and SARIF.
 
 Remote verification uses a 10-second timeout and a 10 MiB response limit.
 Authentication, custom headers, and configuration files are not included.
@@ -196,27 +199,27 @@ action outputs, authentication, custom headers, or configuration files.
 
 ## Known Limitations
 
-APIWatch is pre-v1. A clean result does not yet prove that every change class
-below was checked.
+APIWatch is pre-v1. Current v4 locks cover the completed Phase 2 audit classes;
+older locks retain the coverage limitations shown below.
 
 | Area | Current limitation | Tracked work |
 |---|---|---|
-| Request bodies (D-01) | Adding or removing an entire request body may be missed. | [Phase 2](ROADMAP.md#phase-2--make-the-comparison-engine-trustworthy) |
-| Content types (D-02) | Adding or removing a request or response media type may be missed. | Phase 2 |
-| Response requiredness (D-03) | Required/optional response-field changes are not compared correctly. | Phase 2 |
-| Dictionary schemas (D-04) | `additionalProperties` constraints are not represented. | Phase 2 |
-| Schema formats (D-05) | Formats such as `int32`, `int64`, and date-time are normalized but not compared. | Phase 2 |
-| Servers (D-06) | Server and base-URL changes are not tracked. | Phase 2 |
-| Path templates (D-07) | Renaming a path parameter may appear as endpoint removal plus addition. | Phase 2 |
-| Security identity (D-08) | Renaming an equivalent security scheme may be reported as breaking. | Phase 2 |
-| Composition (D-09) | Reordering `allOf`, `oneOf`, or `anyOf` branches can cause false breaking findings. | Phase 2 |
-| Array model (D-10) | Array items are represented internally as a synthetic property, limiting some comparisons. | Phase 2 |
-| Enum severity (D-11) | Direction is handled, but response enum-widening severity is not yet a stable policy. | Phase 2 |
+| Request bodies (D-01) | Resolved for presence and requiredness in current v4 locks. | [Phase 2](ROADMAP.md#phase-2--make-the-comparison-engine-trustworthy) |
+| Content types (D-02) | Resolved for canonical request and response media types. | Phase 2 |
+| Response requiredness (D-03) | Resolved with directional request/response rules. | Phase 2 |
+| Dictionary schemas (D-04) | Resolved for forbidden, unconstrained, and schema-valued `additionalProperties`. | Phase 2 |
+| Schema formats (D-05) | Resolved as deterministic warnings. | Phase 2 |
+| Servers (D-06) | Resolved for effective, privacy-safe server-template identity. | Phase 2 |
+| Path templates (D-07) | Resolved through positional template identity while retaining display paths. | Phase 2 |
+| Security identity (D-08) | Resolved through normalized wire identity. | Phase 2 |
+| Composition (D-09) | Resolved through `allOf` intersection and order-independent `oneOf`/`anyOf` comparison. | Phase 2 |
+| Array model (D-10) | Resolved with first-class array items. | Phase 2 |
+| Enum severity (D-11) | Resolved with directional request/response enum policy. | Phase 2 |
 | OpenAPI 3.1 (D-12) | OpenAPI 3.1 is explicitly rejected until it is implemented. | [Phase 3](ROADMAP.md#phase-3--real-world-compatibility) |
 | Strict metadata parsing (D-13) | Irrelevant malformed metadata can reject an otherwise usable specification. | Phase 3 |
 | Recursive schemas (D-14) | Circular schema references are currently rejected. | Phase 3 |
 | External references (D-15) | External and multi-file `$ref` targets are unsupported. | Phase 3 |
-| Legacy declared locks (D-16) | Versions 1 and 2 remain route-only and require re-locking from original sources for full v3 coverage. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
+| Legacy declared locks (D-16) | Versions 1 and 2 are route-only; v3 is partial for Phase 2. All require re-locking from original sources for full v4 coverage. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
 | Null observations (D-17) | A null-only sample can make an observed shape too narrow. | [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts) |
 | Observed requiredness (D-18) | Requiredness does not yet use a configurable confidence threshold. | Phase 4 |
 | Observed inputs (D-19) | Observed Verify accepts local JSON only; HAR and live capture are not implemented. | [Phase 5](ROADMAP.md#phase-5--frictionless-recording-and-ci-adoption) |

@@ -1,18 +1,22 @@
+pub(crate) mod identity;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use openapiv3::{
-    Components, IntegerFormat, MediaType, NumberFormat, OpenAPI, Operation as OpenApiOperation,
-    Parameter as OpenApiParameter, ParameterData, ParameterSchemaOrContent, PathItem, ReferenceOr,
+    AdditionalProperties as OpenApiAdditionalProperties, Components, IntegerFormat, MediaType,
+    NumberFormat, OpenAPI, Operation as OpenApiOperation, Parameter as OpenApiParameter,
+    ParameterData, ParameterSchemaOrContent, PathItem, ReferenceOr,
     RequestBody as OpenApiRequestBody, Response as OpenApiResponse, Schema as OpenApiSchema,
     SchemaKind as OpenApiSchemaKind, SecurityRequirement, SecurityScheme as OpenApiSecurityScheme,
-    StatusCode, StringFormat, Type, VariantOrUnknownOrEmpty,
+    Server, StatusCode, StringFormat, Type, VariantOrUnknownOrEmpty,
 };
 
 use crate::contract::{
-    ApiContract, AuthRequirement, AuthSchemeKind, HttpMethod, Operation, OperationKey, Parameter,
+    AdditionalProperties, ApiContract, AuthIdentity, AuthRequirement, AuthSchemeKind, HttpMethod,
+    OAuthFlowIdentity, OAuthFlowKind, Operation, OperationIdentity, OperationKey, Parameter,
     ParameterKey, ParameterLocation, Property, RequestBody, Response, Schema, SchemaKind,
 };
 
@@ -131,10 +135,12 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
     let schema_resolver = SchemaResolver::from_components(document.components.as_ref());
     let security_schemes = normalize_security_schemes(document.components.as_ref())?;
     let global_security = document.security.clone().unwrap_or_default();
+    let root_servers = document.servers.clone();
     let context = OperationNormalizeContext {
         security_schemes: &security_schemes,
         schema_resolver: &schema_resolver,
         global_security: &global_security,
+        root_servers: &root_servers,
     };
     let path_items = document
         .paths
@@ -151,6 +157,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Get,
             &context,
+            &item.servers,
             &item.parameters,
             item.get.as_ref(),
         )?;
@@ -159,6 +166,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Post,
             &context,
+            &item.servers,
             &item.parameters,
             item.post.as_ref(),
         )?;
@@ -167,6 +175,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Put,
             &context,
+            &item.servers,
             &item.parameters,
             item.put.as_ref(),
         )?;
@@ -175,6 +184,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Patch,
             &context,
+            &item.servers,
             &item.parameters,
             item.patch.as_ref(),
         )?;
@@ -183,6 +193,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Delete,
             &context,
+            &item.servers,
             &item.parameters,
             item.delete.as_ref(),
         )?;
@@ -191,6 +202,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Options,
             &context,
+            &item.servers,
             &item.parameters,
             item.options.as_ref(),
         )?;
@@ -199,6 +211,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Head,
             &context,
+            &item.servers,
             &item.parameters,
             item.head.as_ref(),
         )?;
@@ -207,6 +220,7 @@ fn normalize(document: OpenAPI) -> Result<ApiContract> {
             path,
             HttpMethod::Trace,
             &context,
+            &item.servers,
             &item.parameters,
             item.trace.as_ref(),
         )?;
@@ -232,9 +246,10 @@ fn normalized_openapi_path(path: &str) -> Result<&str> {
 }
 
 struct OperationNormalizeContext<'a> {
-    security_schemes: &'a BTreeMap<String, AuthSchemeKind>,
+    security_schemes: &'a BTreeMap<String, ResolvedAuthScheme>,
     schema_resolver: &'a SchemaResolver,
     global_security: &'a [SecurityRequirement],
+    root_servers: &'a [Server],
 }
 
 fn resolve_path_item(
@@ -271,6 +286,7 @@ fn insert_operation(
     path: &str,
     method: HttpMethod,
     context: &OperationNormalizeContext<'_>,
+    path_servers: &[Server],
     path_parameters: &[ReferenceOr<OpenApiParameter>],
     operation: Option<&OpenApiOperation>,
 ) -> Result<()> {
@@ -284,13 +300,32 @@ fn insert_operation(
             .as_deref()
             .unwrap_or(context.global_security),
         context.security_schemes,
-    );
+    )?;
+    let server_sources = if !operation.servers.is_empty() {
+        &operation.servers
+    } else if !path_servers.is_empty() {
+        path_servers
+    } else if !context.root_servers.is_empty() {
+        context.root_servers
+    } else {
+        &[]
+    };
+    let servers = if server_sources.is_empty() {
+        std::iter::once(identity::canonical_server_template("/")?).collect()
+    } else {
+        server_sources
+            .iter()
+            .map(|server| identity::canonical_server_template(&server.url))
+            .collect::<Result<_>>()?
+    };
 
     let parameters = normalize_parameters(
         context.schema_resolver,
         path_parameters,
         &operation.parameters,
     )?;
+    let (canonical_path, placeholder_names) = identity::canonical_path_template(path)?;
+    let parameters = canonicalize_path_parameters(parameters, &placeholder_names)?;
 
     let request_body = operation
         .request_body
@@ -305,13 +340,27 @@ fn insert_operation(
         responses.insert(status, response);
     }
 
+    let key = OperationKey {
+        method,
+        path: path.to_string(),
+    };
+    let identity = OperationIdentity {
+        method,
+        path: canonical_path,
+    };
+    if contract.operations.contains_key(&identity) {
+        return Err(anyhow!(
+            "ambiguous operation identity {} {}",
+            identity.method.as_str(),
+            identity.path
+        ));
+    }
     contract.operations.insert(
-        OperationKey {
-            method,
-            path: path.to_string(),
-        },
+        identity,
         Operation {
+            key,
             auth,
+            servers: Some(servers),
             parameters,
             request_body,
             responses,
@@ -321,15 +370,58 @@ fn insert_operation(
     Ok(())
 }
 
+fn canonicalize_path_parameters(
+    parameters: BTreeMap<ParameterKey, Parameter>,
+    placeholder_names: &[String],
+) -> Result<BTreeMap<ParameterKey, Parameter>> {
+    let mut canonical = BTreeMap::new();
+    for (key, parameter) in parameters {
+        let key = if key.location == ParameterLocation::Path {
+            let slot = placeholder_names
+                .iter()
+                .position(|name| name == &parameter.name)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "path parameter {} is not bound to a path template placeholder",
+                        parameter.name
+                    )
+                })?;
+            ParameterKey {
+                location: ParameterLocation::Path,
+                name: format!("{{{slot}}}"),
+            }
+        } else {
+            key
+        };
+        if canonical.insert(key, parameter).is_some() {
+            return Err(anyhow!("duplicate path parameter binding"));
+        }
+    }
+    for name in placeholder_names {
+        if !canonical.values().any(|parameter| parameter.name == *name) {
+            return Err(anyhow!(
+                "path template placeholder {name} is not bound to a path parameter"
+            ));
+        }
+    }
+    Ok(canonical)
+}
+
 fn normalize_status_code(status: &StatusCode) -> String {
     match status {
         StatusCode::Code(_) | StatusCode::Range(_) => status.to_string(),
     }
 }
 
+#[derive(Clone, Debug)]
+struct ResolvedAuthScheme {
+    kind: AuthSchemeKind,
+    identity: AuthIdentity,
+}
+
 fn normalize_security_schemes(
     components: Option<&Components>,
-) -> Result<BTreeMap<String, AuthSchemeKind>> {
+) -> Result<BTreeMap<String, ResolvedAuthScheme>> {
     let mut schemes = BTreeMap::new();
 
     let Some(components) = components else {
@@ -354,9 +446,12 @@ fn normalize_security_scheme_ref(
     scheme: &ReferenceOr<OpenApiSecurityScheme>,
     security_schemes: &BTreeMap<String, ReferenceOr<OpenApiSecurityScheme>>,
     visiting: &mut BTreeSet<String>,
-) -> Result<AuthSchemeKind> {
+) -> Result<ResolvedAuthScheme> {
     match scheme {
-        ReferenceOr::Item(scheme) => Ok(auth_scheme_kind(scheme)),
+        ReferenceOr::Item(scheme) => Ok(ResolvedAuthScheme {
+            kind: auth_scheme_kind(scheme),
+            identity: auth_scheme_identity(scheme)?,
+        }),
         ReferenceOr::Reference { reference } => {
             resolve_security_scheme(reference, security_schemes, visiting)
         }
@@ -367,7 +462,7 @@ fn resolve_security_scheme(
     reference: &str,
     security_schemes: &BTreeMap<String, ReferenceOr<OpenApiSecurityScheme>>,
     visiting: &mut BTreeSet<String>,
-) -> Result<AuthSchemeKind> {
+) -> Result<ResolvedAuthScheme> {
     let name = component_name(
         reference,
         "#/components/securitySchemes/",
@@ -404,39 +499,135 @@ fn auth_scheme_kind(scheme: &OpenApiSecurityScheme) -> AuthSchemeKind {
     }
 }
 
+fn auth_scheme_identity(scheme: &OpenApiSecurityScheme) -> Result<AuthIdentity> {
+    match scheme {
+        OpenApiSecurityScheme::APIKey { location, name, .. } => {
+            let location = match location {
+                openapiv3::APIKeyLocation::Query => ParameterLocation::Query,
+                openapiv3::APIKeyLocation::Header => ParameterLocation::Header,
+                openapiv3::APIKeyLocation::Cookie => ParameterLocation::Cookie,
+            };
+            Ok(AuthIdentity::ApiKey {
+                location,
+                name: name.clone(),
+            })
+        }
+        OpenApiSecurityScheme::HTTP { scheme, .. } => Ok(AuthIdentity::Http {
+            scheme: scheme.to_ascii_lowercase(),
+        }),
+        OpenApiSecurityScheme::OAuth2 { flows, .. } => {
+            let mut identities = BTreeSet::new();
+            if let Some(flow) = &flows.implicit {
+                identities.insert(OAuthFlowIdentity {
+                    kind: OAuthFlowKind::Implicit,
+                    authorization: Some(identity::canonical_auth_endpoint(
+                        &flow.authorization_url,
+                    )?),
+                    token: None,
+                    refresh: flow
+                        .refresh_url
+                        .as_deref()
+                        .map(identity::canonical_auth_endpoint)
+                        .transpose()?,
+                });
+            }
+            if let Some(flow) = &flows.password {
+                identities.insert(OAuthFlowIdentity {
+                    kind: OAuthFlowKind::Password,
+                    authorization: None,
+                    token: Some(identity::canonical_auth_endpoint(&flow.token_url)?),
+                    refresh: flow
+                        .refresh_url
+                        .as_deref()
+                        .map(identity::canonical_auth_endpoint)
+                        .transpose()?,
+                });
+            }
+            if let Some(flow) = &flows.client_credentials {
+                identities.insert(OAuthFlowIdentity {
+                    kind: OAuthFlowKind::ClientCredentials,
+                    authorization: None,
+                    token: Some(identity::canonical_auth_endpoint(&flow.token_url)?),
+                    refresh: flow
+                        .refresh_url
+                        .as_deref()
+                        .map(identity::canonical_auth_endpoint)
+                        .transpose()?,
+                });
+            }
+            if let Some(flow) = &flows.authorization_code {
+                identities.insert(OAuthFlowIdentity {
+                    kind: OAuthFlowKind::AuthorizationCode,
+                    authorization: Some(identity::canonical_auth_endpoint(
+                        &flow.authorization_url,
+                    )?),
+                    token: Some(identity::canonical_auth_endpoint(&flow.token_url)?),
+                    refresh: flow
+                        .refresh_url
+                        .as_deref()
+                        .map(identity::canonical_auth_endpoint)
+                        .transpose()?,
+                });
+            }
+            Ok(AuthIdentity::OAuth2 { flows: identities })
+        }
+        OpenApiSecurityScheme::OpenIDConnect {
+            open_id_connect_url,
+            ..
+        } => Ok(AuthIdentity::OpenIdConnect {
+            discovery: identity::canonical_auth_endpoint(open_id_connect_url)?,
+        }),
+    }
+}
+
 fn normalize_auth_requirements(
     requirements: &[SecurityRequirement],
-    security_schemes: &BTreeMap<String, AuthSchemeKind>,
-) -> BTreeMap<String, AuthRequirement> {
+    security_schemes: &BTreeMap<String, ResolvedAuthScheme>,
+) -> Result<BTreeMap<String, AuthRequirement>> {
     let mut auth = BTreeMap::new();
 
     if requirements
         .iter()
         .any(|requirement| requirement.is_empty())
     {
-        return auth;
+        return Ok(auth);
     }
+
+    let mut identities = BTreeSet::new();
 
     for requirement in requirements {
         for (name, scopes) in requirement {
             let mut scopes = scopes.clone();
             scopes.sort();
+            scopes.dedup();
+
+            let scheme = security_schemes.get(name);
+            let identity = scheme.map(|scheme| scheme.identity.clone());
+            if let Some(identity) = &identity {
+                if !matches!(identity, AuthIdentity::Unknown { .. })
+                    && !identities.insert(identity.clone())
+                {
+                    return Err(anyhow!("duplicate authentication identity"));
+                }
+            }
 
             auth.insert(
                 name.clone(),
                 AuthRequirement {
                     name: name.clone(),
-                    kind: security_schemes
-                        .get(name)
-                        .copied()
+                    kind: scheme
+                        .map(|scheme| scheme.kind)
                         .unwrap_or(AuthSchemeKind::Unknown),
+                    identity: identity.or(Some(AuthIdentity::Unknown {
+                        kind: AuthSchemeKind::Unknown,
+                    })),
                     scopes,
                 },
             );
         }
     }
 
-    auth
+    Ok(auth)
 }
 
 struct SchemaResolver {
@@ -591,16 +782,32 @@ fn normalize_parameters(
     operation_parameters: &[ReferenceOr<OpenApiParameter>],
 ) -> Result<BTreeMap<ParameterKey, Parameter>> {
     let mut parameters = BTreeMap::new();
+    let mut path_keys = BTreeSet::new();
 
     for parameter in path_parameters {
         let (key, parameter) =
             normalize_parameter_ref(parameter, schema_resolver, &mut BTreeSet::new())?;
+        if !path_keys.insert(key.clone()) {
+            return Err(anyhow!(
+                "duplicate parameter {}:{}",
+                key.location.as_str(),
+                key.name
+            ));
+        }
         parameters.insert(key, parameter);
     }
 
+    let mut operation_keys = BTreeSet::new();
     for parameter in operation_parameters {
         let (key, parameter) =
             normalize_parameter_ref(parameter, schema_resolver, &mut BTreeSet::new())?;
+        if !operation_keys.insert(key.clone()) {
+            return Err(anyhow!(
+                "duplicate parameter {}:{}",
+                key.location.as_str(),
+                key.name
+            ));
+        }
         parameters.insert(key, parameter);
     }
 
@@ -700,12 +907,15 @@ fn normalize_request_body_ref(
     let mut content = BTreeMap::new();
     for (content_type, media_type) in &request_body.content {
         content.insert(
-            content_type.clone(),
+            identity::canonical_media_type(content_type)?,
             normalize_media_type(media_type, schema_resolver)?,
         );
     }
 
-    Ok(RequestBody { content })
+    Ok(RequestBody {
+        required: Some(request_body.required),
+        content,
+    })
 }
 
 fn normalize_response(
@@ -730,7 +940,7 @@ fn normalize_response_ref(
     let mut content = BTreeMap::new();
     for (content_type, media_type) in &response.content {
         content.insert(
-            content_type.clone(),
+            identity::canonical_media_type(content_type)?,
             normalize_media_type(media_type, schema_resolver)?,
         );
     }
@@ -781,6 +991,17 @@ fn normalize_schema(
     match &schema.schema_kind {
         OpenApiSchemaKind::Type(Type::Object(object)) => {
             normalized.kind = SchemaKind::Object;
+            normalized.additional_properties = match &object.additional_properties {
+                None | Some(OpenApiAdditionalProperties::Any(true)) => AdditionalProperties::Any,
+                Some(OpenApiAdditionalProperties::Any(false)) => AdditionalProperties::Forbidden,
+                Some(OpenApiAdditionalProperties::Schema(schema)) => {
+                    AdditionalProperties::Schema(Box::new(normalize_schema_ref(
+                        schema.as_ref(),
+                        schema_resolver,
+                        visiting,
+                    )?))
+                }
+            };
             normalized.properties = object
                 .properties
                 .iter()
@@ -800,33 +1021,31 @@ fn normalize_schema(
         OpenApiSchemaKind::Type(Type::Array(array)) => {
             normalized.kind = SchemaKind::Array;
             if let Some(items) = &array.items {
-                normalized.properties.insert(
-                    "items".to_string(),
-                    Property {
-                        required: true,
-                        schema: Box::new(normalize_boxed_schema_ref(
-                            items,
-                            schema_resolver,
-                            visiting,
-                        )?),
-                    },
-                );
+                normalized.items = Some(Box::new(normalize_boxed_schema_ref(
+                    items,
+                    schema_resolver,
+                    visiting,
+                )?));
             }
         }
         OpenApiSchemaKind::OneOf { one_of } => {
             normalized.kind = SchemaKind::OneOf;
-            normalized.properties =
-                normalize_composed_schema_refs("oneOf", one_of, schema_resolver, visiting)?;
+            normalized.branches =
+                normalize_composed_schema_refs(one_of, schema_resolver, visiting)?;
         }
         OpenApiSchemaKind::AllOf { all_of } => {
-            normalized.kind = SchemaKind::AllOf;
-            normalized.properties =
-                normalize_composed_schema_refs("allOf", all_of, schema_resolver, visiting)?;
+            let mut merged = merge_all_of(normalize_composed_schema_refs(
+                all_of,
+                schema_resolver,
+                visiting,
+            )?)?;
+            merged.nullable &= normalized.nullable;
+            normalized = merged;
         }
         OpenApiSchemaKind::AnyOf { any_of } => {
             normalized.kind = SchemaKind::AnyOf;
-            normalized.properties =
-                normalize_composed_schema_refs("anyOf", any_of, schema_resolver, visiting)?;
+            normalized.branches =
+                normalize_composed_schema_refs(any_of, schema_resolver, visiting)?;
         }
         OpenApiSchemaKind::Type(Type::String(string)) => {
             normalized.kind = SchemaKind::String;
@@ -853,37 +1072,128 @@ fn normalize_schema(
                 .map(|value| value.to_string())
                 .collect();
         }
-        OpenApiSchemaKind::Type(Type::Boolean(_)) => {
+        OpenApiSchemaKind::Type(Type::Boolean(boolean)) => {
             normalized.kind = SchemaKind::Boolean;
+            normalized.enum_values = boolean
+                .enumeration
+                .iter()
+                .flatten()
+                .map(|value| value.to_string())
+                .collect();
         }
         _ => {
             normalized.kind = SchemaKind::Unknown;
         }
     }
 
+    normalized.enum_values.sort();
+    normalized.enum_values.dedup();
+
     Ok(normalized)
 }
 
 fn normalize_composed_schema_refs(
-    prefix: &str,
     schemas: &[ReferenceOr<OpenApiSchema>],
     schema_resolver: &SchemaResolver,
     visiting: &mut BTreeSet<String>,
-) -> Result<BTreeMap<String, Property>> {
-    schemas
+) -> Result<Vec<Schema>> {
+    let mut branches = schemas
         .iter()
-        .enumerate()
-        .map(|(index, schema)| {
-            let schema = normalize_schema_ref(schema, schema_resolver, visiting)?;
-            Ok((
-                format!("{prefix}[{index}]"),
-                Property {
-                    required: true,
-                    schema: Box::new(schema),
-                },
-            ))
-        })
-        .collect()
+        .map(|schema| normalize_schema_ref(schema, schema_resolver, visiting))
+        .collect::<Result<Vec<_>>>()?;
+    branches.sort_by_key(Schema::structural_key);
+    branches.dedup_by(|left, right| left.structural_key() == right.structural_key());
+    Ok(branches)
+}
+
+pub fn merge_all_of(mut schemas: Vec<Schema>) -> Result<Schema> {
+    let Some(mut merged) = schemas.pop() else {
+        return Ok(unknown_schema());
+    };
+    for schema in schemas {
+        merged = intersect_schema(merged, schema)?;
+    }
+    Ok(merged)
+}
+
+fn intersect_schema(mut left: Schema, right: Schema) -> Result<Schema> {
+    let left_was_unknown = matches!(left.kind, SchemaKind::Unknown);
+    let right_was_unknown = matches!(right.kind, SchemaKind::Unknown);
+    left.kind = match (&left.kind, &right.kind) {
+        (SchemaKind::Unknown, kind) => kind.clone(),
+        (kind, SchemaKind::Unknown) => kind.clone(),
+        (left_kind, right_kind) if left_kind == right_kind => left_kind.clone(),
+        _ => return Err(anyhow!("allOf contains incompatible schema kinds")),
+    };
+    left.nullable &= right.nullable;
+    left.format = match (left.format.take(), right.format) {
+        (None, format) | (format, None) => format,
+        (Some(left_format), Some(right_format)) if left_format == right_format => Some(left_format),
+        _ => return Err(anyhow!("allOf contains incompatible schema formats")),
+    };
+    left.enum_values = intersect_enums(left.enum_values, right.enum_values)?;
+    for (name, right_property) in right.properties {
+        if let Some(left_property) = left.properties.get_mut(&name) {
+            left_property.required |= right_property.required;
+            *left_property.schema =
+                intersect_schema(*left_property.schema.clone(), *right_property.schema)?;
+        } else {
+            left.properties.insert(name, right_property);
+        }
+    }
+    left.items = match (left.items.take(), right.items) {
+        (Some(left_items), Some(right_items)) => {
+            Some(Box::new(intersect_schema(*left_items, *right_items)?))
+        }
+        (Some(items), None) | (None, Some(items)) => Some(items),
+        (None, None) => None,
+    };
+    left.additional_properties = match (left_was_unknown, right_was_unknown) {
+        (true, false) => right.additional_properties,
+        (false, true) => left.additional_properties,
+        _ => intersect_additional_properties(
+            left.additional_properties,
+            right.additional_properties,
+        )?,
+    };
+    match (left_was_unknown, right_was_unknown) {
+        (true, false) => left.branches = right.branches,
+        (false, true) => {}
+        _ if !left.branches.is_empty() || !right.branches.is_empty() => {
+            return Err(anyhow!("allOf branches must be merged before intersection"));
+        }
+        _ => {}
+    }
+    Ok(left)
+}
+fn intersect_enums(left: Vec<String>, right: Vec<String>) -> Result<Vec<String>> {
+    if left.is_empty() {
+        return Ok(right);
+    }
+    if right.is_empty() {
+        return Ok(left);
+    }
+    let right = right.into_iter().collect::<BTreeSet<_>>();
+    let values = left
+        .into_iter()
+        .filter(|value| right.contains(value))
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        return Err(anyhow!("allOf enum intersection is empty"));
+    }
+    Ok(values)
+}
+fn intersect_additional_properties(
+    left: AdditionalProperties,
+    right: AdditionalProperties,
+) -> Result<AdditionalProperties> {
+    use AdditionalProperties::{Any, Forbidden, Schema, Unknown};
+    match (left, right) {
+        (Unknown, policy) | (policy, Unknown) => Ok(policy),
+        (Forbidden, _) | (_, Forbidden) => Ok(Forbidden),
+        (Any, policy) | (policy, Any) => Ok(policy),
+        (Schema(left), Schema(right)) => Ok(Schema(Box::new(intersect_schema(*left, *right)?))),
+    }
 }
 
 fn string_format_name(format: &VariantOrUnknownOrEmpty<StringFormat>) -> Option<String> {
@@ -923,17 +1233,88 @@ fn unknown_schema() -> Schema {
         format: None,
         enum_values: Vec::new(),
         properties: BTreeMap::new(),
+        items: None,
+        additional_properties: AdditionalProperties::Forbidden,
+        branches: Vec::new(),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::path::Path;
 
-    use crate::contract::HttpMethod;
+    use crate::contract::{AdditionalProperties, HttpMethod, Property, Schema, SchemaKind};
     use crate::remote::RemoteOpenApi;
 
-    use super::{load_contract, load_remote_contract};
+    use super::{load_contract, load_remote_contract, merge_all_of};
+
+    fn schema(kind: SchemaKind) -> Schema {
+        Schema {
+            kind,
+            nullable: false,
+            format: None,
+            enum_values: Vec::new(),
+            properties: BTreeMap::new(),
+            items: None,
+            additional_properties: AdditionalProperties::Any,
+            branches: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn allof_intersection_preserves_the_narrowest_recursive_constraints() {
+        let mut left = schema(SchemaKind::Object);
+        left.nullable = true;
+        left.properties.insert(
+            "items".to_string(),
+            Property {
+                required: false,
+                schema: Box::new(schema(SchemaKind::Unknown)),
+            },
+        );
+        left.additional_properties =
+            AdditionalProperties::Schema(Box::new(schema(SchemaKind::Unknown)));
+        let mut right = schema(SchemaKind::Object);
+        right.properties.insert(
+            "items".to_string(),
+            Property {
+                required: true,
+                schema: Box::new(Schema {
+                    format: Some("uuid".to_string()),
+                    enum_values: vec!["a".to_string(), "b".to_string()],
+                    ..schema(SchemaKind::String)
+                }),
+            },
+        );
+        right.additional_properties = AdditionalProperties::Schema(Box::new(Schema {
+            enum_values: vec!["a".to_string()],
+            ..schema(SchemaKind::String)
+        }));
+
+        let merged = merge_all_of(vec![left, right]).expect("compatible allOf should merge");
+
+        assert!(!merged.nullable);
+        let items = merged.properties.get("items").expect("items should merge");
+        assert!(items.required);
+        assert_eq!(items.schema.kind, SchemaKind::String);
+        assert_eq!(items.schema.format.as_deref(), Some("uuid"));
+        match merged.additional_properties {
+            AdditionalProperties::Schema(value) => assert_eq!(value.enum_values, ["a"]),
+            _ => panic!("additionalProperties should stay schema constrained"),
+        }
+    }
+
+    #[test]
+    fn allof_intersection_rejects_incompatible_constraints() {
+        let error = merge_all_of(vec![
+            schema(SchemaKind::String),
+            schema(SchemaKind::Integer),
+        ])
+        .expect_err("different known kinds cannot intersect");
+
+        assert!(error.to_string().contains("incompatible schema kinds"));
+    }
 
     #[test]
     fn loads_openapi_operations() {
@@ -951,6 +1332,29 @@ mod tests {
             .get(key)
             .expect("operation should exist");
         assert!(operation.responses.contains_key("200"));
+    }
+
+    #[test]
+    fn normalizes_array_items_as_first_class_schema() {
+        let contract = load_contract(Path::new(
+            "testdata/openapi/phase2_d10_array_items_old.yaml",
+        ))
+        .expect("fixture should parse");
+        let schema = &contract
+            .operations
+            .values()
+            .find(|operation| {
+                operation.key.path == "/users" && operation.key.method == HttpMethod::Get
+            })
+            .expect("GET /users should exist")
+            .responses["200"]
+            .content["application/json"];
+
+        assert!(
+            schema.items.is_some(),
+            "array items should be normalized directly"
+        );
+        assert!(!schema.properties.contains_key("items"));
     }
 
     #[test]

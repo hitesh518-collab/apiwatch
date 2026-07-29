@@ -1,0 +1,27 @@
+openapi: 3.0.3
+info: { title: D-05, version: '1' }
+paths:
+  /users:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string, format: uuid }
+                count: { type: integer, format: int64 }
+      responses:
+        '204': { description: created }
+  /events:
+    get:
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at: { type: string, format: date-time }
