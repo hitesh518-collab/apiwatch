@@ -28,7 +28,7 @@ pub enum CandidateKind {
 }
 
 pub fn encode_expanded_yaml(contract: &ApiContract) -> Result<Vec<u8>> {
-    let mut rendered = serde_yaml::to_string(contract)
+    let mut rendered = serde_yml::to_string(contract)
         .context("failed to encode expanded YAML")?
         .into_bytes();
     if !rendered.ends_with(b"\n") {
@@ -248,7 +248,7 @@ where
 
 pub fn encode_deduplicated_yaml(contract: &ApiContract) -> Result<Vec<u8>> {
     let wire = deduplicate_with(contract, &sha256_id)?;
-    let mut rendered = serde_yaml::to_string(&wire)
+    let mut rendered = serde_yml::to_string(&wire)
         .context("failed to encode deduplicated YAML")?
         .into_bytes();
     if !rendered.ends_with(b"\n") {

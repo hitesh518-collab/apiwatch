@@ -15,4 +15,4 @@ Expected `stripe` failure: `circular schema reference detected: #/components/sch
 
 | digitalocean | `7667351a0c8a1a526343160e1778cb5e97b2c9da` | `cda2db55fb97ceef551a3e35682dca49ad331b486f88f712f7c93f4ba05eefbc` | 110982 | known_failing | — | — |
 
-Expected `digitalocean` failure: `tags[0].description: invalid type: map, expected a string`
+Expected `digitalocean` failure: `invalid type: map, expected a string`

@@ -15,7 +15,7 @@ Expected `stripe` failure: `circular schema reference detected: #/components/sch
 
 | digitalocean | `7667351a0c8a1a526343160e1778cb5e97b2c9da` | 110982 | known_failing | — | — | — | — |
 
-Expected `digitalocean` failure: `tags[0].description: invalid type: map, expected a string`
+Expected `digitalocean` failure: `invalid type: map, expected a string`
 
 
 - Privacy sentinels: passed across 3 candidates

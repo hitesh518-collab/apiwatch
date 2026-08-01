@@ -60,7 +60,7 @@
       "sha256": "cda2db55fb97ceef551a3e35682dca49ad331b486f88f712f7c93f4ba05eefbc",
       "max_bytes": 52428800,
       "status": "known_failing",
-      "expected_error": "tags[0].description: invalid type: map, expected a string"
+      "expected_error": "invalid type: map, expected a string"
     }
   ]
 }

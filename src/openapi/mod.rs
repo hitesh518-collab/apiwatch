@@ -34,7 +34,7 @@ pub fn load_contract_text(text: &str, is_json: bool, location: &str) -> Result<A
         serde_json::from_str(text)
             .with_context(|| format!("failed to parse OpenAPI JSON {location}"))?
     } else {
-        serde_yaml::from_str(text)
+        serde_yml::from_str(text)
             .with_context(|| format!("failed to parse OpenAPI YAML {location}"))?
     };
 
@@ -69,21 +69,21 @@ fn validate_raw_openapi(raw: &str, is_json: bool) -> Result<()> {
             validate_raw_openapi_path(path)?;
         }
     } else {
-        let document: serde_yaml::Value =
-            serde_yaml::from_str(raw).context("failed to parse OpenAPI YAML")?;
-        let openapi_key = serde_yaml::Value::String("openapi".to_string());
+        let document: serde_yml::Value =
+            serde_yml::from_str(raw).context("failed to parse OpenAPI YAML")?;
+        let openapi_key = serde_yml::Value::String("openapi".to_string());
         validate_openapi_version(
             document
                 .as_mapping()
                 .and_then(|document| document.get(&openapi_key))
-                .and_then(serde_yaml::Value::as_str),
+                .and_then(serde_yml::Value::as_str),
         )?;
 
-        let paths_key = serde_yaml::Value::String("paths".to_string());
+        let paths_key = serde_yml::Value::String("paths".to_string());
         let Some(paths) = document
             .as_mapping()
             .and_then(|document| document.get(&paths_key))
-            .and_then(serde_yaml::Value::as_mapping)
+            .and_then(serde_yml::Value::as_mapping)
         else {
             return Ok(());
         };

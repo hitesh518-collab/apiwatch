@@ -191,7 +191,7 @@ pub(super) struct WireProperty {
 }
 
 fn contract_yaml(contract: &Contract) -> Result<Vec<u8>> {
-    let mut bytes = serde_yaml::to_string(contract)
+    let mut bytes = serde_yml::to_string(contract)
         .context("failed to serialize v4 declared contract")?
         .into_bytes();
     if !bytes.ends_with(b"\n") {
@@ -274,14 +274,14 @@ pub(super) fn validate_declared(
 }
 pub(super) fn render(lock: &V4Lock) -> Result<String> {
     validate_lock(lock)?;
-    serde_yaml::to_string(lock).context("failed to serialize api.lock v4")
+    serde_yml::to_string(lock).context("failed to serialize api.lock v4")
 }
 pub(super) fn load(contents: &str) -> Result<V4Lock> {
-    let raw: serde_yaml::Value =
-        serde_yaml::from_str(contents).context("failed to parse api.lock v4 YAML")?;
+    let raw: serde_yml::Value =
+        serde_yml::from_str(contents).context("failed to parse api.lock v4 YAML")?;
     validate_raw_observed_shapes(&raw)?;
     validate_raw_additional_properties(&raw)?;
-    let lock = serde_yaml::from_value(raw).context("failed to parse api.lock v4 YAML")?;
+    let lock = serde_yml::from_value(raw).context("failed to parse api.lock v4 YAML")?;
     validate_lock(&lock)?;
     Ok(lock)
 }
@@ -297,11 +297,11 @@ fn validate_lock(lock: &V4Lock) -> Result<()> {
     }
     Ok(())
 }
-fn validate_raw_observed_shapes(raw: &serde_yaml::Value) -> Result<()> {
-    let Some(apis) = mapping_value(raw, "apis").and_then(serde_yaml::Value::as_mapping) else {
+fn validate_raw_observed_shapes(raw: &serde_yml::Value) -> Result<()> {
+    let Some(apis) = mapping_value(raw, "apis").and_then(serde_yml::Value::as_mapping) else {
         return Ok(());
     };
-    for api in apis.values().filter_map(serde_yaml::Value::as_mapping) {
+    for api in apis.values().filter_map(serde_yml::Value::as_mapping) {
         if string_value(api, "provenance") == Some("observed") {
             if let Some(shape) = mapping_value_from(api, "shape") {
                 validate_raw_shape(shape)?;
@@ -310,25 +310,25 @@ fn validate_raw_observed_shapes(raw: &serde_yaml::Value) -> Result<()> {
     }
     Ok(())
 }
-fn validate_raw_additional_properties(raw: &serde_yaml::Value) -> Result<()> {
-    let Some(apis) = mapping_value(raw, "apis").and_then(serde_yaml::Value::as_mapping) else {
+fn validate_raw_additional_properties(raw: &serde_yml::Value) -> Result<()> {
+    let Some(apis) = mapping_value(raw, "apis").and_then(serde_yml::Value::as_mapping) else {
         return Ok(());
     };
-    for api in apis.values().filter_map(serde_yaml::Value::as_mapping) {
+    for api in apis.values().filter_map(serde_yml::Value::as_mapping) {
         if string_value(api, "provenance") != Some("declared") {
             continue;
         }
         let Some(contract) =
-            mapping_value_from(api, "contract").and_then(serde_yaml::Value::as_mapping)
+            mapping_value_from(api, "contract").and_then(serde_yml::Value::as_mapping)
         else {
             continue;
         };
         let Some(schemas) =
-            mapping_value_from(contract, "schemas").and_then(serde_yaml::Value::as_mapping)
+            mapping_value_from(contract, "schemas").and_then(serde_yml::Value::as_mapping)
         else {
             continue;
         };
-        for schema in schemas.values().filter_map(serde_yaml::Value::as_mapping) {
+        for schema in schemas.values().filter_map(serde_yml::Value::as_mapping) {
             if let Some(policy) = mapping_value_from(schema, "additional_properties") {
                 validate_raw_additional_properties_policy(policy)?;
             }
@@ -336,7 +336,7 @@ fn validate_raw_additional_properties(raw: &serde_yaml::Value) -> Result<()> {
     }
     Ok(())
 }
-fn validate_raw_additional_properties_policy(value: &serde_yaml::Value) -> Result<()> {
+fn validate_raw_additional_properties_policy(value: &serde_yml::Value) -> Result<()> {
     let Some(policy) = value.as_mapping() else {
         return Ok(());
     };
@@ -356,7 +356,7 @@ fn validate_raw_additional_properties_policy(value: &serde_yaml::Value) -> Resul
     }
     Ok(())
 }
-fn validate_raw_shape(value: &serde_yaml::Value) -> Result<()> {
+fn validate_raw_shape(value: &serde_yml::Value) -> Result<()> {
     let Some(shape) = value.as_mapping() else {
         return Ok(());
     };
@@ -379,12 +379,9 @@ fn validate_raw_shape(value: &serde_yaml::Value) -> Result<()> {
     match kind {
         "object" => {
             if let Some(properties) =
-                mapping_value_from(shape, "properties").and_then(serde_yaml::Value::as_mapping)
+                mapping_value_from(shape, "properties").and_then(serde_yml::Value::as_mapping)
             {
-                for property in properties
-                    .values()
-                    .filter_map(serde_yaml::Value::as_mapping)
-                {
+                for property in properties.values().filter_map(serde_yml::Value::as_mapping) {
                     if property.keys().any(|key| {
                         key.as_str()
                             .is_some_and(|key| !["observations", "shape"].contains(&key))
@@ -409,7 +406,7 @@ fn validate_raw_shape(value: &serde_yaml::Value) -> Result<()> {
         }
         "union" => {
             if let Some(variants) =
-                mapping_value_from(shape, "variants").and_then(serde_yaml::Value::as_sequence)
+                mapping_value_from(shape, "variants").and_then(serde_yml::Value::as_sequence)
             {
                 for variant in variants {
                     validate_raw_shape(variant)?;
@@ -420,19 +417,19 @@ fn validate_raw_shape(value: &serde_yaml::Value) -> Result<()> {
     };
     Ok(())
 }
-fn mapping_value<'a>(value: &'a serde_yaml::Value, key: &str) -> Option<&'a serde_yaml::Value> {
+fn mapping_value<'a>(value: &'a serde_yml::Value, key: &str) -> Option<&'a serde_yml::Value> {
     value
         .as_mapping()
         .and_then(|mapping| mapping_value_from(mapping, key))
 }
 fn mapping_value_from<'a>(
-    mapping: &'a serde_yaml::Mapping,
+    mapping: &'a serde_yml::Mapping,
     key: &str,
-) -> Option<&'a serde_yaml::Value> {
-    mapping.get(serde_yaml::Value::String(key.to_string()))
+) -> Option<&'a serde_yml::Value> {
+    mapping.get(serde_yml::Value::String(key.to_string()))
 }
-fn string_value<'a>(mapping: &'a serde_yaml::Mapping, key: &str) -> Option<&'a str> {
-    mapping_value_from(mapping, key).and_then(serde_yaml::Value::as_str)
+fn string_value<'a>(mapping: &'a serde_yml::Mapping, key: &str) -> Option<&'a str> {
+    mapping_value_from(mapping, key).and_then(serde_yml::Value::as_str)
 }
 fn validate_scope(scope: &Scope) -> Result<()> {
     let Scope::Operations(_) = scope else {

@@ -495,7 +495,7 @@ mod tests {
 
         apply_map_annotations(&mut shape, &["$.by_broker".to_owned()])
             .expect("annotation should succeed");
-        let rendered = serde_yaml::to_string(&shape).expect("shape should serialize");
+        let rendered = serde_yml::to_string(&shape).expect("shape should serialize");
 
         assert!(rendered.contains("kind: map"));
         assert!(rendered.contains("pnl_pct"));
@@ -612,7 +612,7 @@ mod tests {
     #[test]
     fn inferred_shapes_never_serialize_source_values() {
         let shape = infer(&json!({"token": "super-secret-token", "amount": 42}));
-        let rendered = serde_yaml::to_string(&shape).expect("shape should serialize");
+        let rendered = serde_yml::to_string(&shape).expect("shape should serialize");
 
         assert!(!rendered.contains("super-secret-token"));
         assert!(!rendered.contains("42"));

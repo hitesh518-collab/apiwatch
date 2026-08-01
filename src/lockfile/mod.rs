@@ -220,7 +220,7 @@ pub fn from_contract(name: &str, contract: &ApiContract) -> Result<ApiLock> {
 
 pub fn render(lock: &ApiLock) -> Result<String> {
     if lock.version == 1 {
-        return serde_yaml::to_string(lock).context("failed to serialize lockfile");
+        return serde_yml::to_string(lock).context("failed to serialize lockfile");
     }
     if lock.version == 3 {
         return v3::render(&v3::V3Lock::from_parts(
@@ -256,7 +256,7 @@ pub fn render(lock: &ApiLock) -> Result<String> {
         );
     }
 
-    serde_yaml::to_string(&V2RenderedLock { version: 2, apis })
+    serde_yml::to_string(&V2RenderedLock { version: 2, apis })
         .context("failed to serialize lockfile")
 }
 
@@ -264,10 +264,10 @@ pub fn load(path: &Path) -> Result<ApiLock> {
     let contents = fs::read_to_string(path)
         .with_context(|| format!("failed to read api.lock {}", path.display()))?;
     let header: LockVersion =
-        serde_yaml::from_str(&contents).context("failed to parse api.lock YAML")?;
+        serde_yml::from_str(&contents).context("failed to parse api.lock YAML")?;
 
     match header.version {
-        1 => serde_yaml::from_str(&contents).context("failed to parse api.lock YAML"),
+        1 => serde_yml::from_str(&contents).context("failed to parse api.lock YAML"),
         2 => load_v2(&contents),
         3 => {
             let (declared, observed) = v3::load(&contents)?.into_parts();
@@ -508,7 +508,7 @@ pub fn load_or_create_for_record(path: &Path) -> Result<ApiLock> {
 }
 
 fn load_v2(contents: &str) -> Result<ApiLock> {
-    let raw: V2Lock = serde_yaml::from_str(contents).context("failed to parse api.lock YAML")?;
+    let raw: V2Lock = serde_yml::from_str(contents).context("failed to parse api.lock YAML")?;
     if raw.version != 2 {
         return Err(anyhow!("unsupported api.lock version {}", raw.version));
     }
