@@ -2177,3 +2177,16 @@ fn phase2_d14_cycle_diff_equal_specs_produces_no_changes() {
         .success()
         .stdout(predicate::str::contains("No changes detected"));
 }
+
+#[test]
+fn phase3_d13_tolerates_malformed_tag_metadata() {
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "diff",
+            "testdata/openapi/phase3_d13_metadata_old.yaml",
+            "testdata/openapi/phase3_d13_metadata_new.yaml",
+        ])
+        .assert()
+        .success();
+}

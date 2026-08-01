@@ -34,13 +34,67 @@ pub fn load_contract_text(text: &str, is_json: bool, location: &str) -> Result<A
         serde_json::from_str(text)
             .with_context(|| format!("failed to parse OpenAPI JSON {location}"))?
     } else {
-        serde_yml::from_str(text)
+        tolerant_openapi_yaml(text.as_bytes())
             .with_context(|| format!("failed to parse OpenAPI YAML {location}"))?
     };
 
     ensure_openapi_3(&document)?;
 
     normalize(document)
+}
+
+fn tolerant_openapi_yaml(bytes: &[u8]) -> Result<OpenAPI> {
+    let mut value: serde_yml::Value =
+        serde_yml::from_slice(bytes).context("failed to parse OpenAPI YAML")?;
+
+    strip_deep(&mut value, "tags");
+    strip_deep(&mut value, "externalDocs");
+    strip_deep(&mut value, "examples");
+    strip_deep(&mut value, "callbacks");
+    strip_deep_by_prefix(&mut value, "x-");
+
+    let cleaned = serde_yml::to_string(&value).context("failed to re-serialize OpenAPI YAML")?;
+    serde_yml::from_str(&cleaned).context("failed to parse cleaned OpenAPI YAML")
+}
+
+fn strip_deep(value: &mut serde_yml::Value, key: &str) {
+    match value {
+        serde_yml::Value::Mapping(map) => {
+            map.retain(|k, v| {
+                if k.as_str() == Some(key) {
+                    return false;
+                }
+                strip_deep(v, key);
+                true
+            });
+        }
+        serde_yml::Value::Sequence(seq) => {
+            for item in seq {
+                strip_deep(item, key);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn strip_deep_by_prefix(value: &mut serde_yml::Value, prefix: &str) {
+    match value {
+        serde_yml::Value::Mapping(map) => {
+            map.retain(|k, v| {
+                if k.as_str().is_some_and(|s| s.starts_with(prefix)) {
+                    return false;
+                }
+                strip_deep_by_prefix(v, prefix);
+                true
+            });
+        }
+        serde_yml::Value::Sequence(seq) => {
+            for item in seq {
+                strip_deep_by_prefix(item, prefix);
+            }
+        }
+        _ => {}
+    }
 }
 
 pub fn load_contract_input(input: &str) -> Result<ApiContract> {

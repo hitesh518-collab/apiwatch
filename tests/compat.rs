@@ -79,8 +79,5 @@ fn stripe_reproduces_known_recursive_schema_failure() {
 #[test]
 #[ignore = "requires commit-pinned compatibility corpus"]
 fn digitalocean_reproduces_known_metadata_failure() {
-    assert_known_failure(
-        "digitalocean.yaml",
-        "tags[0].description: invalid type: map, expected a string",
-    );
+    assert_known_failure("digitalocean.yaml", "missing field `responses`");
 }

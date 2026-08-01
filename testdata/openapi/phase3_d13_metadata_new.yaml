@@ -1,0 +1,27 @@
+openapi: "3.0.3"
+info:
+  title: Metadata Test
+  version: "2.0.0"
+tags:
+  - name: test
+    description:
+      en: "A test tag"
+      fr: "Un tag de test"
+paths:
+  /items:
+    get:
+      operationId: listItems
+      tags:
+        - test
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
