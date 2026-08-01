@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -14,6 +15,56 @@ pub struct Config {
     pub severity: Vec<SeverityOverride>,
     #[serde(default)]
     pub fail_on: Option<FailOnThresholds>,
+    #[serde(default)]
+    pub remote: RemoteConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteConfig {
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+}
+
+pub fn resolve_headers(
+    config_headers: &BTreeMap<String, String>,
+    cli_headers: &[String],
+) -> Result<BTreeMap<String, String>> {
+    let mut resolved = BTreeMap::new();
+
+    for (name, value_template) in config_headers {
+        resolve_one_header(name, value_template, &mut resolved)?;
+    }
+
+    for raw in cli_headers {
+        let (name, value_template) = raw
+            .split_once(':')
+            .ok_or_else(|| anyhow::anyhow!("header must be in NAME:VALUE format, got: {raw}"))?;
+        let name = name.trim();
+        let value_template = value_template.trim();
+        resolve_one_header(name, value_template, &mut resolved)?;
+    }
+
+    Ok(resolved)
+}
+
+fn resolve_one_header(
+    name: &str,
+    value_template: &str,
+    resolved: &mut BTreeMap<String, String>,
+) -> Result<()> {
+    if !value_template.starts_with("${") || !value_template.ends_with('}') {
+        anyhow::bail!("header '{name}' value must use ${{ENV_VAR}} syntax, got: {value_template}");
+    }
+    let env_var = &value_template[2..value_template.len() - 1];
+    if env_var.is_empty() {
+        anyhow::bail!("header '{name}' has an empty environment-variable reference");
+    }
+    let value = std::env::var(env_var).with_context(|| {
+        format!("environment variable '{env_var}' is not set (required by header '{name}')")
+    })?;
+    resolved.insert(name.to_string(), value);
+    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -338,6 +389,7 @@ mod tests {
                 severity: "warning".to_string(),
             }],
             fail_on: None,
+            remote: RemoteConfig::default(),
         };
 
         apply_config(&mut changes, &config);
@@ -402,5 +454,103 @@ mod tests {
         let fo = config.fail_on.as_ref().unwrap();
         assert_eq!(fo.breaking, 0);
         assert_eq!(fo.warning, 10);
+    }
+
+    #[test]
+    fn load_config_parses_remote_headers() {
+        let config = Config::load(std::path::Path::new("testdata/config/remote_headers.yaml"))
+            .expect("config with remote headers should parse");
+        assert_eq!(config.remote.headers.len(), 1);
+        assert_eq!(
+            config
+                .remote
+                .headers
+                .get("Authorization")
+                .map(String::as_str),
+            Some("${API_TOKEN}")
+        );
+    }
+
+    #[test]
+    fn resolve_headers_rejects_raw_value() {
+        let mut config_headers = BTreeMap::new();
+        config_headers.insert("Authorization".to_string(), "Bearer secret123".to_string());
+        let cli_headers: Vec<String> = vec![];
+        let err = resolve_headers(&config_headers, &cli_headers)
+            .expect_err("raw header value should be rejected");
+        assert!(err.to_string().contains("${ENV_VAR}"));
+    }
+
+    #[test]
+    fn resolve_headers_resolves_env_vars() {
+        std::env::set_var("APIWATCH_TEST_KEY", "secret-test-456");
+        let mut config_headers = BTreeMap::new();
+        config_headers.insert(
+            "Authorization".to_string(),
+            "${APIWATCH_TEST_KEY}".to_string(),
+        );
+        let cli_headers: Vec<String> = vec![];
+        let resolved =
+            resolve_headers(&config_headers, &cli_headers).expect("env var should resolve");
+        std::env::remove_var("APIWATCH_TEST_KEY");
+        assert_eq!(
+            resolved.get("Authorization").map(String::as_str),
+            Some("secret-test-456")
+        );
+    }
+
+    #[test]
+    fn resolve_headers_rejects_missing_env_var() {
+        let mut config_headers = BTreeMap::new();
+        config_headers.insert(
+            "Authorization".to_string(),
+            "${MISSING_API_KEY}".to_string(),
+        );
+        let cli_headers: Vec<String> = vec![];
+        let err = resolve_headers(&config_headers, &cli_headers)
+            .expect_err("missing env var should be rejected");
+        assert!(err.to_string().contains("MISSING_API_KEY"));
+    }
+
+    #[test]
+    fn resolve_headers_rejects_empty_env_var_reference() {
+        let mut config_headers = BTreeMap::new();
+        config_headers.insert("Authorization".to_string(), "${}".to_string());
+        let cli_headers: Vec<String> = vec![];
+        let err = resolve_headers(&config_headers, &cli_headers)
+            .expect_err("empty env var reference should be rejected");
+        assert!(err.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn resolve_headers_cli_override() {
+        unsafe {
+            std::env::set_var("CLI_TOKEN", "cli-secret");
+        }
+        let mut config_headers = BTreeMap::new();
+        config_headers.insert("Authorization".to_string(), "${CONFIG_TOKEN}".to_string());
+        unsafe {
+            std::env::set_var("CONFIG_TOKEN", "config-secret");
+        }
+        let cli_headers: Vec<String> = vec!["Authorization:${CLI_TOKEN}".to_string()];
+        let resolved =
+            resolve_headers(&config_headers, &cli_headers).expect("headers should resolve");
+        unsafe {
+            std::env::remove_var("CLI_TOKEN");
+            std::env::remove_var("CONFIG_TOKEN");
+        }
+        assert_eq!(
+            resolved.get("Authorization").map(String::as_str),
+            Some("cli-secret")
+        );
+    }
+
+    #[test]
+    fn resolve_headers_cli_rejects_raw_value() {
+        let config_headers = BTreeMap::new();
+        let cli_headers: Vec<String> = vec!["Authorization:Bearer raw".to_string()];
+        let err = resolve_headers(&config_headers, &cli_headers)
+            .expect_err("raw cli header value should be rejected");
+        assert!(err.to_string().contains("${ENV_VAR}"));
     }
 }

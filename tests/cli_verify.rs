@@ -2119,3 +2119,267 @@ fn verify_exits_two_for_an_unsupported_lockfile_source() {
         "unsupported api.lock source remote",
     ));
 }
+
+struct AuthProbe {
+    url: String,
+    had_auth: std::sync::mpsc::Receiver<bool>,
+}
+
+fn serve_auth_probe(body: &'static str) -> AuthProbe {
+    use std::io::{ErrorKind, Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("auth probe should bind");
+    listener
+        .set_nonblocking(true)
+        .expect("auth probe should become nonblocking");
+    let address = listener
+        .local_addr()
+        .expect("auth probe should have an address");
+    let url = format!("http://{address}/openapi.yaml");
+    let (tx, rx) = mpsc::sync_channel(1);
+
+    thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let mut request = Vec::new();
+                    while !request.ends_with(b"\r\n\r\n") && request.len() < 8 * 1024 {
+                        let mut byte = [0_u8; 1];
+                        if stream.read_exact(&mut byte).is_err() {
+                            break;
+                        }
+                        request.push(byte[0]);
+                    }
+                    let request_str = String::from_utf8_lossy(&request);
+                    let had_auth = request_str
+                        .lines()
+                        .any(|line| line.to_lowercase().starts_with("authorization:"));
+                    let _ = tx.send(had_auth);
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/yaml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    return;
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        let _ = tx.send(false);
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(_) => {
+                    let _ = tx.send(false);
+                    return;
+                }
+            }
+        }
+    });
+
+    AuthProbe { url, had_auth: rx }
+}
+
+#[test]
+fn phase3_headers_rejects_raw_value_in_config() {
+    let dir = tempfile::tempdir().expect("temp dir should create");
+    let config_path = dir.path().join(".apiwatch.yaml");
+    fs::write(
+        &config_path,
+        "remote:\n  headers:\n    Authorization: Bearer secret123\n",
+    )
+    .expect("config should be written");
+
+    let lock = lock_from_v4("testdata/openapi/phase2_d08_auth_identity_old.yaml", "d08");
+
+    let url = serve_once(
+        "200 OK",
+        "application/yaml",
+        include_str!("../testdata/openapi/phase2_d08_auth_identity_new.yaml"),
+        "openapi.yaml",
+    );
+
+    let mut cmd = Command::cargo_bin("apiwatch").expect("binary should build");
+    cmd.args([
+        "verify",
+        &url,
+        "--name",
+        "d08",
+        "--lock",
+        lock.to_str().expect("temp path should be valid UTF-8"),
+        "--config",
+        config_path
+            .to_str()
+            .expect("config path should be valid UTF-8"),
+    ]);
+    cmd.assert()
+        .code(2)
+        .stderr(predicate::str::contains("${ENV_VAR}"));
+
+    fs::remove_file(lock).ok();
+}
+
+#[test]
+fn phase3_headers_rejects_raw_value_in_cli() {
+    let url = serve_once(
+        "200 OK",
+        "application/yaml",
+        include_str!("../testdata/openapi/verify_matching.yaml"),
+        "openapi.yaml",
+    );
+
+    let mut cmd = Command::cargo_bin("apiwatch").expect("binary should build");
+    cmd.args([
+        "verify",
+        &url,
+        "--name",
+        "users",
+        "--lock",
+        "testdata/lock/verify_users.lock",
+        "--header",
+        "Authorization:Bearer rawtoken",
+    ]);
+    cmd.assert()
+        .code(2)
+        .stderr(predicate::str::contains("${ENV_VAR}"));
+}
+
+#[test]
+fn phase3_headers_resolves_env_vars_and_passes_to_server() {
+    unsafe {
+        std::env::set_var("APIWATCH_INTEGRATION_TEST_TOKEN", "test-header-value-987");
+    }
+
+    let probe = serve_auth_probe(include_str!("../testdata/openapi/verify_matching.yaml"));
+
+    let dir = tempfile::tempdir().expect("temp dir should create");
+    let config_path = dir.path().join(".apiwatch.yaml");
+    fs::write(
+        &config_path,
+        "remote:\n  headers:\n    Authorization: ${APIWATCH_INTEGRATION_TEST_TOKEN}\n",
+    )
+    .expect("config should be written");
+
+    let mut cmd = Command::cargo_bin("apiwatch").expect("binary should build");
+    cmd.args([
+        "verify",
+        &probe.url,
+        "--name",
+        "users",
+        "--lock",
+        "testdata/lock/verify_users.lock",
+        "--config",
+        config_path
+            .to_str()
+            .expect("config path should be valid UTF-8"),
+    ]);
+    cmd.assert().success();
+
+    unsafe {
+        std::env::remove_var("APIWATCH_INTEGRATION_TEST_TOKEN");
+    }
+
+    let had_auth = probe
+        .had_auth
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("auth probe should report");
+    assert!(
+        had_auth,
+        "server should have received an Authorization header"
+    );
+}
+
+#[test]
+fn phase3_headers_cli_flag_resolves_and_passes_to_server() {
+    unsafe {
+        std::env::set_var("APIWATCH_CLI_TEST_TOKEN", "cli-header-token-456");
+    }
+
+    let probe = serve_auth_probe(include_str!("../testdata/openapi/verify_matching.yaml"));
+
+    let mut cmd = Command::cargo_bin("apiwatch").expect("binary should build");
+    cmd.args([
+        "verify",
+        &probe.url,
+        "--name",
+        "users",
+        "--lock",
+        "testdata/lock/verify_users.lock",
+        "--header",
+        "Authorization:${APIWATCH_CLI_TEST_TOKEN}",
+    ]);
+    cmd.assert().success();
+
+    unsafe {
+        std::env::remove_var("APIWATCH_CLI_TEST_TOKEN");
+    }
+
+    let had_auth = probe
+        .had_auth
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("auth probe should report");
+    assert!(
+        had_auth,
+        "server should have received an Authorization header"
+    );
+}
+
+#[test]
+fn phase3_headers_rejects_missing_env_var() {
+    let url = serve_once(
+        "200 OK",
+        "application/yaml",
+        include_str!("../testdata/openapi/verify_matching.yaml"),
+        "openapi.yaml",
+    );
+
+    let mut cmd = Command::cargo_bin("apiwatch").expect("binary should build");
+    cmd.args([
+        "verify",
+        &url,
+        "--name",
+        "users",
+        "--lock",
+        "testdata/lock/verify_users.lock",
+        "--header",
+        "Authorization:${NONEXISTENT_API_KEY_XYZ}",
+    ]);
+    cmd.assert()
+        .code(2)
+        .stderr(predicate::str::contains("NONEXISTENT_API_KEY_XYZ"));
+}
+
+#[test]
+fn phase3_headers_config_loads_remote_section() {
+    let dir = tempfile::tempdir().expect("temp dir should create");
+    let config_path = dir.path().join(".apiwatch.yaml");
+    unsafe {
+        std::env::set_var("CONFIG_LOAD_TOKEN", "load-token-123");
+    }
+    fs::write(
+        &config_path,
+        "ignore: []\nremote:\n  headers:\n    X-Custom-Header: ${CONFIG_LOAD_TOKEN}\n",
+    )
+    .expect("config should be written");
+
+    let config = apiwatch::config::Config::load(&config_path)
+        .expect("config with remote headers should parse");
+    unsafe {
+        std::env::remove_var("CONFIG_LOAD_TOKEN");
+    }
+
+    assert_eq!(config.remote.headers.len(), 1);
+    assert_eq!(
+        config
+            .remote
+            .headers
+            .get("X-Custom-Header")
+            .map(String::as_str),
+        Some("${CONFIG_LOAD_TOKEN}")
+    );
+}

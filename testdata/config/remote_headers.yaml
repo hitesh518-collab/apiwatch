@@ -1,0 +1,3 @@
+remote:
+  headers:
+    Authorization: ${API_TOKEN}

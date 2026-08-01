@@ -307,14 +307,15 @@ fn strip_nested_defs(map: &mut serde_yml::Mapping) {
 }
 
 pub fn load_contract_input(input: &str) -> Result<ApiContract> {
-    load_contract_input_with_ref_root(input, None)
+    load_contract_input_with_ref_root(input, None, None)
 }
 
 pub fn load_contract_input_with_ref_root(
     input: &str,
     ref_root: Option<PathBuf>,
+    remote_headers: Option<&BTreeMap<String, String>>,
 ) -> Result<ApiContract> {
-    if let Some(remote) = crate::remote::fetch(input)? {
+    if let Some(remote) = crate::remote::fetch(input, remote_headers)? {
         return load_remote_contract(remote);
     }
 

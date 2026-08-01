@@ -89,5 +89,7 @@ pub enum Command {
         ref_root: Option<PathBuf>,
         #[arg(long)]
         config: Option<PathBuf>,
+        #[arg(long = "header", value_name = "NAME:${ENV_VAR}")]
+        header: Vec<String>,
     },
 }

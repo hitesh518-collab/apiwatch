@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 
 use anyhow::{Context, Result};
@@ -102,11 +103,23 @@ fn run() -> Result<i32> {
             format,
             ref_root,
             config: config_path,
+            header,
         } => {
             let lock = lockfile::load(&lock_path)?;
             let target = lockfile::select_verify_target(&lock, &name)?;
             let cfg =
                 load_optional_config_with_discovery(config_path.as_deref(), Some(&lock_path))?;
+            let remote_headers = config::resolve_headers(
+                cfg.as_ref()
+                    .map(|c| &c.remote.headers)
+                    .unwrap_or(&BTreeMap::new()),
+                &header,
+            )?;
+            let remote_headers = if remote_headers.is_empty() {
+                None
+            } else {
+                Some(remote_headers)
+            };
             match target.kind() {
                 lockfile::VerifyTargetKind::Observed { shape: expected } => {
                     if openapi.starts_with("http://") || openapi.starts_with("https://") {
@@ -137,7 +150,11 @@ fn run() -> Result<i32> {
                     scope,
                     coverage,
                 } => {
-                    let current = openapi::load_contract_input_with_ref_root(&openapi, ref_root)?;
+                    let current = openapi::load_contract_input_with_ref_root(
+                        &openapi,
+                        ref_root,
+                        remote_headers.as_ref(),
+                    )?;
                     let current = lockfile::scope_current_for_verify(&current, scope)?;
                     let mut changes = diff::diff_contracts(locked, &current);
                     if let Some(ref cfg) = cfg {
@@ -180,7 +197,11 @@ fn run() -> Result<i32> {
                     Ok(exit_code)
                 }
                 lockfile::VerifyTargetKind::LegacyDeclared { .. } => {
-                    let contract = openapi::load_contract_input_with_ref_root(&openapi, ref_root)?;
+                    let contract = openapi::load_contract_input_with_ref_root(
+                        &openapi,
+                        ref_root,
+                        remote_headers.as_ref(),
+                    )?;
                     let mut changes = lockfile::compare_verify_target(&target, &contract)?;
                     if let Some(ref cfg) = cfg {
                         config::apply_config(&mut changes, cfg);

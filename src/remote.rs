@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::time::Duration;
 
@@ -14,7 +15,10 @@ pub struct RemoteOpenApi {
     pub is_json: bool,
 }
 
-pub fn fetch(input: &str) -> Result<Option<RemoteOpenApi>> {
+pub fn fetch(
+    input: &str,
+    headers: Option<&BTreeMap<String, String>>,
+) -> Result<Option<RemoteOpenApi>> {
     let Some(url) = remote_url(input)? else {
         return Ok(None);
     };
@@ -25,8 +29,13 @@ pub fn fetch(input: &str) -> Result<Option<RemoteOpenApi>> {
         .redirect(Policy::limited(5))
         .build()
         .context("failed to build remote OpenAPI client")?;
-    let response = client
-        .get(url)
+    let mut request = client.get(url);
+    if let Some(hdrs) = headers {
+        for (name, value) in hdrs {
+            request = request.header(name.as_str(), value.as_str());
+        }
+    }
+    let response = request
         .send()
         .context("failed to request remote OpenAPI document")?;
 
@@ -104,7 +113,7 @@ mod tests {
 
     #[test]
     fn fetch_rejects_an_unsupported_url_scheme() {
-        let error = fetch("ftp://example.test/openapi.yaml")
+        let error = fetch("ftp://example.test/openapi.yaml", None)
             .expect_err("unsupported scheme should be rejected");
         assert!(error.to_string().contains("unsupported OpenAPI URL scheme"));
     }
@@ -129,7 +138,7 @@ mod tests {
             .local_addr()
             .expect("listener should have an address");
 
-        let error = fetch(&format!("http://username@{address}/openapi.yaml"))
+        let error = fetch(&format!("http://username@{address}/openapi.yaml"), None)
             .expect_err("username credentials should be rejected");
 
         assert_eq!(
@@ -149,8 +158,11 @@ mod tests {
             .local_addr()
             .expect("listener should have an address");
 
-        let error = fetch(&format!("http://username:password@{address}/openapi.yaml"))
-            .expect_err("password credentials should be rejected");
+        let error = fetch(
+            &format!("http://username:password@{address}/openapi.yaml"),
+            None,
+        )
+        .expect_err("password credentials should be rejected");
 
         assert_eq!(
             error.to_string(),
