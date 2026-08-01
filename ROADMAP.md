@@ -17,16 +17,10 @@ single country, industry, or design-partner project.
 
 ## Current State
 
-The latest tagged release is v0.6.0. It includes semantic diffing for local
-OpenAPI 3.0 documents, full-contract v3 declared lockfiles and Verify, remote
-declared Verify, JSON and SARIF output, a reusable GitHub Action, and
-source-building Homebrew and Scoop definitions.
-
-Work merged after v0.6.0 adds versioned observed JSON contracts, monotonic
-shape merging, local observed Verify, value-free diagnostics, and explicit
-`--map-at` annotations for dynamic-key objects. It also adds current v4
-declared locks with the complete Phase 2 comparison model. That work is not
-yet part of a tagged release.
+The latest tagged release is v0.9.0, which bundles Phases 1 and 2. It includes
+v3 and v4 declared lockfiles with the complete comparison model, full-contract
+declared Verify, versioned observed JSON contracts, JSON and SARIF output, a
+reusable GitHub Action, and source-building Homebrew and Scoop definitions.
 
 Important limitations remain:
 

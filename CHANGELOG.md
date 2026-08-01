@@ -1,51 +1,41 @@
 # Changelog
 
-## v0.9.0 - Unreleased
+## v0.9.0 - 2026-08-02
 
 ### Added
 
-- Current `api.lock` version 4 entries covering request bodies, canonical
-  media types, response requiredness, schema formats, `additionalProperties`,
-  effective servers, positional path identity, authentication wire identity,
-  semantic composition, first-class array items, and directional enums.
-- Reproducible production-v4 payload-size evidence for the commit-pinned
-  GitHub, Asana, and Box compatibility corpus.
-
-### Changed
-
-- `diff` and v4 declared Verify now share the completed Phase 2 comparison
-  rules and deterministic findings.
-- Version 3 declared Verify reports partial Phase 2 coverage and instructs
-  users to re-lock from the original OpenAPI source.
-
-### Security
-
-- Version 4 preserves value-free contract payloads, canonicalizes and
-  validates server/authentication identities, rejects ambiguous duplicates,
-  and revalidates domain-separated schema and contract digests.
-
-## v0.8.0 - Unreleased
-
-### Added
-
+- Content-addressed `api.lock` version 4 entries with the complete Phase 2
+  normalized comparison model: request bodies, canonical media types, response
+  requiredness, schema formats, `additionalProperties`, effective servers,
+  positional path identity, authentication wire identity, semantic composition,
+  first-class array items, and directional enums.
 - Content-addressed `api.lock` version 3 entries containing complete
   normalized declared contracts with strict integrity validation.
 - Atomic Lock creation and `--update`, repeatable `--include-operation`
   scoping, and an enforced 5,242,880-byte default contract ceiling.
 - Full declared Verify through the shared `diff_contracts` engine, including
   severity-aligned text, version-2 JSON, and SARIF output.
+- Deterministic combined report generation and `--check` validation.
+- Reproducible production-v4 payload-size evidence for the commit-pinned
+  GitHub, Asana, and Box compatibility corpus.
+- Eleven audited comparison defects fixed with regression fixtures (D-01
+  through D-11).
 
 ### Changed
 
+- `diff` and v4 declared Verify now share the completed Phase 2 comparison
+  rules and deterministic findings.
 - Versions 1 and 2 remain readable but explicitly report route-only coverage.
-  Their added endpoints are warnings; removals remain breaking.
+  Added endpoints are warnings; removals remain breaking.
+- Version 3 declared Verify reports partial Phase 2 coverage and instructs
+  users to re-lock from the original OpenAPI source.
 - Legacy migration preserves observed entries and refuses partial migration
   when other declared APIs require their original OpenAPI sources.
 
 ### Security
 
-- Version 3 excludes examples, defaults, credentials, source extensions, and
-  captured values; schema and contract digests, reachability, and exact
+- Versions 3 and 4 exclude examples, defaults, credentials, source extensions,
+  and captured values; schema and contract digests, reachability, and exact
   payload bytes are revalidated on load.
 
 ## v0.7.0 - 2026-07-24
