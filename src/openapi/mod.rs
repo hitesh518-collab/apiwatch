@@ -50,8 +50,20 @@ pub fn load_contract_text(
         serde_json::from_str(text)
             .with_context(|| format!("failed to parse OpenAPI JSON {location}"))?
     } else {
-        tolerant_openapi_yaml(text.as_bytes())
-            .with_context(|| format!("failed to parse OpenAPI YAML {location}"))?
+        let bytes = text.as_bytes();
+        let mut value: serde_yml::Value = serde_yml::from_slice(bytes)
+            .with_context(|| format!("failed to parse OpenAPI YAML {location}"))?;
+
+        if is_openapi31(&value) {
+            normalize_openapi31_to_30(&mut value);
+            let normalized = serde_yml::to_string(&value)
+                .with_context(|| "failed to serialize normalized OpenAPI 3.1")?;
+            tolerant_openapi_yaml(normalized.as_bytes())
+                .with_context(|| format!("failed to parse OpenAPI YAML {location}"))?
+        } else {
+            tolerant_openapi_yaml(bytes)
+                .with_context(|| format!("failed to parse OpenAPI YAML {location}"))?
+        }
     };
 
     ensure_openapi_3(&document)?;
@@ -111,6 +123,187 @@ fn strip_deep_by_prefix(value: &mut serde_yml::Value, prefix: &str) {
         }
         _ => {}
     }
+}
+
+fn is_openapi31(value: &serde_yml::Value) -> bool {
+    value
+        .get("openapi")
+        .and_then(|v| v.as_str())
+        .is_some_and(|v| v == "3.1" || v.starts_with("3.1."))
+}
+
+fn normalize_openapi31_to_30(value: &mut serde_yml::Value) {
+    update_version(value);
+    move_defs_to_components(value);
+    move_webhooks_to_paths(value);
+    transform_schema(value);
+}
+
+fn update_version(value: &mut serde_yml::Value) {
+    let key = serde_yml::Value::String("openapi".to_string());
+    if let serde_yml::Value::Mapping(map) = value {
+        if let Some(v) = map.get_mut(&key) {
+            *v = serde_yml::Value::String("3.0.3".to_string());
+        }
+    }
+}
+
+fn move_defs_to_components(value: &mut serde_yml::Value) {
+    let defs_key = serde_yml::Value::String("$defs".to_string());
+    let components_key = serde_yml::Value::String("components".to_string());
+    let schemas_key = serde_yml::Value::String("schemas".to_string());
+
+    if let serde_yml::Value::Mapping(map) = value {
+        if let Some(serde_yml::Value::Mapping(defs_map)) = map.remove(&defs_key) {
+            let components = map
+                .entry(components_key)
+                .or_insert_with(|| serde_yml::Value::Mapping(serde_yml::Mapping::new()));
+            if let serde_yml::Value::Mapping(comp_map) = components {
+                let schemas = comp_map
+                    .entry(schemas_key)
+                    .or_insert_with(|| serde_yml::Value::Mapping(serde_yml::Mapping::new()));
+                if let serde_yml::Value::Mapping(schemas_map) = schemas {
+                    for (k, v) in defs_map {
+                        schemas_map.insert(k, v);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn move_webhooks_to_paths(value: &mut serde_yml::Value) {
+    let webhooks_key = serde_yml::Value::String("webhooks".to_string());
+    let paths_key = serde_yml::Value::String("paths".to_string());
+    let x_webhook_key = serde_yml::Value::String("x-webhook".to_string());
+
+    if let serde_yml::Value::Mapping(map) = value {
+        if let Some(serde_yml::Value::Mapping(webhooks_map)) = map.remove(&webhooks_key) {
+            let paths = map
+                .entry(paths_key)
+                .or_insert_with(|| serde_yml::Value::Mapping(serde_yml::Mapping::new()));
+            if let serde_yml::Value::Mapping(paths_map) = paths {
+                for (path_key, mut path_item) in webhooks_map {
+                    if let serde_yml::Value::Mapping(ref mut path_map) = path_item {
+                        path_map.insert(x_webhook_key.clone(), serde_yml::Value::Bool(true));
+                    }
+                    paths_map.insert(path_key, path_item);
+                }
+            }
+        }
+    }
+}
+
+fn transform_schema(value: &mut serde_yml::Value) {
+    match value {
+        serde_yml::Value::Mapping(map) => {
+            convert_type_array(map);
+            convert_prefix_items(map);
+            convert_bool_schemas(map);
+            strip_nested_defs(map);
+            for (_, v) in map.iter_mut() {
+                transform_schema(v);
+            }
+        }
+        serde_yml::Value::Sequence(seq) => {
+            for item in seq {
+                transform_schema(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn convert_type_array(map: &mut serde_yml::Mapping) {
+    let type_key = serde_yml::Value::String("type".to_string());
+    let nullable_key = serde_yml::Value::String("nullable".to_string());
+
+    let has_null = map
+        .get(&type_key)
+        .and_then(|v| v.as_sequence())
+        .is_some_and(|seq| seq.iter().any(|v| v.as_str() == Some("null")));
+
+    if !has_null {
+        return;
+    }
+
+    let non_null: Option<String> =
+        map.get(&type_key)
+            .and_then(|v| v.as_sequence())
+            .and_then(|seq| {
+                seq.iter()
+                    .find_map(|v| v.as_str().filter(|&s| s != "null").map(|s| s.to_string()))
+            });
+
+    map.insert(nullable_key, serde_yml::Value::Bool(true));
+
+    if let Some(type_name) = non_null {
+        map.insert(type_key, serde_yml::Value::String(type_name));
+    } else {
+        map.remove(&type_key);
+    }
+}
+
+fn convert_prefix_items(map: &mut serde_yml::Mapping) {
+    let prefix_key = serde_yml::Value::String("prefixItems".to_string());
+    let items_key = serde_yml::Value::String("items".to_string());
+
+    if let Some(serde_yml::Value::Sequence(seq)) = map.remove(&prefix_key) {
+        if !seq.is_empty() && !map.contains_key(&items_key) {
+            map.insert(items_key, seq.into_iter().next().unwrap());
+        }
+    }
+}
+
+fn convert_bool_schemas(map: &mut serde_yml::Mapping) {
+    let schema_value_keys = ["schema", "items", "not", "contains", "if", "then", "else"];
+
+    for key_str in &schema_value_keys {
+        let key = serde_yml::Value::String(key_str.to_string());
+        if let Some(v) = map.get_mut(&key) {
+            if v.is_bool() {
+                *v = bool_to_schema(v.as_bool().unwrap());
+            }
+        }
+    }
+
+    for key_str in &["oneOf", "allOf", "anyOf"] {
+        let key = serde_yml::Value::String(key_str.to_string());
+        if let Some(serde_yml::Value::Sequence(seq)) = map.get_mut(&key) {
+            for item in seq.iter_mut() {
+                if item.is_bool() {
+                    *item = bool_to_schema(item.as_bool().unwrap());
+                }
+            }
+        }
+    }
+
+    let props_key = serde_yml::Value::String("properties".to_string());
+    if let Some(serde_yml::Value::Mapping(props)) = map.get_mut(&props_key) {
+        for (_, prop_val) in props.iter_mut() {
+            if prop_val.is_bool() {
+                *prop_val = bool_to_schema(prop_val.as_bool().unwrap());
+            }
+        }
+    }
+}
+
+fn bool_to_schema(b: bool) -> serde_yml::Value {
+    if b {
+        serde_yml::Value::Mapping(serde_yml::Mapping::new())
+    } else {
+        let mut map = serde_yml::Mapping::new();
+        map.insert(
+            serde_yml::Value::String("not".to_string()),
+            serde_yml::Value::Mapping(serde_yml::Mapping::new()),
+        );
+        serde_yml::Value::Mapping(map)
+    }
+}
+
+fn strip_nested_defs(map: &mut serde_yml::Mapping) {
+    let defs_key = serde_yml::Value::String("$defs".to_string());
+    map.remove(&defs_key);
 }
 
 pub fn load_contract_input(input: &str) -> Result<ApiContract> {
@@ -186,11 +379,11 @@ fn validate_openapi_version(version: Option<&str>) -> Result<()> {
     }
 
     if version == "3.1" || version.starts_with("3.1.") {
-        return Err(anyhow!("OpenAPI 3.1 is not yet supported"));
+        return Ok(());
     }
 
     Err(anyhow!(
-        "unsupported OpenAPI version {version}; expected OpenAPI 3.0"
+        "unsupported OpenAPI version {version}; expected OpenAPI 3.0 or 3.1"
     ))
 }
 
@@ -933,6 +1126,12 @@ impl SchemaResolver {
         let canonical = resolved
             .canonicalize()
             .with_context(|| format!("external file not found: {:?}", resolved))?;
+
+        if !canonical.starts_with(&canonical_root) {
+            return Err(anyhow!(
+                "external reference resolves outside the resolution root"
+            ));
+        }
 
         {
             let mut loaded = self.loaded_files.borrow_mut();

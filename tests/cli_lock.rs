@@ -384,8 +384,30 @@ fn lock_exits_two_for_invalid_openapi_input() {
 }
 
 #[test]
-fn lock_rejects_openapi_31_with_an_accurate_message() {
-    let output = temp_lock_path("unsupported-31");
+fn phase2_d12_31_lock_creates_deterministic_v4_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let lock = dir.path().join("api.lock");
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "lock",
+            "testdata/openapi/phase3_d12_31_nullable_old.yaml",
+            "--name",
+            "31-test",
+            "--output",
+            lock.to_str().unwrap(),
+            "--max-lock-bytes",
+            "5242880",
+        ])
+        .assert()
+        .success();
+    let lock_bytes = std::fs::read_to_string(&lock).expect("read lock");
+    assert!(lock_bytes.contains("version: 4"));
+}
+
+#[test]
+fn lock_accepts_openapi_31() {
+    let output = temp_lock_path("31-accept");
     let output_arg = output.to_str().expect("temp path should be valid UTF-8");
 
     Command::cargo_bin("apiwatch")
@@ -399,11 +421,11 @@ fn lock_rejects_openapi_31_with_an_accurate_message() {
             output_arg,
         ])
         .assert()
-        .code(2)
-        .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("OpenAPI 3.1 is not yet supported"));
+        .success();
 
+    let lock_bytes = fs::read_to_string(&output).expect("read lock");
     fs::remove_file(output).ok();
+    assert!(lock_bytes.contains("version: 4"));
 }
 
 #[test]

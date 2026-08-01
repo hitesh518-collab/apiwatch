@@ -1994,9 +1994,8 @@ fn verify_rejects_openapi_31_with_an_accurate_message() {
         "testdata/lock/verify_users.lock",
     )
     .assert()
-    .code(2)
-    .stdout(predicate::str::is_empty())
-    .stderr(predicate::str::contains("OpenAPI 3.1 is not yet supported"));
+    .success()
+    .stdout(predicate::str::contains("Verified users"));
 }
 
 #[test]

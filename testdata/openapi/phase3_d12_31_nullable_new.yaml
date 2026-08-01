@@ -1,0 +1,22 @@
+openapi: "3.1.0"
+info:
+  title: 3.1 Nullable Test
+  version: "2.0.0"
+paths:
+  /items:
+    get:
+      operationId: listItems
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  label:
+                    type: ["string", "null"]
+                  count:
+                    type: integer

@@ -1231,7 +1231,35 @@ fn diff_exits_two_for_unsupported_openapi_version() {
 }
 
 #[test]
-fn diff_rejects_openapi_31_with_an_accurate_message() {
+fn phase2_d12_31_nullable_type_diff_detects_property_addition() {
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "diff",
+            "testdata/openapi/phase3_d12_31_nullable_old.yaml",
+            "testdata/openapi/phase3_d12_31_nullable_new.yaml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("count").and(predicate::str::contains("added")));
+}
+
+#[test]
+fn phase2_d12_31_same_spec_has_no_changes() {
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "diff",
+            "testdata/openapi/phase3_d12_31_nullable_old.yaml",
+            "testdata/openapi/phase3_d12_31_nullable_old.yaml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No changes detected"));
+}
+
+#[test]
+fn diff_accepts_openapi_31() {
     let mut command = Command::cargo_bin("apiwatch").expect("binary should build");
 
     command
@@ -1241,9 +1269,8 @@ fn diff_rejects_openapi_31_with_an_accurate_message() {
             "testdata/openapi/unsupported_31.yaml",
         ])
         .assert()
-        .code(2)
-        .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains("OpenAPI 3.1 is not yet supported"));
+        .success()
+        .stdout(predicate::str::contains("No changes detected"));
 }
 
 #[test]
