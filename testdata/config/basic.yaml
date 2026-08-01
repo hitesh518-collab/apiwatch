@@ -1,0 +1,9 @@
+ignore:
+  - rule: "parameter-removed"
+    path: "/deprecated/*"
+severity:
+  - change: "endpoint-added"
+    severity: "warning"
+fail_on:
+  breaking: 0
+  warning: 10

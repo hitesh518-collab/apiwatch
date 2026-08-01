@@ -2,8 +2,7 @@ use std::fs;
 
 use anyhow::{Context, Result};
 use apiwatch::cli::{Cli, Command, OutputFormat};
-use apiwatch::diff::Severity;
-use apiwatch::{diff, lockfile, observed, openapi, output};
+use apiwatch::{config, diff, lockfile, observed, openapi, output};
 use clap::Parser;
 
 fn main() {
@@ -27,25 +26,24 @@ fn run() -> Result<i32> {
             new,
             format,
             ref_root,
+            config: config_path,
         } => {
             let old = openapi::load_contract_with_ref_root(&old, ref_root.clone())?;
             let new_contract = openapi::load_contract_with_ref_root(&new, ref_root)?;
-            let changes = diff::diff_contracts(&old, &new_contract);
+            let mut changes = diff::diff_contracts(&old, &new_contract);
+            let cfg = load_optional_config(config_path.as_deref())?;
+            if let Some(ref cfg) = cfg {
+                config::apply_config(&mut changes, cfg);
+            }
+            let exit_code =
+                config::compute_exit_code(&changes, cfg.as_ref().and_then(|c| c.fail_on.as_ref()));
             let rendered = match format {
                 OutputFormat::Text => output::render_changes(&changes),
                 OutputFormat::Json => output::render_changes_json(&changes)?,
                 OutputFormat::Sarif => output::render_changes_sarif(&new, &changes)?,
             };
             print!("{rendered}");
-
-            if changes
-                .iter()
-                .any(|change| change.severity == Severity::Breaking)
-            {
-                Ok(1)
-            } else {
-                Ok(0)
-            }
+            Ok(exit_code)
         }
         Command::Lock {
             openapi,
@@ -103,9 +101,12 @@ fn run() -> Result<i32> {
             lock: lock_path,
             format,
             ref_root,
+            config: config_path,
         } => {
             let lock = lockfile::load(&lock_path)?;
             let target = lockfile::select_verify_target(&lock, &name)?;
+            let cfg =
+                load_optional_config_with_discovery(config_path.as_deref(), Some(&lock_path))?;
             match target.kind() {
                 lockfile::VerifyTargetKind::Observed { shape: expected } => {
                     if openapi.starts_with("http://") || openapi.starts_with("https://") {
@@ -138,7 +139,14 @@ fn run() -> Result<i32> {
                 } => {
                     let current = openapi::load_contract_input_with_ref_root(&openapi, ref_root)?;
                     let current = lockfile::scope_current_for_verify(&current, scope)?;
-                    let changes = diff::diff_contracts(locked, &current);
+                    let mut changes = diff::diff_contracts(locked, &current);
+                    if let Some(ref cfg) = cfg {
+                        config::apply_config(&mut changes, cfg);
+                    }
+                    let exit_code = config::compute_exit_code(
+                        &changes,
+                        cfg.as_ref().and_then(|c| c.fail_on.as_ref()),
+                    );
                     let (coverage, limitation) = match coverage {
                         lockfile::DeclaredCoverage::PartialV3 => (
                             output::Coverage::Partial,
@@ -169,20 +177,18 @@ fn run() -> Result<i32> {
                         )?,
                     };
                     print!("{rendered}");
-                    Ok(
-                        if changes
-                            .iter()
-                            .any(|change| change.severity == Severity::Breaking)
-                        {
-                            1
-                        } else {
-                            0
-                        },
-                    )
+                    Ok(exit_code)
                 }
                 lockfile::VerifyTargetKind::LegacyDeclared { .. } => {
                     let contract = openapi::load_contract_input_with_ref_root(&openapi, ref_root)?;
-                    let changes = lockfile::compare_verify_target(&target, &contract)?;
+                    let mut changes = lockfile::compare_verify_target(&target, &contract)?;
+                    if let Some(ref cfg) = cfg {
+                        config::apply_config(&mut changes, cfg);
+                    }
+                    let exit_code = config::compute_exit_code(
+                        &changes,
+                        cfg.as_ref().and_then(|c| c.fail_on.as_ref()),
+                    );
                     let limitation = Some(output::Limitation::RouteOnlyLock);
                     let rendered = match format {
                         OutputFormat::Text => {
@@ -205,18 +211,38 @@ fn run() -> Result<i32> {
                         )?,
                     };
                     print!("{rendered}");
-                    Ok(
-                        if changes
-                            .iter()
-                            .any(|change| change.severity == Severity::Breaking)
-                        {
-                            1
-                        } else {
-                            0
-                        },
-                    )
+                    Ok(exit_code)
                 }
             }
         }
+    }
+}
+
+fn load_optional_config(explicit_path: Option<&std::path::Path>) -> Result<Option<config::Config>> {
+    match explicit_path {
+        Some(path) => {
+            let cfg = config::Config::load(path)?;
+            Ok(Some(cfg))
+        }
+        None => Ok(None),
+    }
+}
+
+fn load_optional_config_with_discovery(
+    explicit_path: Option<&std::path::Path>,
+    discover_root: Option<&std::path::Path>,
+) -> Result<Option<config::Config>> {
+    match explicit_path {
+        Some(path) => {
+            let cfg = config::Config::load(path)?;
+            Ok(Some(cfg))
+        }
+        None => match discover_root {
+            Some(root) => match config::Config::discover(root) {
+                Ok(cfg) => Ok(Some(cfg)),
+                Err(_) => Ok(None),
+            },
+            None => Ok(None),
+        },
     }
 }

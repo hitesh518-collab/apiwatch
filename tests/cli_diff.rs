@@ -2231,3 +2231,170 @@ fn phase3_d15_diff_resolves_external_file_refs() {
         .success()
         .stdout(predicate::str::contains("No changes detected"));
 }
+
+#[test]
+fn phase3_config_ignore_rule_filters_parameter_removal() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase3_config_base.yaml",
+            "testdata/openapi/phase3_config_changed.yaml",
+            "--format",
+            "json",
+            "--config",
+            "testdata/config/basic.yaml",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    let rendered: Value = serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    let changes = rendered["changes"]
+        .as_array()
+        .expect("changes should be an array");
+
+    let messages: Vec<&str> = changes
+        .iter()
+        .map(|c| c["message"].as_str().expect("message should be a string"))
+        .collect();
+
+    assert!(
+        !messages
+            .iter()
+            .any(|m| m.contains("parameter") && m.contains("removed")),
+        "parameter-removed should have been filtered, got: {messages:?}"
+    );
+    assert!(
+        messages.contains(&"endpoint added"),
+        "endpoint added should remain, got: {messages:?}"
+    );
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0]["severity"], "warning");
+}
+
+#[test]
+fn phase3_config_severity_override_makes_endpoint_added_a_warning() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase3_config_base.yaml",
+            "testdata/openapi/phase3_config_changed.yaml",
+            "--format",
+            "json",
+            "--config",
+            "testdata/config/basic.yaml",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    let rendered: Value = serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    let changes = rendered["changes"]
+        .as_array()
+        .expect("changes should be an array");
+
+    for change in changes.iter() {
+        let msg = change["message"].as_str().unwrap_or("");
+        assert!(
+            !msg.contains("parameter") || !msg.contains("removed"),
+            "ignored change should not appear"
+        );
+    }
+    assert_eq!(rendered["summary"]["breaking"], 0);
+    assert_eq!(rendered["summary"]["warning"], 1);
+}
+
+#[test]
+fn phase3_config_fail_on_breaking_zero_exits_one() {
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "diff",
+            "testdata/openapi/phase3_config_base.yaml",
+            "testdata/openapi/phase3_config_changed.yaml",
+            "--format",
+            "json",
+            "--config",
+            "testdata/config/basic.yaml",
+        ])
+        .output()
+        .expect("diff command should run");
+
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
+fn phase3_config_discover_finds_yaml_from_lockfile_directory() {
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after Unix epoch")
+        .as_nanos();
+    let temp_dir = std::env::temp_dir().join(format!("apiwatch-config-discover-{suffix}"));
+    fs::create_dir_all(&temp_dir).expect("temp directory should be created");
+
+    let lock = temp_dir.join("test.lock");
+    let config_file = temp_dir.join(".apiwatch.yaml");
+    fs::write(
+        &config_file,
+        "ignore:\n  - rule: parameter-removed\n    path: /deprecated/*\nseverity:\n  - change: endpoint-added\n    severity: warning\nfail_on:\n  breaking: 0\n  warning: 10\n",
+    )
+    .expect("config should be written");
+
+    let lock_path = lock.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "lock",
+            "testdata/openapi/phase3_config_base.yaml",
+            "--name",
+            "config-test",
+            "--output",
+            lock_path,
+        ])
+        .assert()
+        .success();
+
+    let output = Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "verify",
+            "testdata/openapi/phase3_config_changed.yaml",
+            "--name",
+            "config-test",
+            "--lock",
+            lock_path,
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("verify command should run");
+
+    fs::remove_dir_all(&temp_dir).ok();
+
+    let rendered: Value = serde_json::from_slice(&output.stdout).expect("stdout should be JSON");
+    let changes = rendered["changes"]
+        .as_array()
+        .expect("changes should be an array");
+
+    let messages: Vec<&str> = changes
+        .iter()
+        .map(|c| c["message"].as_str().expect("message should be a string"))
+        .collect();
+    assert!(
+        !messages
+            .iter()
+            .any(|m| m.contains("parameter") && m.contains("removed")),
+        "parameter-removed should have been filtered by discovered config, got: {messages:?}"
+    );
+    assert!(
+        messages.contains(&"endpoint added"),
+        "endpoint added should remain, got: {messages:?}"
+    );
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0]["severity"], "warning");
+}

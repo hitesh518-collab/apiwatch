@@ -30,6 +30,8 @@ pub enum Command {
         format: OutputFormat,
         #[arg(long, value_hint = clap::ValueHint::DirPath)]
         ref_root: Option<PathBuf>,
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
     /// Create an api.lock file from one OpenAPI contract.
     Lock {
@@ -85,5 +87,7 @@ pub enum Command {
         format: OutputFormat,
         #[arg(long, value_hint = clap::ValueHint::DirPath)]
         ref_root: Option<PathBuf>,
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
 }

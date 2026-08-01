@@ -1,0 +1,27 @@
+openapi: "3.0.3"
+info:
+  title: Config Test
+  version: "1.0.0"
+paths:
+  /deprecated/old:
+    get:
+      operationId: oldEndpoint
+      parameters:
+        - name: removed_param
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+  /stable:
+    get:
+      operationId: stableEndpoint
+      parameters:
+        - name: id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK

@@ -1,0 +1,34 @@
+openapi: "3.0.3"
+info:
+  title: Config Test
+  version: "2.0.0"
+paths:
+  /deprecated/old:
+    get:
+      operationId: oldEndpoint
+      parameters: []
+      responses:
+        "200":
+          description: OK
+  /stable:
+    get:
+      operationId: stableEndpoint
+      parameters:
+        - name: id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+  /new:
+    get:
+      operationId: newEndpoint
+      parameters:
+        - name: id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK

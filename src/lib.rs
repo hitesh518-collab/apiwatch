@@ -5,6 +5,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[doc(hidden)]
 pub mod cli;
 #[doc(hidden)]
+pub mod config;
+#[doc(hidden)]
 pub mod contract;
 #[doc(hidden)]
 pub mod diff;
