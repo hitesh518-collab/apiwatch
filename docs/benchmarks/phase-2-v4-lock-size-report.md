@@ -1,7 +1,7 @@
 # APIWatch Phase 2 v4 Lock-Size Report
 
 - Report schema: 1
-- APIWatch: 0.7.0
+- APIWatch: 0.9.0
 - Ceiling: 5242880 bytes
 
 | Corpus | Commit | SHA-256 | Source bytes | Status | Operations | v4 contract payload |

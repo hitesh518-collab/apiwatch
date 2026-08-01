@@ -1,7 +1,7 @@
 # APIWatch Phase 1 Lock-Size Report
 
 - Report schema: 1
-- APIWatch: 0.7.0
+- APIWatch: 0.9.0
 - Ceiling: 5242880 bytes
 
 | Corpus | Commit | Source bytes | Status | Operations | Expanded YAML | Canonical JSON | Deduplicated YAML |
