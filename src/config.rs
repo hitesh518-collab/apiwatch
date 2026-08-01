@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::diff::{Change, Severity};
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
     pub ignore: Vec<IgnoreRule>,
@@ -16,6 +17,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IgnoreRule {
     pub rule: String,
     #[serde(default)]
@@ -25,12 +27,14 @@ pub struct IgnoreRule {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SeverityOverride {
     pub change: String,
     pub severity: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FailOnThresholds {
     #[serde(default)]
     pub breaking: usize,
