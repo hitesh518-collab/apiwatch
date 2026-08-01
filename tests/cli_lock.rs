@@ -430,3 +430,88 @@ fn phase2_d14_lock_stores_cycle_breaking_references() {
         "lockfile should contain cycleRef schema kind"
     );
 }
+
+#[test]
+fn phase3_d15_lock_resolves_external_file_refs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let lock = dir.path().join("api.lock");
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "lock",
+            "testdata/openapi/phase3_d15_api.yaml",
+            "--name",
+            "split-spec",
+            "--output",
+            lock.to_str().unwrap(),
+            "--max-lock-bytes",
+            "5242880",
+        ])
+        .assert()
+        .success();
+    let lock_bytes = std::fs::read_to_string(&lock).expect("read lock");
+    assert!(
+        lock_bytes.contains("kind: object"),
+        "lockfile should contain object kind"
+    );
+    assert!(
+        lock_bytes.contains("id"),
+        "lockfile should contain id property"
+    );
+    assert!(
+        lock_bytes.contains("name"),
+        "lockfile should contain name property"
+    );
+    assert!(
+        lock_bytes.contains("kind: integer"),
+        "lockfile should contain integer kind for id"
+    );
+    assert!(
+        lock_bytes.contains("kind: string"),
+        "lockfile should contain string kind for name"
+    );
+}
+
+#[test]
+fn phase3_d15_rejects_path_traversal_in_external_ref() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let lock = dir.path().join("api.lock");
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "lock",
+            "testdata/openapi/phase3_d15_traversal.yaml",
+            "--name",
+            "split-spec",
+            "--output",
+            lock.to_str().unwrap(),
+            "--max-lock-bytes",
+            "5242880",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("escapes the resolution root"));
+}
+
+#[test]
+fn phase3_d15_rejects_external_http_ref() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let lock = dir.path().join("api.lock");
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "lock",
+            "testdata/openapi/phase3_d15_http.yaml",
+            "--name",
+            "http-spec",
+            "--output",
+            lock.to_str().unwrap(),
+            "--max-lock-bytes",
+            "5242880",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "remote references are not yet supported",
+        ));
+}

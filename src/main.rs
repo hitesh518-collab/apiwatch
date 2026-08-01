@@ -22,9 +22,14 @@ fn run() -> Result<i32> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Diff { old, new, format } => {
-            let old = openapi::load_contract(&old)?;
-            let new_contract = openapi::load_contract(&new)?;
+        Command::Diff {
+            old,
+            new,
+            format,
+            ref_root,
+        } => {
+            let old = openapi::load_contract_with_ref_root(&old, ref_root.clone())?;
+            let new_contract = openapi::load_contract_with_ref_root(&new, ref_root)?;
             let changes = diff::diff_contracts(&old, &new_contract);
             let rendered = match format {
                 OutputFormat::Text => output::render_changes(&changes),
@@ -49,8 +54,9 @@ fn run() -> Result<i32> {
             update,
             include_operations,
             max_lock_bytes,
+            ref_root,
         } => {
-            let contract = openapi::load_contract(&openapi)?;
+            let contract = openapi::load_contract_with_ref_root(&openapi, ref_root)?;
             let scoped = apiwatch::lock_size::scope_contract(&contract, &include_operations)?;
             let scope = lockfile::scope_from_selectors(&include_operations)?;
             let entry = lockfile::build_v4_declared(&scoped, scope, max_lock_bytes)?;
@@ -96,6 +102,7 @@ fn run() -> Result<i32> {
             name,
             lock: lock_path,
             format,
+            ref_root,
         } => {
             let lock = lockfile::load(&lock_path)?;
             let target = lockfile::select_verify_target(&lock, &name)?;
@@ -129,7 +136,7 @@ fn run() -> Result<i32> {
                     scope,
                     coverage,
                 } => {
-                    let current = openapi::load_contract_input(&openapi)?;
+                    let current = openapi::load_contract_input_with_ref_root(&openapi, ref_root)?;
                     let current = lockfile::scope_current_for_verify(&current, scope)?;
                     let changes = diff::diff_contracts(locked, &current);
                     let (coverage, limitation) = match coverage {
@@ -174,7 +181,7 @@ fn run() -> Result<i32> {
                     )
                 }
                 lockfile::VerifyTargetKind::LegacyDeclared { .. } => {
-                    let contract = openapi::load_contract_input(&openapi)?;
+                    let contract = openapi::load_contract_input_with_ref_root(&openapi, ref_root)?;
                     let changes = lockfile::compare_verify_target(&target, &contract)?;
                     let limitation = Some(output::Limitation::RouteOnlyLock);
                     let rendered = match format {

@@ -2190,3 +2190,17 @@ fn phase3_d13_tolerates_malformed_tag_metadata() {
         .assert()
         .success();
 }
+
+#[test]
+fn phase3_d15_diff_resolves_external_file_refs() {
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "diff",
+            "testdata/openapi/phase3_d15_api.yaml",
+            "testdata/openapi/phase3_d15_api.yaml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No changes detected"));
+}

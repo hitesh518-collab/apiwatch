@@ -1444,6 +1444,7 @@ mod tests {
             "openapi: 3.0.3\ninfo: { title: D-08 OAuth, version: '1' }\ncomponents:\n  securitySchemes:\n    oauth:\n      type: oauth2\n      flows:\n        password:\n          tokenUrl: https://auth.example.test/token\n          scopes: {}\npaths:\n  /users:\n    get:\n      security:\n        - oauth: []\n      responses: { '200': { description: OK } }\n",
             false,
             "D-08 OAuth fixture",
+            None,
         )
         .expect("fixture should load");
         let entry = build_v4_declared(&source, Scope::all(), v4::DEFAULT_MAX_LOCK_BYTES)

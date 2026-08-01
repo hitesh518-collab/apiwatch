@@ -28,6 +28,8 @@ pub enum Command {
         new: PathBuf,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
+        #[arg(long, value_hint = clap::ValueHint::DirPath)]
+        ref_root: Option<PathBuf>,
     },
     /// Create an api.lock file from one OpenAPI contract.
     Lock {
@@ -48,6 +50,8 @@ pub enum Command {
         /// Maximum serialized contract payload size in bytes.
         #[arg(long, default_value_t = crate::lockfile::DEFAULT_MAX_LOCK_BYTES)]
         max_lock_bytes: u64,
+        #[arg(long, value_hint = clap::ValueHint::DirPath)]
+        ref_root: Option<PathBuf>,
     },
     /// Record the observed shape of one JSON body.
     Record {
@@ -79,5 +83,7 @@ pub enum Command {
         lock: PathBuf,
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
+        #[arg(long, value_hint = clap::ValueHint::DirPath)]
+        ref_root: Option<PathBuf>,
     },
 }

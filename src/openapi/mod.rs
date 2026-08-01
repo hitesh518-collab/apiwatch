@@ -1,8 +1,9 @@
 pub(crate) mod identity;
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use openapiv3::{
@@ -21,13 +22,28 @@ use crate::contract::{
 };
 
 pub fn load_contract(path: &Path) -> Result<ApiContract> {
+    load_contract_with_ref_root(path, None)
+}
+
+pub fn load_contract_with_ref_root(path: &Path, ref_root: Option<PathBuf>) -> Result<ApiContract> {
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read OpenAPI file {}", path.display()))?;
     let is_json = path.extension().and_then(|value| value.to_str()) == Some("json");
-    load_contract_text(&raw, is_json, path.to_string_lossy().as_ref())
+    let computed_ref_root = ref_root.or_else(|| path.parent().map(Path::to_path_buf));
+    load_contract_text(
+        &raw,
+        is_json,
+        path.to_string_lossy().as_ref(),
+        computed_ref_root,
+    )
 }
 
-pub fn load_contract_text(text: &str, is_json: bool, location: &str) -> Result<ApiContract> {
+pub fn load_contract_text(
+    text: &str,
+    is_json: bool,
+    location: &str,
+    ref_root: Option<PathBuf>,
+) -> Result<ApiContract> {
     validate_raw_openapi(text, is_json)?;
 
     let document: OpenAPI = if is_json {
@@ -40,7 +56,7 @@ pub fn load_contract_text(text: &str, is_json: bool, location: &str) -> Result<A
 
     ensure_openapi_3(&document)?;
 
-    normalize(document)
+    normalize(document, ref_root)
 }
 
 fn tolerant_openapi_yaml(bytes: &[u8]) -> Result<OpenAPI> {
@@ -98,15 +114,22 @@ fn strip_deep_by_prefix(value: &mut serde_yml::Value, prefix: &str) {
 }
 
 pub fn load_contract_input(input: &str) -> Result<ApiContract> {
+    load_contract_input_with_ref_root(input, None)
+}
+
+pub fn load_contract_input_with_ref_root(
+    input: &str,
+    ref_root: Option<PathBuf>,
+) -> Result<ApiContract> {
     if let Some(remote) = crate::remote::fetch(input)? {
         return load_remote_contract(remote);
     }
 
-    load_contract(Path::new(input))
+    load_contract_with_ref_root(Path::new(input), ref_root)
 }
 
 fn load_remote_contract(remote: crate::remote::RemoteOpenApi) -> Result<ApiContract> {
-    load_contract_text(&remote.text, remote.is_json, "remote document")
+    load_contract_text(&remote.text, remote.is_json, "remote document", None)
         .map_err(|_| anyhow!("failed to parse remote OpenAPI document"))
 }
 
@@ -184,9 +207,9 @@ fn ensure_openapi_3(document: &OpenAPI) -> Result<()> {
     validate_openapi_version(Some(&document.openapi))
 }
 
-fn normalize(document: OpenAPI) -> Result<ApiContract> {
+fn normalize(document: OpenAPI, ref_root: Option<PathBuf>) -> Result<ApiContract> {
     let mut contract = ApiContract::new();
-    let schema_resolver = SchemaResolver::from_components(document.components.as_ref());
+    let schema_resolver = SchemaResolver::from_components(document.components.as_ref(), ref_root);
     let security_schemes = normalize_security_schemes(document.components.as_ref())?;
     let global_security = document.security.clone().unwrap_or_default();
     let root_servers = document.servers.clone();
@@ -689,10 +712,12 @@ struct SchemaResolver {
     request_bodies: BTreeMap<String, ReferenceOr<OpenApiRequestBody>>,
     responses: BTreeMap<String, ReferenceOr<OpenApiResponse>>,
     schemas: BTreeMap<String, ReferenceOr<OpenApiSchema>>,
+    ref_root: Option<PathBuf>,
+    loaded_files: RefCell<BTreeMap<PathBuf, OpenAPI>>,
 }
 
 impl SchemaResolver {
-    fn from_components(components: Option<&Components>) -> Self {
+    fn from_components(components: Option<&Components>, ref_root: Option<PathBuf>) -> Self {
         let parameters = components
             .map(|components| {
                 components
@@ -738,6 +763,8 @@ impl SchemaResolver {
             request_bodies,
             responses,
             schemas,
+            ref_root,
+            loaded_files: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -850,6 +877,12 @@ impl SchemaResolver {
     }
 
     fn resolve(&self, reference: &str, visiting: &mut BTreeSet<String>) -> Result<Schema> {
+        if let Some(hash_pos) = reference.find('#') {
+            if hash_pos > 0 {
+                return self.resolve_external(reference, hash_pos, visiting);
+            }
+        }
+
         let name = component_name(reference, "#/components/schemas/", "schema")?;
         if !visiting.insert(name.clone()) {
             return Ok(Schema {
@@ -873,6 +906,80 @@ impl SchemaResolver {
         visiting.remove(&name);
         normalized
     }
+
+    fn resolve_external(
+        &self,
+        reference: &str,
+        hash_pos: usize,
+        visiting: &mut BTreeSet<String>,
+    ) -> Result<Schema> {
+        let file_part = &reference[..hash_pos];
+        let pointer = &reference[hash_pos..];
+
+        if file_part.starts_with("https://") || file_part.starts_with("http://") {
+            return Err(anyhow!(
+                "remote references are not yet supported: {reference}"
+            ));
+        }
+
+        let ref_root = self.ref_root.as_deref().unwrap_or_else(|| Path::new("."));
+
+        let canonical_root = ref_root
+            .canonicalize()
+            .with_context(|| format!("failed to canonicalize resolution root {:?}", ref_root))?;
+
+        let resolved = safe_resolve_ref(&canonical_root, file_part)?;
+
+        let canonical = resolved
+            .canonicalize()
+            .with_context(|| format!("external file not found: {:?}", resolved))?;
+
+        {
+            let mut loaded = self.loaded_files.borrow_mut();
+            if !loaded.contains_key(&canonical) {
+                let doc = parse_external_file(&canonical)?;
+                loaded.insert(canonical.clone(), doc);
+            }
+        }
+
+        let loaded = self.loaded_files.borrow();
+        let doc = loaded.get(&canonical).unwrap();
+
+        let name = component_name(pointer, "#/components/schemas/", "schema")?;
+
+        let visit_key = format!("{}:{}", canonical.display(), name);
+        if !visiting.insert(visit_key.clone()) {
+            return Ok(Schema {
+                kind: SchemaKind::CycleRef,
+                nullable: false,
+                format: None,
+                enum_values: Vec::new(),
+                properties: BTreeMap::new(),
+                items: None,
+                additional_properties: AdditionalProperties::Forbidden,
+                branches: Vec::new(),
+                cycle_target: Some(format!(
+                    "#/cycles/external/{}#/components/schemas/{name}",
+                    canonical.display()
+                )),
+            });
+        }
+
+        let schema_ref = doc
+            .components
+            .as_ref()
+            .and_then(|c| c.schemas.get(&name))
+            .ok_or_else(|| anyhow!("schema {} not found in external file {:?}", name, canonical))?;
+
+        let external_resolver =
+            SchemaResolver::from_components(doc.components.as_ref(), Some(canonical_root.clone()));
+
+        *external_resolver.loaded_files.borrow_mut() = loaded.clone();
+
+        let result = normalize_schema_ref(schema_ref, &external_resolver, visiting);
+        visiting.remove(&visit_key);
+        result
+    }
 }
 
 fn component_name(reference: &str, prefix: &str, kind: &str) -> Result<String> {
@@ -885,6 +992,50 @@ fn component_name(reference: &str, prefix: &str, kind: &str) -> Result<String> {
 
 fn decode_json_pointer_token(token: &str) -> String {
     token.replace("~1", "/").replace("~0", "~")
+}
+
+fn parse_external_file(path: &Path) -> Result<OpenAPI> {
+    let raw = fs::read_to_string(path)
+        .with_context(|| format!("failed to read external file {}", path.display()))?;
+    let is_json = path.extension().and_then(|v| v.to_str()) == Some("json");
+    if is_json {
+        serde_json::from_str(&raw)
+            .with_context(|| format!("failed to parse external JSON {}", path.display()))
+    } else {
+        tolerant_openapi_yaml(raw.as_bytes())
+            .with_context(|| format!("failed to parse external YAML {}", path.display()))
+    }
+}
+
+fn safe_resolve_ref(root: &Path, file_part: &str) -> Result<PathBuf> {
+    let mut components: Vec<&std::ffi::OsStr> = Vec::new();
+    for component in Path::new(file_part).components() {
+        match component {
+            std::path::Component::ParentDir => {
+                if components.pop().is_none() {
+                    return Err(anyhow!(
+                        "external reference {:?} escapes the resolution root",
+                        file_part
+                    ));
+                }
+            }
+            std::path::Component::Normal(seg) => components.push(seg),
+            std::path::Component::CurDir => {}
+            std::path::Component::Prefix(_) | std::path::Component::RootDir => {
+                return Err(anyhow!(
+                    "external reference {:?} must be a relative path",
+                    file_part
+                ));
+            }
+        }
+    }
+
+    let mut resolved = root.to_path_buf();
+    for comp in components {
+        resolved.push(comp);
+    }
+
+    Ok(resolved)
 }
 
 fn normalize_parameters(
