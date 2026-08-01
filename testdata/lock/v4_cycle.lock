@@ -1,0 +1,60 @@
+version: 4
+apis:
+  cycle-test:
+    provenance: declared
+    source: openapi
+    scope: all
+    max_lock_bytes: 5242880
+    contract_bytes: 1408
+    contract_digest: sha256:96a4bc7acc5ddeb3eac4d01528fca0af662b5b8f3523849fd8bfce4a5dff256a
+    contract:
+      operations:
+        GET /files/{0}:
+          display_path: /files/{id}
+          auth: {}
+          servers:
+          - /
+          parameters:
+            path:{0}:
+              name: id
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          request_body: null
+          responses:
+            '200':
+              application/json: sha256:7c5e17956d32ff4df8f96e47063311792d9eaabc0835299fd1ef8eac7d5e830d
+      schemas:
+        sha256:1816a3a859c1cd688daf249ac66960f29e524676b180a99df5c75f6b5326c311:
+          kind: cycleRef
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+          cycle_target: '#/cycles/components/schemas/File'
+        sha256:7c5e17956d32ff4df8f96e47063311792d9eaabc0835299fd1ef8eac7d5e830d:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            id:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            parent:
+              required: false
+              schema: sha256:1816a3a859c1cd688daf249ac66960f29e524676b180a99df5c75f6b5326c311
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90:
+          kind: string
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []

@@ -174,6 +174,8 @@ pub(super) struct WireSchema {
     additional_properties: WireAdditionalProperties,
     #[serde(default)]
     branches: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cycle_target: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

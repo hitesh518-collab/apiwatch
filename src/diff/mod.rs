@@ -511,7 +511,7 @@ fn diff_schema(
     old: &Schema,
     new: &Schema,
 ) {
-    if old.kind != new.kind {
+    if !eq_kind(&old.kind, &new.kind) {
         changes.push(Change {
             severity: Severity::Breaking,
             operation: operation.clone(),
@@ -931,7 +931,12 @@ fn schema_kind_name(kind: &SchemaKind) -> &'static str {
         SchemaKind::Number => "number",
         SchemaKind::Boolean => "boolean",
         SchemaKind::Unknown => "unknown",
+        SchemaKind::CycleRef => "cycle_ref",
     }
+}
+
+fn eq_kind(old: &SchemaKind, new: &SchemaKind) -> bool {
+    matches!((old, new), (SchemaKind::CycleRef, SchemaKind::CycleRef)) || old == new
 }
 
 #[cfg(test)]

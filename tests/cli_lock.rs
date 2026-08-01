@@ -405,3 +405,28 @@ fn lock_rejects_openapi_31_with_an_accurate_message() {
 
     fs::remove_file(output).ok();
 }
+
+#[test]
+fn phase2_d14_lock_stores_cycle_breaking_references() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let lock = dir.path().join("api.lock");
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "lock",
+            "testdata/openapi/phase3_d14_cycle_old.yaml",
+            "--name",
+            "cycle-test",
+            "--output",
+            lock.to_str().unwrap(),
+            "--max-lock-bytes",
+            "5242880",
+        ])
+        .assert()
+        .success();
+    let lock_bytes = std::fs::read_to_string(&lock).expect("read lock");
+    assert!(
+        lock_bytes.contains("cycleRef"),
+        "lockfile should contain cycleRef schema kind"
+    );
+}

@@ -193,6 +193,7 @@ pub struct Schema {
     pub items: Option<Box<Schema>>,
     pub additional_properties: AdditionalProperties,
     pub branches: Vec<Schema>,
+    pub cycle_target: Option<String>,
 }
 
 impl Schema {
@@ -234,6 +235,9 @@ impl Schema {
         branch_keys.sort();
         branch_keys.dedup();
         encode_values(encoded, &branch_keys);
+        if let Some(target) = &self.cycle_target {
+            encode_field(encoded, target);
+        }
     }
 
     fn encode_shape(&self, encoded: &mut String) {
@@ -305,6 +309,7 @@ fn schema_kind_tag(kind: &SchemaKind) -> &'static str {
         SchemaKind::Number => "number",
         SchemaKind::Boolean => "boolean",
         SchemaKind::Unknown => "unknown",
+        SchemaKind::CycleRef => "cycle_ref",
     }
 }
 
@@ -329,6 +334,7 @@ pub enum SchemaKind {
     Number,
     Boolean,
     Unknown,
+    CycleRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

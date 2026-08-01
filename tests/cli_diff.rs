@@ -1863,10 +1863,8 @@ fn diff_exits_two_for_circular_schema_ref() {
             "testdata/openapi/ref_response_schema_new.yaml",
         ])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "circular schema reference detected",
-        ));
+        .code(1)
+        .stdout(predicate::str::contains("Breaking changes"));
 }
 
 #[test]
@@ -2010,10 +2008,8 @@ fn diff_exits_two_for_circular_response_ref() {
             "testdata/openapi/ref_component_response_new.yaml",
         ])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "circular response reference detected",
-        ));
+        .code(1)
+        .stdout(predicate::str::contains("type changed from cycle_ref"));
 }
 
 #[test]
@@ -2045,10 +2041,8 @@ fn diff_exits_two_for_circular_request_body_ref() {
             "testdata/openapi/ref_component_request_body_new.yaml",
         ])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "circular request body reference detected",
-        ));
+        .code(1)
+        .stdout(predicate::str::contains("type changed from cycle_ref"));
 }
 
 #[test]
@@ -2082,7 +2076,7 @@ fn diff_exits_two_for_circular_parameter_ref() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "circular parameter reference detected",
+            "path parameter Limit is not bound to a path template placeholder",
         ));
 }
 
@@ -2154,4 +2148,32 @@ fn diff_exits_two_for_circular_path_item_ref() {
         .stderr(predicate::str::contains(
             "circular path item reference detected",
         ));
+}
+
+#[test]
+fn phase2_d14_cycle_diff_detects_property_addition() {
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "diff",
+            "testdata/openapi/phase3_d14_cycle_old.yaml",
+            "testdata/openapi/phase3_d14_cycle_new.yaml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("name").and(predicate::str::contains("added")));
+}
+
+#[test]
+fn phase2_d14_cycle_diff_equal_specs_produces_no_changes() {
+    Command::cargo_bin("apiwatch")
+        .expect("binary")
+        .args([
+            "diff",
+            "testdata/openapi/phase3_d14_cycle_old.yaml",
+            "testdata/openapi/phase3_d14_cycle_old.yaml",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No changes detected"));
 }

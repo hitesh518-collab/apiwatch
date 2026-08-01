@@ -102,6 +102,11 @@ fn intern_content(
 }
 
 fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) -> Result<String> {
+    let kind = if matches!(schema.kind, crate::contract::SchemaKind::CycleRef) {
+        crate::contract::SchemaKind::Unknown
+    } else {
+        schema.kind.clone()
+    };
     let mut properties: BTreeMap<String, WireProperty> = schema
         .properties
         .iter()
@@ -146,7 +151,7 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
     enum_values.sort();
     enum_values.dedup();
     let wire = WireSchema {
-        kind: schema.kind.clone(),
+        kind,
         nullable: schema.nullable,
         format: schema.format.clone(),
         enum_values,
@@ -387,6 +392,7 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
                     items: merged.items,
                     additional_properties: merged.additional_properties,
                     branches: Vec::new(),
+                    cycle_target: None,
                 });
             }
         }
@@ -406,6 +412,7 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
         items,
         additional_properties: AdditionalProperties::Unknown,
         branches,
+        cycle_target: None,
     })
 }
 

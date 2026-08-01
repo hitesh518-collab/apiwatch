@@ -251,6 +251,7 @@ fn intern_schema(schema: &Schema, schemas: &mut BTreeMap<String, WireSchema>) ->
         items,
         additional_properties,
         branches,
+        cycle_target: schema.cycle_target.clone(),
     };
     let id = canonical::schema_id(&wire)?;
     if let Some(existing) = schemas.get(&id) {
@@ -414,6 +415,7 @@ fn expand_schema(id: &str, schemas: &BTreeMap<String, WireSchema>) -> Result<Sch
             }
         },
         branches,
+        cycle_target: wire.cycle_target.clone(),
     })
 }
 pub(super) fn validate_schema_table(contract: &Contract) -> Result<()> {

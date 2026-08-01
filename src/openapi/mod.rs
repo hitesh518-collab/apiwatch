@@ -694,8 +694,26 @@ impl SchemaResolver {
     ) -> Result<(ParameterKey, Parameter)> {
         let name = component_name(reference, "#/components/parameters/", "parameter")?;
         if !visiting.insert(name.clone()) {
-            return Err(anyhow!(
-                "circular parameter reference detected: {reference}"
+            return Ok((
+                ParameterKey {
+                    location: ParameterLocation::Path,
+                    name: format!("#/cycles/components/parameters/{name}"),
+                },
+                Parameter {
+                    name: name.clone(),
+                    required: false,
+                    schema: Schema {
+                        kind: SchemaKind::CycleRef,
+                        nullable: false,
+                        format: None,
+                        enum_values: Vec::new(),
+                        properties: BTreeMap::new(),
+                        items: None,
+                        additional_properties: AdditionalProperties::Forbidden,
+                        branches: Vec::new(),
+                        cycle_target: Some(format!("#/cycles/components/parameters/{name}")),
+                    },
+                },
             ));
         }
 
@@ -715,9 +733,23 @@ impl SchemaResolver {
     ) -> Result<RequestBody> {
         let name = component_name(reference, "#/components/requestBodies/", "request body")?;
         if !visiting.insert(name.clone()) {
-            return Err(anyhow!(
-                "circular request body reference detected: {reference}"
-            ));
+            return Ok(RequestBody {
+                required: Some(false),
+                content: BTreeMap::from([(
+                    "application/json".to_string(),
+                    Schema {
+                        kind: SchemaKind::CycleRef,
+                        nullable: false,
+                        format: None,
+                        enum_values: Vec::new(),
+                        properties: BTreeMap::new(),
+                        items: None,
+                        additional_properties: AdditionalProperties::Forbidden,
+                        branches: Vec::new(),
+                        cycle_target: Some(format!("#/cycles/components/requestBodies/{name}")),
+                    },
+                )]),
+            });
         }
 
         let request_body = self
@@ -736,7 +768,22 @@ impl SchemaResolver {
     ) -> Result<Response> {
         let name = component_name(reference, "#/components/responses/", "response")?;
         if !visiting.insert(name.clone()) {
-            return Err(anyhow!("circular response reference detected: {reference}"));
+            return Ok(Response {
+                content: BTreeMap::from([(
+                    "application/json".to_string(),
+                    Schema {
+                        kind: SchemaKind::CycleRef,
+                        nullable: false,
+                        format: None,
+                        enum_values: Vec::new(),
+                        properties: BTreeMap::new(),
+                        items: None,
+                        additional_properties: AdditionalProperties::Forbidden,
+                        branches: Vec::new(),
+                        cycle_target: Some(format!("#/cycles/components/responses/{name}")),
+                    },
+                )]),
+            });
         }
 
         let response = self
@@ -751,7 +798,17 @@ impl SchemaResolver {
     fn resolve(&self, reference: &str, visiting: &mut BTreeSet<String>) -> Result<Schema> {
         let name = component_name(reference, "#/components/schemas/", "schema")?;
         if !visiting.insert(name.clone()) {
-            return Err(anyhow!("circular schema reference detected: {reference}"));
+            return Ok(Schema {
+                kind: SchemaKind::CycleRef,
+                nullable: false,
+                format: None,
+                enum_values: Vec::new(),
+                properties: BTreeMap::new(),
+                items: None,
+                additional_properties: AdditionalProperties::Forbidden,
+                branches: Vec::new(),
+                cycle_target: Some(format!("#/cycles/components/schemas/{name}")),
+            });
         }
 
         let schema = self
@@ -1236,6 +1293,7 @@ fn unknown_schema() -> Schema {
         items: None,
         additional_properties: AdditionalProperties::Forbidden,
         branches: Vec::new(),
+        cycle_target: None,
     }
 }
 
@@ -1259,6 +1317,7 @@ mod tests {
             items: None,
             additional_properties: AdditionalProperties::Any,
             branches: Vec::new(),
+            cycle_target: None,
         }
     }
 
@@ -1283,12 +1342,14 @@ mod tests {
                 schema: Box::new(Schema {
                     format: Some("uuid".to_string()),
                     enum_values: vec!["a".to_string(), "b".to_string()],
+                    cycle_target: None,
                     ..schema(SchemaKind::String)
                 }),
             },
         );
         right.additional_properties = AdditionalProperties::Schema(Box::new(Schema {
             enum_values: vec!["a".to_string()],
+            cycle_target: None,
             ..schema(SchemaKind::String)
         }));
 

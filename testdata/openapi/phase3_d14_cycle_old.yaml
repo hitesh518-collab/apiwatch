@@ -1,0 +1,30 @@
+openapi: "3.0.3"
+info:
+  title: Cycle Test
+  version: "1.0.0"
+paths:
+  /files/{id}:
+    get:
+      operationId: getFile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+components:
+  schemas:
+    File:
+      type: object
+      properties:
+        id:
+          type: string
+        parent:
+          $ref: "#/components/schemas/File"

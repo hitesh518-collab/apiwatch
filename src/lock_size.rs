@@ -519,6 +519,7 @@ mod tests {
             items: None,
             additional_properties: AdditionalProperties::Forbidden,
             branches: Vec::new(),
+            cycle_target: None,
         };
         let second = Schema {
             kind: SchemaKind::Boolean,
@@ -529,6 +530,7 @@ mod tests {
             items: None,
             additional_properties: AdditionalProperties::Forbidden,
             branches: Vec::new(),
+            cycle_target: None,
         };
         let error =
             intern_schemas_for_test(&[first, second], |_| "sha256:forced".into()).unwrap_err();

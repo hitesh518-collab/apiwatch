@@ -1182,6 +1182,7 @@ mod tests {
             items: None,
             additional_properties: AdditionalProperties::Unknown,
             branches: Vec::new(),
+            cycle_target: None,
         };
         let operation = |path: &str| {
             (
@@ -1237,6 +1238,7 @@ mod tests {
             items: None,
             additional_properties: AdditionalProperties::Unknown,
             branches: Vec::new(),
+            cycle_target: None,
         };
         let schema = Schema {
             kind: SchemaKind::AllOf,
@@ -1253,6 +1255,7 @@ mod tests {
             items: None,
             additional_properties: AdditionalProperties::Unknown,
             branches: Vec::new(),
+            cycle_target: None,
         };
         let contract = ApiContract {
             operations: BTreeMap::from([(
