@@ -952,3 +952,127 @@ mod tests {
         assert!(changes.is_empty(), "all optional at 0.0");
     }
 }
+
+#[cfg(test)]
+mod property_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn round_trip_determinism() {
+        let sample = json!({"id": 1, "name": "test", "tags": ["a", "b"], "meta": {"count": 42}});
+        let shape = infer(&sample);
+        let rendered = serde_yml::to_string(&shape).expect("serialize");
+        let deserialized: Shape = serde_yml::from_str(&rendered).expect("deserialize");
+        assert_eq!(shape, deserialized);
+        let re_inferred = infer(&sample);
+        assert_eq!(shape, re_inferred);
+    }
+
+    #[test]
+    fn merge_idempotence() {
+        let sample = json!({"x": 1, "y": "hello", "z": null});
+        let mut shape = infer(&sample);
+        let shape_before = shape.clone();
+        merge(&mut shape, &shape_before);
+        assert!(compare(&shape, &shape_before, 0.5).is_empty());
+    }
+
+    #[test]
+    fn compare_reflexivity() {
+        let sample = json!({"a": 1, "b": {"c": [1, 2, 3]}});
+        let shape = infer(&sample);
+        assert!(compare(&shape, &shape, 0.5).is_empty());
+        assert!(compare(&shape, &shape, 1.0).is_empty());
+        assert!(compare(&shape, &shape, 0.0).is_empty());
+    }
+
+    #[test]
+    fn order_invariance() {
+        let left = infer(&json!({"a": 1, "b": 2}));
+        let right = infer(&json!({"b": 2, "a": 1}));
+        assert_eq!(left, right);
+    }
+
+    #[test]
+    fn value_absence_in_serialized_shape() {
+        let shape = infer(&json!({
+            "token": "sk-abc123secret",
+            "password": "hunter2",
+            "amount": 9999
+        }));
+        let rendered = serde_yml::to_string(&shape).expect("serialize");
+        assert!(!rendered.contains("sk-abc123secret"));
+        assert!(!rendered.contains("hunter2"));
+        assert!(!rendered.contains("9999"));
+        assert!(!rendered.contains("9999.0"));
+        assert!(rendered.contains("token"));
+        assert!(rendered.contains("password"));
+        assert!(rendered.contains("amount"));
+    }
+
+    #[test]
+    fn value_absence_in_diagnostics() {
+        let expected = infer(&json!({"secret": "s3cr3t"}));
+        let actual = infer(&json!({"secret": 42}));
+        let changes = compare(&expected, &actual, 0.5);
+        assert_eq!(changes.len(), 1);
+        let serialized = format!("{:?}", changes);
+        assert!(!serialized.contains("s3cr3t"));
+        assert!(!serialized.contains("42"));
+    }
+
+    #[test]
+    fn threshold_zero_all_optional() {
+        let mut expected = infer(&json!({"x": 1, "y": 2}));
+        merge(&mut expected, &infer(&json!({"x": 1})));
+        let changes = compare(&expected, &infer(&json!({})), 0.0);
+        assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn threshold_one_all_required_with_floor() {
+        let mut expected = infer(&json!({"x": 1, "y": 2}));
+        merge(&mut expected, &infer(&json!({"x": 1, "y": 2})));
+        merge(&mut expected, &infer(&json!({"x": 1, "y": 2})));
+        let changes = compare(&expected, &infer(&json!({"x": 1})), 1.0);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "$.y");
+        assert_eq!(changes[0].kind, ObservedChangeKind::MissingRequiredField);
+    }
+
+    #[test]
+    fn floor_boundary_two_vs_three_parent_observations() {
+        let mut two = infer(&json!({"x": 1}));
+        merge(&mut two, &infer(&json!({"x": 1})));
+        // parent: 2 obs, below floor → x is lenient even at ratio 1.0
+        assert!(compare(&two, &infer(&json!({})), 0.5).is_empty());
+
+        let mut three = infer(&json!({"x": 1}));
+        merge(&mut three, &infer(&json!({"x": 1})));
+        merge(&mut three, &infer(&json!({"x": 1})));
+        // parent: 3 obs, meets floor → x is hardened at ratio 1.0, threshold 0.5
+        assert_eq!(compare(&three, &infer(&json!({})), 0.5).len(), 1);
+    }
+
+    #[test]
+    fn empty_container_compare_is_lenient() {
+        let empty_arr = infer(&json!({"items": []}));
+        let populated = infer(&json!({"items": [1, 2, 3]}));
+        assert!(compare(&empty_arr, &populated, 0.5).is_empty());
+
+        let empty_obj = infer(&json!({"meta": {}}));
+        let populated_obj = infer(&json!({"meta": {"key": "val"}}));
+        assert!(compare(&empty_obj, &populated_obj, 0.5).is_empty());
+    }
+
+    #[test]
+    fn null_in_union_is_not_affected_by_leniency() {
+        let mut expected = infer(&json!({"x": null}));
+        merge(&mut expected, &infer(&json!({"x": "hello"})));
+        merge(&mut expected, &infer(&json!({"x": null})));
+        let changes = compare(&expected, &infer(&json!({"x": 42})), 0.5);
+        assert!(!changes.is_empty());
+    }
+}
