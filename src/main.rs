@@ -103,22 +103,30 @@ fn run() -> Result<i32> {
                     anyhow::bail!("--from-json and --from-har are mutually exclusive")
                 }
                 (None, Some(ref json_path)) => {
-                    let name = name.ok_or_else(|| {
-                        anyhow::anyhow!("--name is required for --from-json")
-                    })?;
+                    let name =
+                        name.ok_or_else(|| anyhow::anyhow!("--name is required for --from-json"))?;
                     let shape = observed::load_shape(json_path)?;
                     let mut lock = lockfile::load_or_create_for_record(&output)?;
                     lockfile::record_observed(
-                        &mut lock, &name, shape, merge, &map_at, required_threshold,
+                        &mut lock,
+                        &name,
+                        shape,
+                        merge,
+                        &map_at,
+                        required_threshold,
                     )?;
                     let rendered = lockfile::render(&lock)?;
-                    fs::write(&output, rendered)
-                        .with_context(|| format!("failed to write lockfile {}", output.display()))?;
+                    fs::write(&output, rendered).with_context(|| {
+                        format!("failed to write lockfile {}", output.display())
+                    })?;
                     println!("Wrote {}", output.display());
                 }
                 (Some(ref har_path), None) => {
-                    let (recordings, skips) =
-                        har::load_har(har_path, &path_identity, &status)?;
+                    let (recordings, skips) = har::load_har(har_path, &path_identity, &status)?;
+
+                    if recordings.is_empty() {
+                        anyhow::bail!("no HAR entries matched");
+                    }
 
                     let mut lock = lockfile::load_or_create_for_record(&output)?;
 
@@ -126,7 +134,7 @@ fn run() -> Result<i32> {
                     if let Some(single_name) = effective_name {
                         // --name overrides grouping: all entries under one key
                         let mut first = true;
-                        for (_key, recs) in &recordings {
+                        for recs in recordings.values() {
                             for rec in recs {
                                 let shape = observed::infer(&rec.body);
                                 if first {
@@ -167,11 +175,7 @@ fn run() -> Result<i32> {
                                 &mut lock,
                                 key,
                                 merged_shape,
-                                if merge {
-                                    true
-                                } else {
-                                    false
-                                },
+                                merge,
                                 &map_at,
                                 required_threshold,
                             )?;
@@ -179,8 +183,9 @@ fn run() -> Result<i32> {
                     }
 
                     let rendered = lockfile::render(&lock)?;
-                    fs::write(&output, rendered)
-                        .with_context(|| format!("failed to write lockfile {}", output.display()))?;
+                    fs::write(&output, rendered).with_context(|| {
+                        format!("failed to write lockfile {}", output.display())
+                    })?;
 
                     println!("Wrote {}", output.display());
 

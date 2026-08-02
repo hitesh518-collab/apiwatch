@@ -70,8 +70,7 @@ fn is_json_content_type(mime_type: &str) -> bool {
         return false;
     }
     let lower = mime_type.to_lowercase();
-    lower.starts_with("application/json")
-        || lower.starts_with("application/vnd.")
+    lower.starts_with("application/json") || lower.starts_with("application/vnd.")
 }
 
 fn entry_identity(method: &str, path: &str) -> String {
@@ -82,12 +81,12 @@ fn parse_path_identities(identities: &[String]) -> Result<Vec<(String, String)>>
     let mut result = Vec::new();
     let mut seen = HashSet::new();
     for identity in identities {
-        let (method, path) = identity
-            .split_once(' ')
-            .ok_or_else(|| anyhow::anyhow!(
+        let (method, path) = identity.split_once(' ').ok_or_else(|| {
+            anyhow::anyhow!(
                 "invalid --path-identity '{}': expected 'METHOD /path'",
                 identity
-            ))?;
+            )
+        })?;
         let method = method.to_uppercase();
         let path = path.trim().to_string();
         if path.is_empty() {
@@ -145,17 +144,23 @@ pub fn load_har(
         // Status filter
         if !status_filter.is_empty() {
             if !status_filter.contains(&entry.response.status) {
-                skips.push((skip_label, HarSkipReason::NonMatchingStatus {
-                    status: entry.response.status,
-                    path: path.clone(),
-                }));
+                skips.push((
+                    skip_label,
+                    HarSkipReason::NonMatchingStatus {
+                        status: entry.response.status,
+                        path: path.clone(),
+                    },
+                ));
                 continue;
             }
         } else if entry.response.status < 200 || entry.response.status >= 300 {
-            skips.push((skip_label, HarSkipReason::NonMatchingStatus {
-                status: entry.response.status,
-                path: path.clone(),
-            }));
+            skips.push((
+                skip_label,
+                HarSkipReason::NonMatchingStatus {
+                    status: entry.response.status,
+                    path: path.clone(),
+                },
+            ));
             continue;
         }
 
@@ -169,9 +174,10 @@ pub fn load_har(
 
         // Content-type check
         if !is_json_content_type(&entry.response.content.mime_type) {
-            skips.push((skip_label, HarSkipReason::NonJsonContentType(
-                entry.response.content.mime_type.clone(),
-            )));
+            skips.push((
+                skip_label,
+                HarSkipReason::NonJsonContentType(entry.response.content.mime_type.clone()),
+            ));
             continue;
         }
 
@@ -203,10 +209,13 @@ pub fn load_har(
             match matched {
                 Some(k) => k,
                 None => {
-                    skips.push((skip_label, HarSkipReason::NonMatchingStatus {
-                        status: entry.response.status,
-                        path: path.clone(),
-                    }));
+                    skips.push((
+                        skip_label,
+                        HarSkipReason::NonMatchingStatus {
+                            status: entry.response.status,
+                            path: path.clone(),
+                        },
+                    ));
                     continue;
                 }
             }
@@ -230,7 +239,9 @@ mod tests {
     #[test]
     fn detects_json_content_types() {
         assert!(super::is_json_content_type("application/json"));
-        assert!(super::is_json_content_type("application/json; charset=utf-8"));
+        assert!(super::is_json_content_type(
+            "application/json; charset=utf-8"
+        ));
         assert!(super::is_json_content_type("APPLICATION/JSON"));
         assert!(super::is_json_content_type("application/json+hal"));
         assert!(!super::is_json_content_type("text/plain"));
@@ -240,15 +251,16 @@ mod tests {
 
     #[test]
     fn parses_valid_path_identities() {
-        let ids = parse_path_identities(&[
-            "GET /api/users".to_string(),
-            "POST /api/orders".to_string(),
-        ])
-        .expect("should parse");
-        assert_eq!(ids, vec![
-            ("GET".to_string(), "/api/users".to_string()),
-            ("POST".to_string(), "/api/orders".to_string()),
-        ]);
+        let ids =
+            parse_path_identities(&["GET /api/users".to_string(), "POST /api/orders".to_string()])
+                .expect("should parse");
+        assert_eq!(
+            ids,
+            vec![
+                ("GET".to_string(), "/api/users".to_string()),
+                ("POST".to_string(), "/api/orders".to_string()),
+            ]
+        );
     }
 
     #[test]

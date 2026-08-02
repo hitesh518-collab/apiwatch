@@ -11,14 +11,14 @@ pub mod contract;
 #[doc(hidden)]
 pub mod diff;
 #[doc(hidden)]
+#[doc(hidden)]
+pub mod har;
+#[doc(hidden)]
 pub mod lock_size;
 #[doc(hidden)]
 pub mod lockfile;
 #[doc(hidden)]
 pub mod observed;
-#[doc(hidden)]
-#[doc(hidden)]
-pub mod har;
 #[doc(hidden)]
 pub mod openapi;
 #[doc(hidden)]
