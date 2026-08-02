@@ -17,6 +17,8 @@ pub mod lockfile;
 #[doc(hidden)]
 pub mod observed;
 #[doc(hidden)]
+pub(crate) mod har;
+#[doc(hidden)]
 pub mod openapi;
 #[doc(hidden)]
 pub mod output;
