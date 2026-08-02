@@ -81,3 +81,33 @@ fn stripe_reproduces_known_recursive_schema_failure() {
 fn digitalocean_reproduces_known_metadata_failure() {
     assert_known_failure("digitalocean.yaml", "missing field `responses`");
 }
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn paystack_reproduces_known_unsupported_path_ref_failure() {
+    assert_known_failure("paystack.yaml", "unsupported schema reference:");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn deutsche_bahn_reproduces_known_swagger_v2_parsing_failure() {
+    assert_known_failure("deutsche-bahn.yaml", "failed to parse cleaned OpenAPI YAML");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn mercadopago_is_compatible() {
+    assert_clean_self_diff("mercadopago.yaml");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn line_is_compatible() {
+    assert_clean_self_diff("line.yml");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn humanitas_fhir_is_compatible() {
+    assert_clean_self_diff("humanitas-fhir.json");
+}

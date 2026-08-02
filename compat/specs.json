@@ -61,6 +61,66 @@
       "max_bytes": 52428800,
       "status": "known_failing",
       "expected_error": "missing field `responses`"
+    },
+    {
+      "name": "paystack",
+      "file": "paystack.yaml",
+      "url": "https://raw.githubusercontent.com/PaystackHQ/openapi/c35994da6dddf521794ec7f8b730a1efda10c565/dist/paystack.yaml",
+      "sha256": "253ed891f09da6f477c96d1b9173dd1c76e99f665dbf906611fd6f8560f87809",
+      "max_bytes": 52428800,
+      "status": "known_failing",
+      "expected_error": "unsupported schema reference: #/paths/~1transaction~1initialize/post/requestBody/content/application~1json/schema"
+    },
+    {
+      "name": "deutsche-bahn",
+      "file": "deutsche-bahn.yaml",
+      "url": "https://raw.githubusercontent.com/APIs-guru/openapi-directory/4d66b23dc5948016b50e79b944a0b084c7000da7/APIs/deutschebahn.com/fahrplan/v1/swagger.yaml",
+      "sha256": "524483f96b1e91d78d75f6d8961831620b5cf2e718db24402772ca2e0a21cba3",
+      "max_bytes": 52428800,
+      "status": "known_failing",
+      "expected_error": "failed to parse cleaned OpenAPI YAML"
+    },
+    {
+      "name": "mercadopago",
+      "file": "mercadopago.yaml",
+      "url": "https://raw.githubusercontent.com/mercadopago/openapi/ab4604b671b78c015f66fab1a59c95ed8fe95275/spec3.yaml",
+      "sha256": "27122365615dfd4a28dea42b717283c41797b5dd3f2cc73a872855507c1b9437",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 142,
+        "expanded_yaml_bytes": 2360354,
+        "canonical_json_bytes": 1125700,
+        "deduplicated_yaml_bytes": 295669
+      }
+    },
+    {
+      "name": "line",
+      "file": "line.yml",
+      "url": "https://raw.githubusercontent.com/line/line-openapi/de8bd9e2872ed9d9800e23b86136695fcd370a0c/messaging-api.yml",
+      "sha256": "0227978ce1b3133e20da034fc33a9241000619ae4fea2fda7b61983abf79577a",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 73,
+        "expanded_yaml_bytes": 416921,
+        "canonical_json_bytes": 206401,
+        "deduplicated_yaml_bytes": 92560
+      }
+    },
+    {
+      "name": "humanitas-fhir",
+      "file": "humanitas-fhir.json",
+      "url": "https://raw.githubusercontent.com/copyleftdev/humanitas/ff0ce058595ac0ade0d64e0737dffb858517a97b/specs/openapi3/enrollment.json",
+      "sha256": "fa674d561cca3dc504ed0672a2c38bda1b94e579cd2f5adbcbe0d0f6ab0593ec",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 3,
+        "expanded_yaml_bytes": 85443,
+        "canonical_json_bytes": 40815,
+        "deduplicated_yaml_bytes": 34221
+      }
     }
   ]
 }

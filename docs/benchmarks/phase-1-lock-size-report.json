@@ -73,6 +73,14 @@
       }
     },
     {
+      "name": "digitalocean",
+      "source_commit": "7667351a0c8a1a526343160e1778cb5e97b2c9da",
+      "sha256": "cda2db55fb97ceef551a3e35682dca49ad331b486f88f712f7c93f4ba05eefbc",
+      "source_bytes": 110982,
+      "normalization_status": "known_failing",
+      "expected_error": "missing field `responses`"
+    },
+    {
       "name": "stripe",
       "source_commit": "86b6ae4db114ff06968dcc191ff4a898e9b5db7c",
       "sha256": "e24a26de4188fd64dec4c043d5d3726277fdcb07556a493ea481c305b0a223d8",
@@ -81,12 +89,89 @@
       "expected_error": "circular schema reference detected: #/components/schemas/file"
     },
     {
-      "name": "digitalocean",
-      "source_commit": "7667351a0c8a1a526343160e1778cb5e97b2c9da",
-      "sha256": "cda2db55fb97ceef551a3e35682dca49ad331b486f88f712f7c93f4ba05eefbc",
-      "source_bytes": 110982,
+      "name": "paystack",
+      "source_commit": "c35994da6dddf521794ec7f8b730a1efda10c565",
+      "sha256": "253ed891f09da6f477c96d1b9173dd1c76e99f665dbf906611fd6f8560f87809",
+      "source_bytes": 127804,
       "normalization_status": "known_failing",
-      "expected_error": "invalid type: map, expected a string"
+      "expected_error": "unsupported schema reference: #/paths/~1transaction~1initialize/post/requestBody/content/application~1json/schema"
+    },
+    {
+      "name": "deutsche-bahn",
+      "source_commit": "4d66b23dc5948016b50e79b944a0b084c7000da7",
+      "sha256": "524483f96b1e91d78d75f6d8961831620b5cf2e718db24402772ca2e0a21cba3",
+      "source_bytes": 8279,
+      "normalization_status": "known_failing",
+      "expected_error": "failed to parse cleaned OpenAPI YAML"
+    },
+    {
+      "name": "mercadopago",
+      "source_commit": "ab4604b671b78c015f66fab1a59c95ed8fe95275",
+      "sha256": "27122365615dfd4a28dea42b717283c41797b5dd3f2cc73a872855507c1b9437",
+      "source_bytes": 235336,
+      "normalization_status": "passing",
+      "operation_count": 142,
+      "measurements": {
+        "operation_count": 142,
+        "expanded_yaml": {
+          "bytes": 2360354,
+          "within_ceiling": true
+        },
+        "canonical_json": {
+          "bytes": 1125700,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 295669,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "line",
+      "source_commit": "de8bd9e2872ed9d9800e23b86136695fcd370a0c",
+      "sha256": "0227978ce1b3133e20da034fc33a9241000619ae4fea2fda7b61983abf79577a",
+      "source_bytes": 183329,
+      "normalization_status": "passing",
+      "operation_count": 73,
+      "measurements": {
+        "operation_count": 73,
+        "expanded_yaml": {
+          "bytes": 416921,
+          "within_ceiling": true
+        },
+        "canonical_json": {
+          "bytes": 206401,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 92560,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "humanitas-fhir",
+      "source_commit": "ff0ce058595ac0ade0d64e0737dffb858517a97b",
+      "sha256": "fa674d561cca3dc504ed0672a2c38bda1b94e579cd2f5adbcbe0d0f6ab0593ec",
+      "source_bytes": 68679,
+      "normalization_status": "passing",
+      "operation_count": 3,
+      "measurements": {
+        "operation_count": 3,
+        "expanded_yaml": {
+          "bytes": 85443,
+          "within_ceiling": true
+        },
+        "canonical_json": {
+          "bytes": 40815,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 34221,
+          "within_ceiling": true
+        }
+      }
     }
   ],
   "privacy": {
