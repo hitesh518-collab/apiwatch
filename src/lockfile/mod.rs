@@ -144,6 +144,8 @@ pub enum VerifyTargetKind {
     Observed {
         shape: Shape,
         threshold: f64,
+        first_seen: String,
+        last_seen: String,
     },
 }
 
@@ -622,6 +624,8 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
             kind: VerifyTargetKind::Observed {
                 shape: entry.shape.clone(),
                 threshold: entry.threshold,
+                first_seen: entry.first_seen.clone(),
+                last_seen: entry.last_seen.clone(),
             },
         });
     }

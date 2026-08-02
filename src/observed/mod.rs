@@ -252,6 +252,71 @@ pub fn merge(existing: &mut Shape, incoming: &Shape) {
     *existing = canonical_union(vec![existing.clone(), incoming.clone()]);
 }
 
+pub fn verify_with_tiers(expected: &Shape, actual: &Shape, threshold: f64) -> ObservedVerifyReport {
+    let changes = compare(expected, actual, threshold);
+    let mut tiered = tiered_report(expected, "$", 0, threshold);
+    collect_unverified(expected, actual, "$", &mut tiered);
+    ObservedVerifyReport { changes, tiered }
+}
+
+fn collect_unverified(
+    expected: &Shape,
+    actual: &Shape,
+    path: &str,
+    entries: &mut Vec<TieredEntry>,
+) {
+    match (expected, actual) {
+        (
+            Shape::Object {
+                properties: exp_props,
+                ..
+            },
+            Shape::Object {
+                properties: act_props,
+                ..
+            },
+        ) => {
+            for (name, _) in act_props
+                .iter()
+                .filter(|(n, _)| !exp_props.contains_key(*n))
+            {
+                entries.push(TieredEntry {
+                    tier: TieredKind::Unverified,
+                    path: format!("{path}.{name}"),
+                    detail: "field not in lock".to_string(),
+                });
+            }
+            for (name, exp_prop) in exp_props {
+                if let Some(act_prop) = act_props.get(name) {
+                    collect_unverified(
+                        &exp_prop.shape,
+                        &act_prop.shape,
+                        &format!("{path}.{name}"),
+                        entries,
+                    );
+                }
+            }
+        }
+        (Shape::Array { items: exp_items }, Shape::Array { items: act_items }) => {
+            collect_unverified(exp_items, act_items, &format!("{path}[]"), entries);
+        }
+        (Shape::Map { values: exp_vals }, Shape::Map { values: act_vals }) => {
+            collect_unverified(exp_vals, act_vals, &format!("{path}.<map-value>"), entries);
+        }
+        (Shape::Union { variants: exp_vars }, _) => {
+            for variant in exp_vars {
+                collect_unverified(variant, actual, path, entries);
+            }
+        }
+        (_, Shape::Union { variants: act_vars }) => {
+            for variant in act_vars {
+                collect_unverified(expected, variant, path, entries);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub fn compare(expected: &Shape, actual: &Shape, threshold: f64) -> Vec<ObservedChange> {
     let mut changes = Vec::new();
     compare_at(expected, actual, "$", 0, 0, threshold, &mut changes);

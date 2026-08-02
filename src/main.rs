@@ -130,25 +130,38 @@ fn run() -> Result<i32> {
                 lockfile::VerifyTargetKind::Observed {
                     shape: expected,
                     threshold,
+                    first_seen,
+                    last_seen,
                 } => {
                     if openapi.starts_with("http://") || openapi.starts_with("https://") {
                         anyhow::bail!("observed verification requires a local JSON file");
                     }
                     let current = observed::load_shape(std::path::Path::new(&openapi))?;
-                    let changes = observed::compare(expected, &current, *threshold);
-                    let has_changes = !changes.is_empty();
+                    let report = observed::verify_with_tiers(expected, &current, *threshold);
+                    let has_changes = !report.changes.is_empty();
+                    let has_tiered = !report.tiered.is_empty();
                     let rendered = match format {
-                        OutputFormat::Text if changes.is_empty() => {
-                            format!("Verified {}\n", target.name())
+                        OutputFormat::Text if !has_changes && !has_tiered => {
+                            format!("Verified {}\n  first seen: {first_seen}\n  last seen:  {last_seen}\n", target.name())
                         }
-                        OutputFormat::Text => output::render_observed_verify_changes(&changes),
-                        OutputFormat::Json => {
-                            output::render_observed_verify_changes_json(target.name(), &changes)?
-                        }
-                        OutputFormat::Sarif => output::render_observed_verify_changes_sarif(
+                        OutputFormat::Text => output::render_observed_verify_with_tiers(
+                            target.name(),
+                            *threshold,
+                            first_seen,
+                            last_seen,
+                            &report,
+                        ),
+                        OutputFormat::Json => output::render_observed_verify_with_tiers_json(
+                            target.name(),
+                            *threshold,
+                            first_seen,
+                            last_seen,
+                            &report,
+                        )?,
+                        OutputFormat::Sarif => output::render_observed_verify_with_tiers_sarif(
                             &lock_path,
                             target.name(),
-                            &changes,
+                            &report,
                         )?,
                     };
                     print!("{rendered}");
