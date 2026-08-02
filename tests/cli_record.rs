@@ -451,3 +451,95 @@ fn record_from_har_existing_from_json_still_works() {
     assert!(lock.starts_with("version: 2\n"));
     assert!(lock.contains("provenance: observed"));
 }
+
+#[test]
+fn record_from_har_base64_encoded_is_skipped() {
+    let output = temp_lock_path("har-base64");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/base64-entry.har",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no HAR entries matched"));
+
+    assert!(!output.exists());
+}
+
+#[test]
+fn record_from_har_merge_with_same_path_identity() {
+    let output = temp_lock_path("har-merge");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/single-entry.har",
+            "--output",
+            output_arg,
+            "--path-identity",
+            "GET /users",
+        ])
+        .assert()
+        .success();
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/multi-entry.har",
+            "--output",
+            output_arg,
+            "--path-identity",
+            "GET /users",
+            "--merge",
+        ])
+        .assert()
+        .success();
+
+    let lock = fs::read_to_string(&output).expect("merged lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.starts_with("version: 2\n"));
+    assert!(lock.contains("GET /users"));
+    assert_eq!(lock.matches("provenance: observed").count(), 1);
+}
+
+#[test]
+fn record_from_har_with_map_at_applies_map_annotations() {
+    let output = temp_lock_path("har-map-at");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/single-entry.har",
+            "--output",
+            output_arg,
+            "--name",
+            "map-api",
+            "--map-at",
+            "$",
+        ])
+        .assert()
+        .success();
+
+    let lock = fs::read_to_string(&output).expect("should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.starts_with("version: 2\n"));
+    assert!(lock.contains("kind: map"));
+    assert!(!lock.contains("\"alice\""));
+}

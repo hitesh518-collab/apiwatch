@@ -229,6 +229,19 @@ pub fn load_har(
             .push(HarRecording { method, path, body });
     }
 
+    if let Some(ref ids) = identities {
+        for (ident_method, ident_path) in ids {
+            let identity_key = entry_identity(ident_method, ident_path);
+            if !recordings.contains_key(&identity_key) {
+                anyhow::bail!(
+                    "no entries matched path-identity '{} {}'",
+                    ident_method,
+                    ident_path
+                );
+            }
+        }
+    }
+
     Ok((recordings, skips))
 }
 
@@ -289,5 +302,25 @@ mod tests {
         let key = recordings.keys().next().unwrap();
         assert_eq!(key, "GET /users/42");
         assert_eq!(recordings[key].len(), 1);
+    }
+
+    #[test]
+    fn path_identity_with_no_matching_entries_is_error() {
+        let path = std::path::Path::new("testdata/har/single-entry.har");
+        let result = load_har(&path, &["GET /api/nonexistent".to_string()], &[]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn skips_base64_encoded_entry() {
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test-base64.har");
+        std::fs::write(&path, r#"{"log":{"version":"1.2","entries":[{"request":{"method":"GET","url":"https://api.example.com/data"},"response":{"status":200,"content":{"mimeType":"application/json","encoding":"base64","text":"eyJrZXkiOiJ2YWx1ZSJ9"}}}]}}"#).expect("write fixture");
+        let (recordings, skips) = load_har(&path, &[], &[]).expect("should load but all skipped");
+        let _ = std::fs::remove_file(&path);
+        assert!(recordings.is_empty());
+        assert_eq!(skips.len(), 1);
+        let is_base64 = matches!(&skips[0].1, HarSkipReason::Base64Encoded);
+        assert!(is_base64, "expected Base64Encoded, got {:?}", skips[0].1);
     }
 }
