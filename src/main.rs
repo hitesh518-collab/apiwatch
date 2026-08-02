@@ -127,12 +127,15 @@ fn run() -> Result<i32> {
                 Some(remote_headers)
             };
             match target.kind() {
-                lockfile::VerifyTargetKind::Observed { shape: expected } => {
+                lockfile::VerifyTargetKind::Observed {
+                    shape: expected,
+                    threshold,
+                } => {
                     if openapi.starts_with("http://") || openapi.starts_with("https://") {
                         anyhow::bail!("observed verification requires a local JSON file");
                     }
                     let current = observed::load_shape(std::path::Path::new(&openapi))?;
-                    let changes = observed::compare(expected, &current);
+                    let changes = observed::compare(expected, &current, *threshold);
                     let has_changes = !changes.is_empty();
                     let rendered = match format {
                         OutputFormat::Text if changes.is_empty() => {

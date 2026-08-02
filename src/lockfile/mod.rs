@@ -125,13 +125,13 @@ pub struct LockedOperation {
     path: String,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct VerifyTarget {
     name: String,
     kind: VerifyTargetKind,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum VerifyTargetKind {
     LegacyDeclared {
         operations: BTreeSet<LockedOperation>,
@@ -143,6 +143,7 @@ pub enum VerifyTargetKind {
     },
     Observed {
         shape: Shape,
+        threshold: f64,
     },
 }
 
@@ -159,7 +160,7 @@ impl VerifyTarget {
 
     pub fn observed_shape(&self) -> Option<&Shape> {
         match &self.kind {
-            VerifyTargetKind::Observed { shape } => Some(shape),
+            VerifyTargetKind::Observed { shape, .. } => Some(shape),
             _ => None,
         }
     }
@@ -620,6 +621,7 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
             name: name.to_string(),
             kind: VerifyTargetKind::Observed {
                 shape: entry.shape.clone(),
+                threshold: entry.threshold,
             },
         });
     }

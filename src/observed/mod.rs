@@ -252,9 +252,9 @@ pub fn merge(existing: &mut Shape, incoming: &Shape) {
     *existing = canonical_union(vec![existing.clone(), incoming.clone()]);
 }
 
-pub fn compare(expected: &Shape, actual: &Shape) -> Vec<ObservedChange> {
+pub fn compare(expected: &Shape, actual: &Shape, threshold: f64) -> Vec<ObservedChange> {
     let mut changes = Vec::new();
-    compare_at(expected, actual, "$", &mut changes);
+    compare_at(expected, actual, "$", 0, 0, threshold, &mut changes);
     changes.sort_by(|left, right| {
         left.path
             .cmp(&right.path)
@@ -422,7 +422,19 @@ fn canonical_union(variants: Vec<Shape>) -> Shape {
     }
 }
 
-fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<ObservedChange>) {
+fn compare_at(
+    expected: &Shape,
+    actual: &Shape,
+    path: &str,
+    property_obs: u64,
+    parent_obs: u64,
+    threshold: f64,
+    changes: &mut Vec<ObservedChange>,
+) {
+    if matches!(expected, Shape::Null) && !is_hardened(parent_obs, property_obs, threshold) {
+        return;
+    }
+
     if matches!(expected, Shape::Unknown) {
         return;
     }
@@ -430,7 +442,15 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
     if let Shape::Union { variants } = expected {
         if variants.iter().any(|variant| {
             let mut branch_changes = Vec::new();
-            compare_at(variant, actual, path, &mut branch_changes);
+            compare_at(
+                variant,
+                actual,
+                path,
+                property_obs,
+                parent_obs,
+                threshold,
+                &mut branch_changes,
+            );
             branch_changes.is_empty()
         }) {
             return;
@@ -441,7 +461,15 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
 
     if let Shape::Union { variants } = actual {
         for variant in variants {
-            compare_at(expected, variant, path, changes);
+            compare_at(
+                expected,
+                variant,
+                path,
+                property_obs,
+                parent_obs,
+                threshold,
+                changes,
+            );
         }
         return;
     }
@@ -454,7 +482,15 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
             Shape::Map {
                 values: actual_values,
             },
-        ) => compare_at(expected_values, actual_values, path, changes),
+        ) => compare_at(
+            expected_values,
+            actual_values,
+            path,
+            property_obs,
+            parent_obs,
+            threshold,
+            changes,
+        ),
         (
             Shape::Map {
                 values: expected_values,
@@ -469,6 +505,9 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
                     expected_values,
                     &actual_property.shape,
                     &format!("{path}.<map-value>"),
+                    0,
+                    0,
+                    threshold,
                     changes,
                 );
             }
@@ -490,9 +529,17 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
                         &expected_property.shape,
                         &actual_property.shape,
                         &property_path,
+                        expected_property.observations,
+                        *observations,
+                        threshold,
                         changes,
                     ),
-                    None if expected_property.observations == *observations => {
+                    None if is_hardened(
+                        *observations,
+                        expected_property.observations,
+                        threshold,
+                    ) =>
+                    {
                         changes.push(ObservedChange {
                             kind: ObservedChangeKind::MissingRequiredField,
                             path: property_path,
@@ -513,7 +560,15 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
             },
         ) => {
             if !matches!(actual_items.as_ref(), Shape::Unknown) {
-                compare_at(expected_items, actual_items, &format!("{path}[]"), changes);
+                compare_at(
+                    expected_items,
+                    actual_items,
+                    &format!("{path}[]"),
+                    0,
+                    0,
+                    threshold,
+                    changes,
+                );
             }
         }
         _ if same_kind(expected, actual) => {}
@@ -617,7 +672,9 @@ fn shape_sort_key(shape: &Shape) -> u8 {
 mod tests {
     use serde_json::json;
 
-    use super::{apply_map_annotations, compare, infer, merge, shape_name, Shape};
+    use super::{
+        apply_map_annotations, compare, infer, merge, shape_name, ObservedChangeKind, Shape,
+    };
 
     #[test]
     fn annotation_converts_an_object_to_a_value_free_map() {
@@ -701,15 +758,17 @@ mod tests {
             &infer(&json!({
                 "by_broker": {"other": {"pnl_pct": 3}}
             })),
+            1.0,
         )
         .is_empty());
-        assert!(compare(&expected, &infer(&json!({"by_broker": {}}))).is_empty());
+        assert!(compare(&expected, &infer(&json!({"by_broker": {}})), 1.0).is_empty());
 
         let changes = compare(
             &expected,
             &infer(&json!({
                 "by_broker": {"acme": {"pnl_pct": "wrong"}}
             })),
+            1.0,
         );
         assert!(changes.iter().any(|change| {
             change.path == "$.by_broker.<map-value>.pnl_pct"
@@ -729,6 +788,10 @@ mod tests {
                 "error": "temporary"
             })),
         );
+        merge(
+            &mut shape,
+            &infer(&json!({"live_price": 12, "holdings": []})),
+        );
 
         assert!(compare(
             &shape,
@@ -736,9 +799,10 @@ mod tests {
                 "live_price": 3,
                 "holdings": [{"ticker": "DIFFERENT"}]
             })),
+            1.0,
         )
         .is_empty());
-        assert!(compare(&shape, &infer(&json!({"holdings": []})))
+        assert!(compare(&shape, &infer(&json!({"holdings": []})), 1.0)
             .iter()
             .any(|change| change.path == "$.live_price"));
         assert_eq!(shape_name(&shape), "object");
@@ -760,14 +824,14 @@ mod tests {
         let expected = infer(&json!({"holdings": []}));
         let actual = infer(&json!({"holdings": [{"ticker": "APW"}]}));
 
-        assert!(compare(&expected, &actual).is_empty());
+        assert!(compare(&expected, &actual, 1.0).is_empty());
     }
 
     #[test]
     fn reports_a_string_instead_of_a_locked_number() {
         let expected = infer(&json!({"live_price": 12}));
         let actual = infer(&json!({"live_price": "unavailable"}));
-        let changes = compare(&expected, &actual);
+        let changes = compare(&expected, &actual, 1.0);
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "$.live_price");
@@ -784,5 +848,42 @@ mod tests {
             panic!("different scalar observations should create a union");
         };
         assert!(matches!(variants.as_slice(), [Shape::Null, Shape::Number]));
+    }
+
+    #[test]
+    fn null_only_field_with_one_sample_is_lenient() {
+        let expected = infer(&json!({"x": null}));
+        let changes = compare(&expected, &infer(&json!({"x": "hello"})), 0.5);
+        assert!(changes.is_empty(), "single-sample null must be lenient");
+    }
+
+    #[test]
+    fn null_only_field_with_three_samples_is_hardened() {
+        let mut expected = infer(&json!({"x": null}));
+        merge(&mut expected, &infer(&json!({"x": null})));
+        merge(&mut expected, &infer(&json!({"x": null})));
+        let changes = compare(&expected, &infer(&json!({"x": "hello"})), 0.5);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, ObservedChangeKind::IncompatibleShape);
+    }
+
+    #[test]
+    fn low_observation_field_is_optional_with_threshold() {
+        let mut expected = infer(&json!({"a": 1, "b": 2}));
+        for _ in 0..7 {
+            merge(&mut expected, &infer(&json!({"a": 1})));
+        }
+        let changes = compare(&expected, &infer(&json!({"a": 3})), 0.5);
+        assert!(changes.is_empty(), "b below threshold must be optional");
+    }
+
+    #[test]
+    fn threshold_one_zero_is_binary_required() {
+        let mut expected = infer(&json!({"a": 1, "b": 2}));
+        merge(&mut expected, &infer(&json!({"a": 1})));
+        let changes = compare(&expected, &infer(&json!({"a": 3})), 1.0);
+        assert!(changes.is_empty());
+        let changes = compare(&expected, &infer(&json!({"a": 3})), 0.0);
+        assert!(changes.is_empty(), "all optional at 0.0");
     }
 }

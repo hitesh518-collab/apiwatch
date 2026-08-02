@@ -1193,6 +1193,20 @@ fn record_portfolio(lock: &Path) {
         ])
         .assert()
         .success();
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--name",
+            "portfolio",
+            "--output",
+            lock,
+            "--merge",
+        ])
+        .assert()
+        .success();
 }
 
 fn record_map_portfolio(lock: &Path) {
