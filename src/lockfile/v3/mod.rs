@@ -13,7 +13,7 @@ pub const DEFAULT_MAX_LOCK_BYTES: u64 = 5_242_880;
 
 pub(super) type Extensions = BTreeMap<String, serde_json::Value>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct V3Lock {
     version: u8,
@@ -40,17 +40,23 @@ impl V3Lock {
 
     pub(super) fn from_parts(
         declared: BTreeMap<String, DeclaredEntry>,
-        observed: BTreeMap<String, crate::observed::Shape>,
+        observed: BTreeMap<String, crate::observed::ObservedEntry>,
     ) -> Self {
         let mut apis = declared
             .into_iter()
             .map(|(name, entry)| (name, V3Api::Declared(entry)))
             .collect::<BTreeMap<_, _>>();
-        apis.extend(
-            observed
-                .into_iter()
-                .map(|(name, shape)| (name, V3Api::Observed(ObservedEntry { shape }))),
-        );
+        apis.extend(observed.into_iter().map(|(name, entry)| {
+            (
+                name,
+                V3Api::Observed(ObservedEntry {
+                    shape: entry.shape,
+                    threshold: entry.threshold,
+                    first_seen: entry.first_seen,
+                    last_seen: entry.last_seen,
+                }),
+            )
+        }));
         Self { version: 3, apis }
     }
 
@@ -58,7 +64,7 @@ impl V3Lock {
         self,
     ) -> (
         BTreeMap<String, DeclaredEntry>,
-        BTreeMap<String, crate::observed::Shape>,
+        BTreeMap<String, crate::observed::ObservedEntry>,
     ) {
         let mut declared = BTreeMap::new();
         let mut observed = BTreeMap::new();
@@ -68,7 +74,15 @@ impl V3Lock {
                     declared.insert(name, entry);
                 }
                 V3Api::Observed(entry) => {
-                    observed.insert(name, entry.shape);
+                    observed.insert(
+                        name,
+                        crate::observed::ObservedEntry {
+                            shape: entry.shape,
+                            threshold: entry.threshold,
+                            first_seen: entry.first_seen,
+                            last_seen: entry.last_seen,
+                        },
+                    );
                 }
             }
         }
@@ -76,17 +90,26 @@ impl V3Lock {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "provenance", rename_all = "snake_case")]
 pub(super) enum V3Api {
     Declared(DeclaredEntry),
     Observed(ObservedEntry),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(super) struct ObservedEntry {
     shape: crate::observed::Shape,
+    #[serde(default = "default_threshold")]
+    threshold: f64,
+    #[serde(default)]
+    first_seen: String,
+    #[serde(default)]
+    last_seen: String,
+}
+
+fn default_threshold() -> f64 {
+    1.0
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
