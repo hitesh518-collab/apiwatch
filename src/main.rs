@@ -86,10 +86,16 @@ fn run() -> Result<i32> {
             output,
             merge,
             map_at,
+            required_threshold,
         } => {
+            if let Some(t) = required_threshold {
+                if !(0.0..=1.0).contains(&t) {
+                    anyhow::bail!("--required-threshold must be between 0.0 and 1.0");
+                }
+            }
             let shape = observed::load_shape(&from_json)?;
             let mut lock = lockfile::load_or_create_for_record(&output)?;
-            lockfile::record_observed(&mut lock, &name, shape, merge, &map_at, None)?;
+            lockfile::record_observed(&mut lock, &name, shape, merge, &map_at, required_threshold)?;
             let rendered = lockfile::render(&lock)?;
             fs::write(&output, rendered)
                 .with_context(|| format!("failed to write lockfile {}", output.display()))?;
