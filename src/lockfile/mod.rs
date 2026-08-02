@@ -531,7 +531,7 @@ fn chrono_now() -> String {
     use std::time::SystemTime;
     let duration = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
+        .unwrap_or(std::time::Duration::ZERO);
     let secs = duration.as_secs();
     let days_since_epoch = secs / 86400;
     let time_of_day = secs % 86400;

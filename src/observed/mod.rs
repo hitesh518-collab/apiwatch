@@ -318,6 +318,7 @@ fn collect_unverified(
 }
 
 pub fn compare(expected: &Shape, actual: &Shape, threshold: f64) -> Vec<ObservedChange> {
+    debug_assert!(threshold.is_finite(), "threshold must be finite");
     let mut changes = Vec::new();
     compare_at(expected, actual, "$", 0, 0, threshold, &mut changes);
     changes.sort_by(|left, right| {
@@ -368,10 +369,11 @@ pub fn tiered_report(
     entries
 }
 
+#[allow(clippy::only_used_in_recursion)]
 fn collect_tiered(
     shape: &Shape,
     path: &str,
-    _parent_observations: u64,
+    parent_observations: u64,
     threshold: f64,
     entries: &mut Vec<TieredEntry>,
 ) {
@@ -420,7 +422,7 @@ fn collect_tiered(
             collect_tiered(
                 items,
                 &format!("{path}[]"),
-                _parent_observations,
+                parent_observations,
                 threshold,
                 entries,
             );
@@ -429,14 +431,14 @@ fn collect_tiered(
             collect_tiered(
                 values,
                 &format!("{path}.<map-value>"),
-                _parent_observations,
+                parent_observations,
                 threshold,
                 entries,
             );
         }
         Shape::Union { variants } => {
             for variant in variants {
-                collect_tiered(variant, path, _parent_observations, threshold, entries);
+                collect_tiered(variant, path, parent_observations, threshold, entries);
             }
         }
         _ => {}
@@ -943,7 +945,7 @@ mod tests {
     }
 
     #[test]
-    fn threshold_one_zero_is_binary_required() {
+    fn below_floor_always_optional_regardless_of_threshold() {
         let mut expected = infer(&json!({"a": 1, "b": 2}));
         merge(&mut expected, &infer(&json!({"a": 1})));
         let changes = compare(&expected, &infer(&json!({"a": 3})), 1.0);
