@@ -29,6 +29,24 @@ pub enum Shape {
     Unknown,
 }
 
+pub const DEFAULT_REQUIRED_THRESHOLD: f64 = 0.5;
+pub const MINIMUM_OBSERVATION_FLOOR: u64 = 3;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ObservedEntry {
+    pub shape: Shape,
+    #[serde(default = "default_threshold")]
+    pub threshold: f64,
+    #[serde(default)]
+    pub first_seen: String,
+    #[serde(default)]
+    pub last_seen: String,
+}
+
+fn default_threshold() -> f64 {
+    DEFAULT_REQUIRED_THRESHOLD
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ObservedProperty {
@@ -48,6 +66,26 @@ pub struct ObservedChange {
     pub path: String,
     pub expected: Option<String>,
     pub actual: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TieredEntry {
+    pub tier: TieredKind,
+    pub path: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TieredKind {
+    InsufficientlyObserved,
+    Unverified,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservedVerifyReport {
+    pub changes: Vec<ObservedChange>,
+    pub tiered: Vec<TieredEntry>,
 }
 
 pub fn load_shape(path: &Path) -> Result<Shape> {
@@ -240,6 +278,103 @@ pub fn shape_name(shape: &Shape) -> String {
             .map(shape_name)
             .collect::<Vec<_>>()
             .join(" | "),
+    }
+}
+
+pub fn is_hardened(parent_observations: u64, property_observations: u64, threshold: f64) -> bool {
+    if parent_observations < MINIMUM_OBSERVATION_FLOOR {
+        return false;
+    }
+    if parent_observations == 0 {
+        return false;
+    }
+    let ratio = property_observations as f64 / parent_observations as f64;
+    ratio >= threshold
+}
+
+pub fn tiered_report(
+    shape: &Shape,
+    path: &str,
+    parent_observations: u64,
+    threshold: f64,
+) -> Vec<TieredEntry> {
+    let mut entries = Vec::new();
+    collect_tiered(shape, path, parent_observations, threshold, &mut entries);
+    entries
+}
+
+fn collect_tiered(
+    shape: &Shape,
+    path: &str,
+    _parent_observations: u64,
+    threshold: f64,
+    entries: &mut Vec<TieredEntry>,
+) {
+    match shape {
+        Shape::Object {
+            observations,
+            properties,
+        } => {
+            if properties.is_empty() {
+                entries.push(TieredEntry {
+                    tier: TieredKind::InsufficientlyObserved,
+                    path: path.to_string(),
+                    detail: format!("empty object, seen {observations} time(s)"),
+                });
+                return;
+            }
+            for (name, property) in properties {
+                let property_path = format!("{path}.{name}");
+                if !is_hardened(*observations, property.observations, threshold) {
+                    entries.push(TieredEntry {
+                        tier: TieredKind::InsufficientlyObserved,
+                        path: property_path.clone(),
+                        detail: format!(
+                            "seen {}/{} time(s), threshold {:.2}",
+                            property.observations, observations, threshold
+                        ),
+                    });
+                }
+                collect_tiered(
+                    &property.shape,
+                    &property_path,
+                    *observations,
+                    threshold,
+                    entries,
+                );
+            }
+        }
+        Shape::Array { items } if matches!(items.as_ref(), Shape::Unknown) => {
+            entries.push(TieredEntry {
+                tier: TieredKind::InsufficientlyObserved,
+                path: format!("{path}[]"),
+                detail: "empty array, no item evidence".to_string(),
+            });
+        }
+        Shape::Array { items } => {
+            collect_tiered(
+                items,
+                &format!("{path}[]"),
+                _parent_observations,
+                threshold,
+                entries,
+            );
+        }
+        Shape::Map { values } => {
+            collect_tiered(
+                values,
+                &format!("{path}.<map-value>"),
+                _parent_observations,
+                threshold,
+                entries,
+            );
+        }
+        Shape::Union { variants } => {
+            for variant in variants {
+                collect_tiered(variant, path, _parent_observations, threshold, entries);
+            }
+        }
+        _ => {}
     }
 }
 
