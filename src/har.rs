@@ -47,14 +47,14 @@ struct HarContent {
 }
 
 #[derive(Debug)]
-pub(crate) struct HarRecording {
+pub struct HarRecording {
     pub method: String,
     pub path: String,
     pub body: serde_json::Value,
 }
 
 #[derive(Debug)]
-pub(crate) enum HarSkipReason {
+pub enum HarSkipReason {
     NonJsonContentType(String),
     NonMatchingStatus { status: u16, path: String },
     EmptyBody,
@@ -62,7 +62,7 @@ pub(crate) enum HarSkipReason {
     Base64Encoded,
 }
 
-pub(crate) type HarRecordings = BTreeMap<String, Vec<HarRecording>>;
+pub type HarRecordings = BTreeMap<String, Vec<HarRecording>>;
 
 fn is_json_content_type(mime_type: &str) -> bool {
     let mime_type = mime_type.trim();
@@ -101,7 +101,7 @@ fn parse_path_identities(identities: &[String]) -> Result<Vec<(String, String)>>
     Ok(result)
 }
 
-pub(crate) fn load_har(
+pub fn load_har(
     path: &Path,
     path_identities: &[String],
     status_filter: &[u16],

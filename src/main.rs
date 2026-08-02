@@ -3,7 +3,7 @@ use std::fs;
 
 use anyhow::{Context, Result};
 use apiwatch::cli::{Cli, Command, OutputFormat};
-use apiwatch::{config, diff, lockfile, observed, openapi, output};
+use apiwatch::{config, diff, har, lockfile, observed, openapi, output};
 use clap::Parser;
 
 fn main() {
@@ -81,32 +81,137 @@ fn run() -> Result<i32> {
             Ok(0)
         }
         Command::Record {
+            from_har,
             from_json,
             name,
             output,
             merge,
             map_at,
             required_threshold,
-            ..
+            path_identity,
+            status,
         } => {
             if let Some(t) = required_threshold {
                 if !(0.0..=1.0).contains(&t) {
                     anyhow::bail!("--required-threshold must be between 0.0 and 1.0");
                 }
             }
-            let from_json = from_json
-                .as_ref()
-                .context("--from-json is required for this invocation")?;
-            let name = name
-                .as_ref()
-                .context("--name is required for this invocation")?;
-            let shape = observed::load_shape(from_json)?;
-            let mut lock = lockfile::load_or_create_for_record(&output)?;
-            lockfile::record_observed(&mut lock, name, shape, merge, &map_at, required_threshold)?;
-            let rendered = lockfile::render(&lock)?;
-            fs::write(&output, rendered)
-                .with_context(|| format!("failed to write lockfile {}", output.display()))?;
-            println!("Wrote {}", output.display());
+
+            match (from_har, from_json) {
+                (None, None) => anyhow::bail!("either --from-json or --from-har is required"),
+                (Some(_), Some(_)) => {
+                    anyhow::bail!("--from-json and --from-har are mutually exclusive")
+                }
+                (None, Some(ref json_path)) => {
+                    let name = name.ok_or_else(|| {
+                        anyhow::anyhow!("--name is required for --from-json")
+                    })?;
+                    let shape = observed::load_shape(json_path)?;
+                    let mut lock = lockfile::load_or_create_for_record(&output)?;
+                    lockfile::record_observed(
+                        &mut lock, &name, shape, merge, &map_at, required_threshold,
+                    )?;
+                    let rendered = lockfile::render(&lock)?;
+                    fs::write(&output, rendered)
+                        .with_context(|| format!("failed to write lockfile {}", output.display()))?;
+                    println!("Wrote {}", output.display());
+                }
+                (Some(ref har_path), None) => {
+                    let (recordings, skips) =
+                        har::load_har(har_path, &path_identity, &status)?;
+
+                    let mut lock = lockfile::load_or_create_for_record(&output)?;
+
+                    let effective_name = name.as_deref();
+                    if let Some(single_name) = effective_name {
+                        // --name overrides grouping: all entries under one key
+                        let mut first = true;
+                        for (_key, recs) in &recordings {
+                            for rec in recs {
+                                let shape = observed::infer(&rec.body);
+                                if first {
+                                    lockfile::record_observed(
+                                        &mut lock,
+                                        single_name,
+                                        shape,
+                                        false,
+                                        &map_at,
+                                        required_threshold,
+                                    )?;
+                                    first = false;
+                                } else {
+                                    lockfile::record_observed(
+                                        &mut lock,
+                                        single_name,
+                                        shape,
+                                        true, // merge into same name
+                                        &map_at,
+                                        required_threshold,
+                                    )?;
+                                }
+                            }
+                        }
+                    } else {
+                        for (key, recs) in &recordings {
+                            if recs.is_empty() {
+                                continue;
+                            }
+                            let merged_shape = {
+                                let mut shape = observed::infer(&recs[0].body);
+                                for rec in &recs[1..] {
+                                    observed::merge(&mut shape, &observed::infer(&rec.body));
+                                }
+                                shape
+                            };
+                            lockfile::record_observed(
+                                &mut lock,
+                                key,
+                                merged_shape,
+                                if merge {
+                                    true
+                                } else {
+                                    false
+                                },
+                                &map_at,
+                                required_threshold,
+                            )?;
+                        }
+                    }
+
+                    let rendered = lockfile::render(&lock)?;
+                    fs::write(&output, rendered)
+                        .with_context(|| format!("failed to write lockfile {}", output.display()))?;
+
+                    println!("Wrote {}", output.display());
+
+                    if !recordings.is_empty() {
+                        println!("\nRecorded {} endpoints:", recordings.len());
+                        for (key, recs) in &recordings {
+                            println!("  {key}: {} sample(s)", recs.len());
+                        }
+                    }
+                    if !skips.is_empty() {
+                        println!("\nSkipped {} response(s):", skips.len());
+                        for (label, reason) in &skips {
+                            let detail = match reason {
+                                har::HarSkipReason::NonJsonContentType(mime_type) => {
+                                    format!("non-JSON content type ({})", mime_type)
+                                }
+                                har::HarSkipReason::NonMatchingStatus { status, .. } => {
+                                    format!("non-matching status ({})", status)
+                                }
+                                har::HarSkipReason::EmptyBody => "empty body".to_string(),
+                                har::HarSkipReason::JsonParseError(e) => {
+                                    format!("JSON parse error: {}", e)
+                                }
+                                har::HarSkipReason::Base64Encoded => "base64 encoded".to_string(),
+                            };
+                            println!("  - {}: {}", label, detail);
+                        }
+                    }
+                }
+            }
+
             Ok(0)
         }
         Command::Verify {
