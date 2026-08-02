@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::contract::ApiContract;
 use crate::diff::{Change, Severity};
-use crate::observed::{apply_map_annotations, merge as merge_shapes, Shape};
+use crate::observed::{
+    self, apply_map_annotations, merge as merge_shapes, ObservedEntry, Shape,
+    DEFAULT_REQUIRED_THRESHOLD,
+};
 
 mod atomic;
 #[doc(hidden)]
@@ -58,7 +61,7 @@ pub struct OperationScope {
     operations: Vec<String>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ApiLock {
     version: u8,
     #[serde(rename = "apis")]
@@ -68,7 +71,7 @@ pub struct ApiLock {
     #[serde(skip)]
     declared_v4: BTreeMap<String, v4::DeclaredEntry>,
     #[serde(skip)]
-    observed: BTreeMap<String, Shape>,
+    observed: BTreeMap<String, observed::ObservedEntry>,
 }
 
 #[derive(Deserialize)]
@@ -122,13 +125,13 @@ pub struct LockedOperation {
     path: String,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct VerifyTarget {
     name: String,
     kind: VerifyTargetKind,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum VerifyTargetKind {
     LegacyDeclared {
         operations: BTreeSet<LockedOperation>,
@@ -140,6 +143,9 @@ pub enum VerifyTargetKind {
     },
     Observed {
         shape: Shape,
+        threshold: f64,
+        first_seen: String,
+        last_seen: String,
     },
 }
 
@@ -156,7 +162,7 @@ impl VerifyTarget {
 
     pub fn observed_shape(&self) -> Option<&Shape> {
         match &self.kind {
-            VerifyTargetKind::Observed { shape } => Some(shape),
+            VerifyTargetKind::Observed { shape, .. } => Some(shape),
             _ => None,
         }
     }
@@ -246,12 +252,12 @@ pub fn render(lock: &ApiLock) -> Result<String> {
             },
         );
     }
-    for (name, shape) in &lock.observed {
+    for (name, entry) in &lock.observed {
         apis.insert(
             name,
             V2RenderedApi::Observed {
                 provenance: "observed",
-                shape,
+                shape: &entry.shape,
             },
         );
     }
@@ -459,6 +465,7 @@ pub fn record_observed(
     incoming: Shape,
     merge_existing: bool,
     map_paths: &[String],
+    threshold: Option<f64>,
 ) -> Result<()> {
     let name = normalized_name(name)?;
     if lock.legacy_declared.contains_key(name)
@@ -473,17 +480,44 @@ pub fn record_observed(
     let mut incoming = incoming;
     apply_map_annotations(&mut incoming, map_paths)?;
 
+    let now = chrono_now();
+
     match lock.observed.get(name) {
         Some(existing) if merge_existing => {
-            let mut existing = existing.clone();
-            apply_map_annotations(&mut existing, map_paths)?;
-            merge_shapes(&mut existing, &incoming);
-            lock.observed.insert(name.to_string(), existing);
+            if let Some(requested) = threshold {
+                if (requested - existing.threshold).abs() > f64::EPSILON {
+                    return Err(anyhow!(
+                        "api {name} threshold is {:.2}; --required-threshold cannot change on --merge",
+                        existing.threshold
+                    ));
+                }
+            }
+            let effective_threshold = threshold.unwrap_or(existing.threshold);
+            let mut shape = existing.shape.clone();
+            apply_map_annotations(&mut shape, map_paths)?;
+            merge_shapes(&mut shape, &incoming);
+            lock.observed.insert(
+                name.to_string(),
+                ObservedEntry {
+                    shape,
+                    threshold: effective_threshold,
+                    first_seen: existing.first_seen.clone(),
+                    last_seen: now,
+                },
+            );
         }
         Some(_) => return Err(anyhow!("api {name} already exists; use --merge")),
         None if merge_existing => return Err(anyhow!("observed api {name} was not found")),
         None => {
-            lock.observed.insert(name.to_string(), incoming);
+            lock.observed.insert(
+                name.to_string(),
+                ObservedEntry {
+                    shape: incoming,
+                    threshold: threshold.unwrap_or(DEFAULT_REQUIRED_THRESHOLD),
+                    first_seen: now.clone(),
+                    last_seen: now,
+                },
+            );
         }
     }
 
@@ -491,6 +525,35 @@ pub fn record_observed(
         lock.version = 2;
     }
     Ok(())
+}
+
+fn chrono_now() -> String {
+    use std::time::SystemTime;
+    let duration = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or(std::time::Duration::ZERO);
+    let secs = duration.as_secs();
+    let days_since_epoch = secs / 86400;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+    let (year, month, day) = civil_from_days(days_since_epoch as i64 + 719468);
+    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
+}
+
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
 }
 
 pub fn load_or_create_for_record(path: &Path) -> Result<ApiLock> {
@@ -530,7 +593,15 @@ fn load_v2(contents: &str) -> Result<ApiLock> {
                 let shape = api
                     .shape
                     .ok_or_else(|| anyhow!("observed api {name} is missing shape"))?;
-                observed.insert(name, shape);
+                observed.insert(
+                    name,
+                    ObservedEntry {
+                        shape,
+                        threshold: 1.0,
+                        first_seen: String::new(),
+                        last_seen: String::new(),
+                    },
+                );
             }
             provenance => return Err(anyhow!("unsupported api.lock provenance {provenance}")),
         }
@@ -547,11 +618,14 @@ fn load_v2(contents: &str) -> Result<ApiLock> {
 
 pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> {
     let name = normalized_name(name)?;
-    if let Some(shape) = lock.observed.get(name) {
+    if let Some(entry) = lock.observed.get(name) {
         return Ok(VerifyTarget {
             name: name.to_string(),
             kind: VerifyTargetKind::Observed {
-                shape: shape.clone(),
+                shape: entry.shape.clone(),
+                threshold: entry.threshold,
+                first_seen: entry.first_seen.clone(),
+                last_seen: entry.last_seen.clone(),
             },
         });
     }
@@ -870,7 +944,7 @@ mod tests {
         let mut lock =
             load(Path::new("testdata/lock/v3_private.lock")).expect("v3 fixture should load");
 
-        record_observed(&mut lock, "portfolio", Shape::String, false, &[])
+        record_observed(&mut lock, "portfolio", Shape::String, false, &[], None)
             .expect("observed entry should record");
         let rendered = render(&lock).expect("v3 lock should render");
 
@@ -1067,7 +1141,7 @@ mod tests {
             "token": "super-secret-token"
         }));
 
-        record_observed(&mut lock, "portfolio", shape, false, &[])
+        record_observed(&mut lock, "portfolio", shape, false, &[], None)
             .expect("new observed entry should be recorded");
         let rendered = render(&lock).expect("v2 lock should render");
 
@@ -1093,6 +1167,7 @@ mod tests {
             crate::observed::infer(&serde_json::json!({"by_broker": {"acme": 1}})),
             false,
             &[],
+            None,
         )
         .expect("initial observed entry should be recorded");
         let before = render(&lock).expect("lock should serialize");
@@ -1103,6 +1178,7 @@ mod tests {
             crate::observed::infer(&serde_json::json!({"by_broker": {"acme": 2}})),
             true,
             &["$.by-broker".to_owned()],
+            None,
         )
         .expect_err("invalid annotation should fail");
 

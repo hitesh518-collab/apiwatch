@@ -29,6 +29,24 @@ pub enum Shape {
     Unknown,
 }
 
+pub const DEFAULT_REQUIRED_THRESHOLD: f64 = 0.5;
+pub const MINIMUM_OBSERVATION_FLOOR: u64 = 3;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ObservedEntry {
+    pub shape: Shape,
+    #[serde(default = "default_threshold")]
+    pub threshold: f64,
+    #[serde(default)]
+    pub first_seen: String,
+    #[serde(default)]
+    pub last_seen: String,
+}
+
+fn default_threshold() -> f64 {
+    DEFAULT_REQUIRED_THRESHOLD
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ObservedProperty {
@@ -48,6 +66,26 @@ pub struct ObservedChange {
     pub path: String,
     pub expected: Option<String>,
     pub actual: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TieredEntry {
+    pub tier: TieredKind,
+    pub path: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TieredKind {
+    InsufficientlyObserved,
+    Unverified,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservedVerifyReport {
+    pub changes: Vec<ObservedChange>,
+    pub tiered: Vec<TieredEntry>,
 }
 
 pub fn load_shape(path: &Path) -> Result<Shape> {
@@ -214,9 +252,75 @@ pub fn merge(existing: &mut Shape, incoming: &Shape) {
     *existing = canonical_union(vec![existing.clone(), incoming.clone()]);
 }
 
-pub fn compare(expected: &Shape, actual: &Shape) -> Vec<ObservedChange> {
+pub fn verify_with_tiers(expected: &Shape, actual: &Shape, threshold: f64) -> ObservedVerifyReport {
+    let changes = compare(expected, actual, threshold);
+    let mut tiered = tiered_report(expected, "$", 0, threshold);
+    collect_unverified(expected, actual, "$", &mut tiered);
+    ObservedVerifyReport { changes, tiered }
+}
+
+fn collect_unverified(
+    expected: &Shape,
+    actual: &Shape,
+    path: &str,
+    entries: &mut Vec<TieredEntry>,
+) {
+    match (expected, actual) {
+        (
+            Shape::Object {
+                properties: exp_props,
+                ..
+            },
+            Shape::Object {
+                properties: act_props,
+                ..
+            },
+        ) => {
+            for (name, _) in act_props
+                .iter()
+                .filter(|(n, _)| !exp_props.contains_key(*n))
+            {
+                entries.push(TieredEntry {
+                    tier: TieredKind::Unverified,
+                    path: format!("{path}.{name}"),
+                    detail: "field not in lock".to_string(),
+                });
+            }
+            for (name, exp_prop) in exp_props {
+                if let Some(act_prop) = act_props.get(name) {
+                    collect_unverified(
+                        &exp_prop.shape,
+                        &act_prop.shape,
+                        &format!("{path}.{name}"),
+                        entries,
+                    );
+                }
+            }
+        }
+        (Shape::Array { items: exp_items }, Shape::Array { items: act_items }) => {
+            collect_unverified(exp_items, act_items, &format!("{path}[]"), entries);
+        }
+        (Shape::Map { values: exp_vals }, Shape::Map { values: act_vals }) => {
+            collect_unverified(exp_vals, act_vals, &format!("{path}.<map-value>"), entries);
+        }
+        (Shape::Union { variants: exp_vars }, _) => {
+            for variant in exp_vars {
+                collect_unverified(variant, actual, path, entries);
+            }
+        }
+        (_, Shape::Union { variants: act_vars }) => {
+            for variant in act_vars {
+                collect_unverified(expected, variant, path, entries);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn compare(expected: &Shape, actual: &Shape, threshold: f64) -> Vec<ObservedChange> {
+    debug_assert!(threshold.is_finite(), "threshold must be finite");
     let mut changes = Vec::new();
-    compare_at(expected, actual, "$", &mut changes);
+    compare_at(expected, actual, "$", 0, 0, threshold, &mut changes);
     changes.sort_by(|left, right| {
         left.path
             .cmp(&right.path)
@@ -240,6 +344,104 @@ pub fn shape_name(shape: &Shape) -> String {
             .map(shape_name)
             .collect::<Vec<_>>()
             .join(" | "),
+    }
+}
+
+pub fn is_hardened(parent_observations: u64, property_observations: u64, threshold: f64) -> bool {
+    if parent_observations < MINIMUM_OBSERVATION_FLOOR {
+        return false;
+    }
+    if parent_observations == 0 {
+        return false;
+    }
+    let ratio = property_observations as f64 / parent_observations as f64;
+    ratio >= threshold
+}
+
+pub fn tiered_report(
+    shape: &Shape,
+    path: &str,
+    parent_observations: u64,
+    threshold: f64,
+) -> Vec<TieredEntry> {
+    let mut entries = Vec::new();
+    collect_tiered(shape, path, parent_observations, threshold, &mut entries);
+    entries
+}
+
+#[allow(clippy::only_used_in_recursion)]
+fn collect_tiered(
+    shape: &Shape,
+    path: &str,
+    parent_observations: u64,
+    threshold: f64,
+    entries: &mut Vec<TieredEntry>,
+) {
+    match shape {
+        Shape::Object {
+            observations,
+            properties,
+        } => {
+            if properties.is_empty() {
+                entries.push(TieredEntry {
+                    tier: TieredKind::InsufficientlyObserved,
+                    path: path.to_string(),
+                    detail: format!("empty object, seen {observations} time(s)"),
+                });
+                return;
+            }
+            for (name, property) in properties {
+                let property_path = format!("{path}.{name}");
+                if !is_hardened(*observations, property.observations, threshold) {
+                    entries.push(TieredEntry {
+                        tier: TieredKind::InsufficientlyObserved,
+                        path: property_path.clone(),
+                        detail: format!(
+                            "seen {}/{} time(s), threshold {:.2}",
+                            property.observations, observations, threshold
+                        ),
+                    });
+                }
+                collect_tiered(
+                    &property.shape,
+                    &property_path,
+                    *observations,
+                    threshold,
+                    entries,
+                );
+            }
+        }
+        Shape::Array { items } if matches!(items.as_ref(), Shape::Unknown) => {
+            entries.push(TieredEntry {
+                tier: TieredKind::InsufficientlyObserved,
+                path: format!("{path}[]"),
+                detail: "empty array, no item evidence".to_string(),
+            });
+        }
+        Shape::Array { items } => {
+            collect_tiered(
+                items,
+                &format!("{path}[]"),
+                parent_observations,
+                threshold,
+                entries,
+            );
+        }
+        Shape::Map { values } => {
+            collect_tiered(
+                values,
+                &format!("{path}.<map-value>"),
+                parent_observations,
+                threshold,
+                entries,
+            );
+        }
+        Shape::Union { variants } => {
+            for variant in variants {
+                collect_tiered(variant, path, parent_observations, threshold, entries);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -287,7 +489,19 @@ fn canonical_union(variants: Vec<Shape>) -> Shape {
     }
 }
 
-fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<ObservedChange>) {
+fn compare_at(
+    expected: &Shape,
+    actual: &Shape,
+    path: &str,
+    property_obs: u64,
+    parent_obs: u64,
+    threshold: f64,
+    changes: &mut Vec<ObservedChange>,
+) {
+    if matches!(expected, Shape::Null) && !is_hardened(parent_obs, property_obs, threshold) {
+        return;
+    }
+
     if matches!(expected, Shape::Unknown) {
         return;
     }
@@ -295,7 +509,15 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
     if let Shape::Union { variants } = expected {
         if variants.iter().any(|variant| {
             let mut branch_changes = Vec::new();
-            compare_at(variant, actual, path, &mut branch_changes);
+            compare_at(
+                variant,
+                actual,
+                path,
+                property_obs,
+                parent_obs,
+                threshold,
+                &mut branch_changes,
+            );
             branch_changes.is_empty()
         }) {
             return;
@@ -306,7 +528,15 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
 
     if let Shape::Union { variants } = actual {
         for variant in variants {
-            compare_at(expected, variant, path, changes);
+            compare_at(
+                expected,
+                variant,
+                path,
+                property_obs,
+                parent_obs,
+                threshold,
+                changes,
+            );
         }
         return;
     }
@@ -319,7 +549,15 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
             Shape::Map {
                 values: actual_values,
             },
-        ) => compare_at(expected_values, actual_values, path, changes),
+        ) => compare_at(
+            expected_values,
+            actual_values,
+            path,
+            property_obs,
+            parent_obs,
+            threshold,
+            changes,
+        ),
         (
             Shape::Map {
                 values: expected_values,
@@ -334,6 +572,9 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
                     expected_values,
                     &actual_property.shape,
                     &format!("{path}.<map-value>"),
+                    0,
+                    0,
+                    threshold,
                     changes,
                 );
             }
@@ -355,9 +596,17 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
                         &expected_property.shape,
                         &actual_property.shape,
                         &property_path,
+                        expected_property.observations,
+                        *observations,
+                        threshold,
                         changes,
                     ),
-                    None if expected_property.observations == *observations => {
+                    None if is_hardened(
+                        *observations,
+                        expected_property.observations,
+                        threshold,
+                    ) =>
+                    {
                         changes.push(ObservedChange {
                             kind: ObservedChangeKind::MissingRequiredField,
                             path: property_path,
@@ -378,7 +627,15 @@ fn compare_at(expected: &Shape, actual: &Shape, path: &str, changes: &mut Vec<Ob
             },
         ) => {
             if !matches!(actual_items.as_ref(), Shape::Unknown) {
-                compare_at(expected_items, actual_items, &format!("{path}[]"), changes);
+                compare_at(
+                    expected_items,
+                    actual_items,
+                    &format!("{path}[]"),
+                    0,
+                    0,
+                    threshold,
+                    changes,
+                );
             }
         }
         _ if same_kind(expected, actual) => {}
@@ -482,7 +739,9 @@ fn shape_sort_key(shape: &Shape) -> u8 {
 mod tests {
     use serde_json::json;
 
-    use super::{apply_map_annotations, compare, infer, merge, shape_name, Shape};
+    use super::{
+        apply_map_annotations, compare, infer, merge, shape_name, ObservedChangeKind, Shape,
+    };
 
     #[test]
     fn annotation_converts_an_object_to_a_value_free_map() {
@@ -566,15 +825,17 @@ mod tests {
             &infer(&json!({
                 "by_broker": {"other": {"pnl_pct": 3}}
             })),
+            1.0,
         )
         .is_empty());
-        assert!(compare(&expected, &infer(&json!({"by_broker": {}}))).is_empty());
+        assert!(compare(&expected, &infer(&json!({"by_broker": {}})), 1.0).is_empty());
 
         let changes = compare(
             &expected,
             &infer(&json!({
                 "by_broker": {"acme": {"pnl_pct": "wrong"}}
             })),
+            1.0,
         );
         assert!(changes.iter().any(|change| {
             change.path == "$.by_broker.<map-value>.pnl_pct"
@@ -594,6 +855,10 @@ mod tests {
                 "error": "temporary"
             })),
         );
+        merge(
+            &mut shape,
+            &infer(&json!({"live_price": 12, "holdings": []})),
+        );
 
         assert!(compare(
             &shape,
@@ -601,9 +866,10 @@ mod tests {
                 "live_price": 3,
                 "holdings": [{"ticker": "DIFFERENT"}]
             })),
+            1.0,
         )
         .is_empty());
-        assert!(compare(&shape, &infer(&json!({"holdings": []})))
+        assert!(compare(&shape, &infer(&json!({"holdings": []})), 1.0)
             .iter()
             .any(|change| change.path == "$.live_price"));
         assert_eq!(shape_name(&shape), "object");
@@ -625,14 +891,14 @@ mod tests {
         let expected = infer(&json!({"holdings": []}));
         let actual = infer(&json!({"holdings": [{"ticker": "APW"}]}));
 
-        assert!(compare(&expected, &actual).is_empty());
+        assert!(compare(&expected, &actual, 1.0).is_empty());
     }
 
     #[test]
     fn reports_a_string_instead_of_a_locked_number() {
         let expected = infer(&json!({"live_price": 12}));
         let actual = infer(&json!({"live_price": "unavailable"}));
-        let changes = compare(&expected, &actual);
+        let changes = compare(&expected, &actual, 1.0);
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "$.live_price");
@@ -649,5 +915,166 @@ mod tests {
             panic!("different scalar observations should create a union");
         };
         assert!(matches!(variants.as_slice(), [Shape::Null, Shape::Number]));
+    }
+
+    #[test]
+    fn null_only_field_with_one_sample_is_lenient() {
+        let expected = infer(&json!({"x": null}));
+        let changes = compare(&expected, &infer(&json!({"x": "hello"})), 0.5);
+        assert!(changes.is_empty(), "single-sample null must be lenient");
+    }
+
+    #[test]
+    fn null_only_field_with_three_samples_is_hardened() {
+        let mut expected = infer(&json!({"x": null}));
+        merge(&mut expected, &infer(&json!({"x": null})));
+        merge(&mut expected, &infer(&json!({"x": null})));
+        let changes = compare(&expected, &infer(&json!({"x": "hello"})), 0.5);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, ObservedChangeKind::IncompatibleShape);
+    }
+
+    #[test]
+    fn low_observation_field_is_optional_with_threshold() {
+        let mut expected = infer(&json!({"a": 1, "b": 2}));
+        for _ in 0..7 {
+            merge(&mut expected, &infer(&json!({"a": 1})));
+        }
+        let changes = compare(&expected, &infer(&json!({"a": 3})), 0.5);
+        assert!(changes.is_empty(), "b below threshold must be optional");
+    }
+
+    #[test]
+    fn below_floor_always_optional_regardless_of_threshold() {
+        let mut expected = infer(&json!({"a": 1, "b": 2}));
+        merge(&mut expected, &infer(&json!({"a": 1})));
+        let changes = compare(&expected, &infer(&json!({"a": 3})), 1.0);
+        assert!(changes.is_empty());
+        let changes = compare(&expected, &infer(&json!({"a": 3})), 0.0);
+        assert!(changes.is_empty(), "all optional at 0.0");
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn round_trip_determinism() {
+        let sample = json!({"id": 1, "name": "test", "tags": ["a", "b"], "meta": {"count": 42}});
+        let shape = infer(&sample);
+        let rendered = serde_yml::to_string(&shape).expect("serialize");
+        let deserialized: Shape = serde_yml::from_str(&rendered).expect("deserialize");
+        assert_eq!(shape, deserialized);
+        let re_inferred = infer(&sample);
+        assert_eq!(shape, re_inferred);
+    }
+
+    #[test]
+    fn merge_idempotence() {
+        let sample = json!({"x": 1, "y": "hello", "z": null});
+        let mut shape = infer(&sample);
+        let shape_before = shape.clone();
+        merge(&mut shape, &shape_before);
+        assert!(compare(&shape, &shape_before, 0.5).is_empty());
+    }
+
+    #[test]
+    fn compare_reflexivity() {
+        let sample = json!({"a": 1, "b": {"c": [1, 2, 3]}});
+        let shape = infer(&sample);
+        assert!(compare(&shape, &shape, 0.5).is_empty());
+        assert!(compare(&shape, &shape, 1.0).is_empty());
+        assert!(compare(&shape, &shape, 0.0).is_empty());
+    }
+
+    #[test]
+    fn order_invariance() {
+        let left = infer(&json!({"a": 1, "b": 2}));
+        let right = infer(&json!({"b": 2, "a": 1}));
+        assert_eq!(left, right);
+    }
+
+    #[test]
+    fn value_absence_in_serialized_shape() {
+        let shape = infer(&json!({
+            "token": "sk-abc123secret",
+            "password": "hunter2",
+            "amount": 9999
+        }));
+        let rendered = serde_yml::to_string(&shape).expect("serialize");
+        assert!(!rendered.contains("sk-abc123secret"));
+        assert!(!rendered.contains("hunter2"));
+        assert!(!rendered.contains("9999"));
+        assert!(!rendered.contains("9999.0"));
+        assert!(rendered.contains("token"));
+        assert!(rendered.contains("password"));
+        assert!(rendered.contains("amount"));
+    }
+
+    #[test]
+    fn value_absence_in_diagnostics() {
+        let expected = infer(&json!({"secret": "s3cr3t"}));
+        let actual = infer(&json!({"secret": 42}));
+        let changes = compare(&expected, &actual, 0.5);
+        assert_eq!(changes.len(), 1);
+        let serialized = format!("{:?}", changes);
+        assert!(!serialized.contains("s3cr3t"));
+        assert!(!serialized.contains("42"));
+    }
+
+    #[test]
+    fn threshold_zero_all_optional() {
+        let mut expected = infer(&json!({"x": 1, "y": 2}));
+        merge(&mut expected, &infer(&json!({"x": 1})));
+        let changes = compare(&expected, &infer(&json!({})), 0.0);
+        assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn threshold_one_all_required_with_floor() {
+        let mut expected = infer(&json!({"x": 1, "y": 2}));
+        merge(&mut expected, &infer(&json!({"x": 1, "y": 2})));
+        merge(&mut expected, &infer(&json!({"x": 1, "y": 2})));
+        let changes = compare(&expected, &infer(&json!({"x": 1})), 1.0);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].path, "$.y");
+        assert_eq!(changes[0].kind, ObservedChangeKind::MissingRequiredField);
+    }
+
+    #[test]
+    fn floor_boundary_two_vs_three_parent_observations() {
+        let mut two = infer(&json!({"x": 1}));
+        merge(&mut two, &infer(&json!({"x": 1})));
+        // parent: 2 obs, below floor → x is lenient even at ratio 1.0
+        assert!(compare(&two, &infer(&json!({})), 0.5).is_empty());
+
+        let mut three = infer(&json!({"x": 1}));
+        merge(&mut three, &infer(&json!({"x": 1})));
+        merge(&mut three, &infer(&json!({"x": 1})));
+        // parent: 3 obs, meets floor → x is hardened at ratio 1.0, threshold 0.5
+        assert_eq!(compare(&three, &infer(&json!({})), 0.5).len(), 1);
+    }
+
+    #[test]
+    fn empty_container_compare_is_lenient() {
+        let empty_arr = infer(&json!({"items": []}));
+        let populated = infer(&json!({"items": [1, 2, 3]}));
+        assert!(compare(&empty_arr, &populated, 0.5).is_empty());
+
+        let empty_obj = infer(&json!({"meta": {}}));
+        let populated_obj = infer(&json!({"meta": {"key": "val"}}));
+        assert!(compare(&empty_obj, &populated_obj, 0.5).is_empty());
+    }
+
+    #[test]
+    fn null_in_union_is_not_affected_by_leniency() {
+        let mut expected = infer(&json!({"x": null}));
+        merge(&mut expected, &infer(&json!({"x": "hello"})));
+        merge(&mut expected, &infer(&json!({"x": null})));
+        let changes = compare(&expected, &infer(&json!({"x": 42})), 0.5);
+        assert!(!changes.is_empty());
     }
 }

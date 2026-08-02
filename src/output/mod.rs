@@ -785,6 +785,210 @@ fn observed_sarif_rules() -> Vec<SarifRule> {
     ]
 }
 
+pub fn render_observed_verify_with_tiers(
+    name: &str,
+    threshold: f64,
+    first_seen: &str,
+    last_seen: &str,
+    report: &crate::observed::ObservedVerifyReport,
+) -> String {
+    let mut rendered = format!("Verified {name} (observed, threshold {threshold:.2})\n");
+    if !first_seen.is_empty() {
+        rendered.push_str(&format!("  first seen: {first_seen}\n"));
+    }
+    if !last_seen.is_empty() {
+        rendered.push_str(&format!("  last seen:  {last_seen}\n"));
+    }
+
+    if !report.changes.is_empty() {
+        rendered.push('\n');
+        rendered.push_str(&render_observed_verify_changes(&report.changes));
+    }
+
+    let insufficient: Vec<_> = report
+        .tiered
+        .iter()
+        .filter(|e| matches!(e.tier, crate::observed::TieredKind::InsufficientlyObserved))
+        .collect();
+    let unverified: Vec<_> = report
+        .tiered
+        .iter()
+        .filter(|e| matches!(e.tier, crate::observed::TieredKind::Unverified))
+        .collect();
+
+    if !insufficient.is_empty() {
+        rendered.push_str("\nInsufficiently observed:\n");
+        for entry in insufficient {
+            rendered.push_str(&format!("  - {}: {}\n", entry.path, entry.detail));
+        }
+    }
+
+    if !unverified.is_empty() {
+        rendered.push_str("\nUnverified:\n");
+        for entry in unverified {
+            rendered.push_str(&format!("  - {}: {}\n", entry.path, entry.detail));
+        }
+    }
+
+    rendered
+}
+
+pub fn render_observed_verify_with_tiers_json(
+    name: &str,
+    threshold: f64,
+    first_seen: &str,
+    last_seen: &str,
+    report: &crate::observed::ObservedVerifyReport,
+) -> Result<String> {
+    let changes: Vec<_> = report
+        .changes
+        .iter()
+        .map(|change| ObservedVerifyJsonChange {
+            kind: match change.kind {
+                ObservedChangeKind::MissingRequiredField => "missing_required_field",
+                ObservedChangeKind::IncompatibleShape => "incompatible_shape",
+            },
+            path: &change.path,
+            expected: change.expected.as_deref(),
+            actual: change.actual.as_deref(),
+        })
+        .collect();
+
+    #[derive(Serialize)]
+    struct TieredJsonEntry<'a> {
+        tier: &'static str,
+        path: &'a str,
+        detail: &'a str,
+    }
+
+    let tiered: Vec<_> = report
+        .tiered
+        .iter()
+        .map(|e| TieredJsonEntry {
+            tier: match e.tier {
+                crate::observed::TieredKind::InsufficientlyObserved => "insufficiently_observed",
+                crate::observed::TieredKind::Unverified => "unverified",
+            },
+            path: &e.path,
+            detail: &e.detail,
+        })
+        .collect();
+
+    #[derive(Serialize)]
+    struct FullReport<'a> {
+        version: u8,
+        command: &'static str,
+        name: &'a str,
+        provenance: &'static str,
+        threshold: f64,
+        first_seen: &'a str,
+        last_seen: &'a str,
+        summary: ObservedVerifySummary,
+        changes: Vec<ObservedVerifyJsonChange<'a>>,
+        tiered: Vec<TieredJsonEntry<'a>>,
+    }
+
+    let rendered = serde_json::to_string(&FullReport {
+        version: 3,
+        command: "verify",
+        name,
+        provenance: "observed",
+        threshold,
+        first_seen,
+        last_seen,
+        summary: ObservedVerifySummary {
+            breaking: report.changes.len(),
+        },
+        changes,
+        tiered,
+    })
+    .context("failed to serialize observed verify JSON")?;
+
+    Ok(format!("{rendered}\n"))
+}
+
+pub fn render_observed_verify_with_tiers_sarif(
+    artifact_path: &Path,
+    name: &str,
+    report: &crate::observed::ObservedVerifyReport,
+) -> Result<String> {
+    let artifact_uri = render_artifact_uri(artifact_path);
+    let mut results: Vec<SarifResult> = report
+        .changes
+        .iter()
+        .map(|change| {
+            let (rule_id, message) = match change.kind {
+                ObservedChangeKind::MissingRequiredField => (
+                    "apiwatch/verify-observed-missing-required-field",
+                    format!("required field missing: {}", change.path),
+                ),
+                ObservedChangeKind::IncompatibleShape => (
+                    "apiwatch/verify-observed-incompatible-shape",
+                    format!(
+                        "incompatible shape at {}: expected {}, found {}",
+                        change.path,
+                        change.expected.as_deref().unwrap_or("unknown"),
+                        change.actual.as_deref().unwrap_or("unknown"),
+                    ),
+                ),
+            };
+            sarif_result(
+                rule_id,
+                "error",
+                message,
+                artifact_uri.clone(),
+                format!(
+                    "verify-observed:{name}:{rule_id}:{}:{}:{}",
+                    change.path,
+                    change.expected.as_deref().unwrap_or(""),
+                    change.actual.as_deref().unwrap_or(""),
+                ),
+            )
+        })
+        .collect();
+
+    for entry in &report.tiered {
+        let (rule_id, level) = match entry.tier {
+            crate::observed::TieredKind::InsufficientlyObserved => {
+                ("apiwatch/verify-observed-insufficient", "warning")
+            }
+            crate::observed::TieredKind::Unverified => {
+                ("apiwatch/verify-observed-unverified", "note")
+            }
+        };
+        results.push(sarif_result(
+            rule_id,
+            level,
+            entry.detail.clone(),
+            artifact_uri.clone(),
+            format!("verify-observed:{name}:{rule_id}:{}", entry.path),
+        ));
+    }
+
+    render_sarif_with_rules(tiered_observed_sarif_rules(), results, Vec::new())
+}
+
+fn tiered_observed_sarif_rules() -> Vec<SarifRule> {
+    let mut rules = observed_sarif_rules();
+    rules.push(sarif_rule(
+        "apiwatch/verify-observed-insufficient",
+        "Insufficiently observed structure",
+        "An observed property has too few samples to be hardened.",
+        "Record more samples to increase observation confidence.",
+        "warning",
+        "warning",
+    ));
+    rules.push(sarif_rule(
+        "apiwatch/verify-observed-unverified",
+        "Unverified structure",
+        "A field is present in the actual JSON but absent from the lock.",
+        "Update the lock entry if this field is expected.",
+        "note",
+        "recommendation",
+    ));
+    rules
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;

@@ -72,6 +72,9 @@ pub enum Command {
         /// Mark a JSON object path as a dynamic-key map.
         #[arg(long = "map-at")]
         map_at: Vec<String>,
+        /// Observation ratio (0.0-1.0) required before a field hardens.
+        #[arg(long = "required-threshold")]
+        required_threshold: Option<f64>,
     },
     /// Verify one OpenAPI contract against a named api.lock entry.
     Verify {

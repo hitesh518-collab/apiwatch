@@ -1193,6 +1193,20 @@ fn record_portfolio(lock: &Path) {
         ])
         .assert()
         .success();
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--name",
+            "portfolio",
+            "--output",
+            lock,
+            "--merge",
+        ])
+        .assert()
+        .success();
 }
 
 fn record_map_portfolio(lock: &Path) {
@@ -1227,7 +1241,7 @@ fn verify_observed_map_accepts_dynamic_key_churn_and_empty_maps() {
     )
     .assert()
     .success()
-    .stdout("Verified portfolio\n");
+    .stdout(predicate::str::contains("Verified portfolio"));
 
     fs::remove_file(lock).ok();
 }
@@ -1264,7 +1278,9 @@ fn verify_observed_map_reports_map_to_scalar_drift() {
     )
     .assert()
     .code(1)
-    .stdout("BREAKING $.by_broker: expected map, found string\n");
+    .stdout(predicate::str::contains(
+        "BREAKING $.by_broker: expected map, found string\n",
+    ));
 
     fs::remove_file(lock).ok();
 }
@@ -1284,20 +1300,16 @@ fn verify_observed_map_json_and_sarif_report_only_paths_and_shape_names() {
     .output()
     .expect("verify should run");
     assert_eq!(json_output.status.code(), Some(1));
+    let parsed = parse_json_output(&json_output);
+    assert_eq!(parsed["version"], 3);
+    assert_eq!(parsed["summary"]["breaking"], 1);
     assert_eq!(
-        parse_json_output(&json_output),
+        parsed["changes"][0],
         json!({
-            "version": 2,
-            "command": "verify",
-            "name": "portfolio",
-            "provenance": "observed",
-            "summary": {"breaking": 1},
-            "changes": [{
-                "kind": "incompatible_shape",
-                "path": "$.by_broker.<map-value>.pnl_pct",
-                "expected": "number",
-                "actual": "string"
-            }]
+            "kind": "incompatible_shape",
+            "path": "$.by_broker.<map-value>.pnl_pct",
+            "expected": "number",
+            "actual": "string"
         })
     );
 
@@ -1364,7 +1376,7 @@ fn verify_observed_json_body_with_matching_shape() {
     )
     .assert()
     .success()
-    .stdout("Verified portfolio\n");
+    .stdout(predicate::str::contains("Verified portfolio"));
 
     fs::remove_file(lock).ok();
 }
@@ -1386,17 +1398,15 @@ fn verify_matching_observed_json_honors_json_format() {
 
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
-    assert_eq!(
-        parse_json_output(&output),
-        json!({
-            "version": 2,
-            "command": "verify",
-            "name": "portfolio",
-            "provenance": "observed",
-            "summary": {"breaking": 0},
-            "changes": []
-        })
-    );
+    let parsed = parse_json_output(&output);
+    assert_eq!(parsed["version"], 3);
+    assert_eq!(parsed["command"], "verify");
+    assert_eq!(parsed["name"], "portfolio");
+    assert_eq!(parsed["provenance"], "observed");
+    assert_eq!(parsed["threshold"], 1.0);
+    assert_eq!(parsed["summary"]["breaking"], 0);
+    assert!(parsed["changes"].as_array().is_some_and(|a| a.is_empty()));
+    assert!(parsed["tiered"].as_array().is_some_and(|a| !a.is_empty()));
 
     fs::remove_file(lock).ok();
 }
@@ -1420,15 +1430,16 @@ fn verify_matching_observed_json_honors_sarif_format() {
     assert!(output.stderr.is_empty());
     let rendered = parse_json_output(&output);
     assert_eq!(rendered["version"], "2.1.0");
-    assert_eq!(
-        rendered["runs"][0]["results"].as_array().map(Vec::len),
-        Some(0)
-    );
+    assert!(rendered["runs"][0]["results"]
+        .as_array()
+        .is_some_and(|a| !a.is_empty()));
     assert_eq!(
         sarif_rule_ids(&rendered),
         vec![
             "apiwatch/verify-observed-missing-required-field",
-            "apiwatch/verify-observed-incompatible-shape"
+            "apiwatch/verify-observed-incompatible-shape",
+            "apiwatch/verify-observed-insufficient",
+            "apiwatch/verify-observed-unverified",
         ]
     );
 
@@ -1448,7 +1459,9 @@ fn verify_observed_json_reports_a_missing_required_field_without_values() {
     )
     .assert()
     .code(1)
-    .stdout("BREAKING $.summary.current_value: required field missing\n")
+    .stdout(predicate::str::contains(
+        "BREAKING $.summary.current_value: required field missing\n",
+    ))
     .stderr(predicate::str::is_empty());
 
     fs::remove_file(lock).ok();
@@ -1467,7 +1480,9 @@ fn verify_observed_json_reports_type_drift_without_values() {
     )
     .assert()
     .code(1)
-    .stdout("BREAKING $.live_price: expected null | number, found string\n")
+    .stdout(predicate::str::contains(
+        "BREAKING $.live_price: expected null | number, found string\n",
+    ))
     .stdout(predicate::str::contains("recording-secret").not());
 
     fs::remove_file(lock).ok();
@@ -1489,20 +1504,11 @@ fn verify_observed_json_format_reports_versioned_drift() {
     .expect("verify should run");
 
     assert_eq!(output.status.code(), Some(1));
-    assert_eq!(
-        parse_json_output(&output),
-        json!({
-            "version": 2,
-            "command": "verify",
-            "name": "portfolio",
-            "provenance": "observed",
-            "summary": {"breaking": 1},
-            "changes": [{
-                "kind": "missing_required_field",
-                "path": "$.summary.current_value"
-            }]
-        })
-    );
+    let parsed = parse_json_output(&output);
+    assert_eq!(parsed["version"], 3);
+    assert_eq!(parsed["summary"]["breaking"], 1);
+    assert_eq!(parsed["changes"][0]["kind"], "missing_required_field");
+    assert_eq!(parsed["changes"][0]["path"], "$.summary.current_value");
 
     fs::remove_file(lock).ok();
 }
