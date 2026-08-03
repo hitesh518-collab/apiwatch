@@ -1,0 +1,37 @@
+[workspace]
+
+[package]
+name = "apiwatch-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+apiwatch = { path = ".." }
+serde_json = "1"
+tempfile = "3"
+
+[[bin]]
+name = "openapi_parse"
+path = "fuzz_targets/openapi_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lockfile_v4_roundtrip"
+path = "fuzz_targets/lockfile_v4_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "observed_infer"
+path = "fuzz_targets/observed_infer.rs"
+test = false
+doc = false
+bench = false

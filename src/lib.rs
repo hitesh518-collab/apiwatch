@@ -1,4 +1,4 @@
-#![doc = "Internal APIWatch library. Public interfaces are pre-v1 and unstable."]
+#![doc = "APIWatch v1 public library. Lock, diff, and verify REST API contracts."]
 
 pub fn version_string() -> &'static str {
     let ver = env!("CARGO_PKG_VERSION");

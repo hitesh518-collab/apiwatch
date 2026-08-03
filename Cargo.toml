@@ -1,6 +1,6 @@
 [package]
 name = "apiwatch"
-version = "0.10.0"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -23,6 +23,10 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 tempfile = "3"
 mime = "0.3"
 url = "2"
+
+[features]
+default = ["legacy-lock-format"]
+legacy-lock-format = []
 
 [dev-dependencies]
 assert_cmd = "2"

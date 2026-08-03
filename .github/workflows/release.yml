@@ -237,3 +237,26 @@ jobs:
           git add Cargo.toml CHANGELOG.md Formula/apiwatch.rb Scoop/apiwatch.json
           git commit -m "chore: bump package metadata to v${{ steps.version.outputs.version }}"
           git push
+
+  install-verify:
+    needs: [release, container]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Run install smoke tests
+        run: |
+          python scripts/install_smoke.py | tee install-summary.md
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+
+      - name: Append results to release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: install-summary.md

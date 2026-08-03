@@ -1,0 +1,28 @@
+name: Fuzz
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Seconds per target'
+        required: false
+        default: '60'
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [openapi_parse, lockfile_v4_roundtrip, observed_infer]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+      - run: cargo install cargo-fuzz
+      - run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ github.event.inputs.duration || 60 }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}

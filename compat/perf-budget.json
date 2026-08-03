@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "budgets": {
+    "default_diff_seconds": 10.0,
+    "default_lock_seconds": 15.0,
+    "per_spec_overrides": {
+      "github": { "diff_seconds": 60.0, "lock_seconds": 90.0 }
+    }
+  }
+}

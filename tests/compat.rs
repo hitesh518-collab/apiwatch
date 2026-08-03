@@ -111,3 +111,66 @@ fn line_is_compatible() {
 fn humanitas_fhir_is_compatible() {
     assert_clean_self_diff("humanitas-fhir.json");
 }
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn petstore_is_compatible() {
+    assert_clean_self_diff("petstore.yaml");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn plaid_is_compatible() {
+    assert_clean_self_diff("plaid.yml");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn shopify_is_compatible() {
+    assert_clean_self_diff("shopify.json");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn twilio_is_compatible() {
+    assert_clean_self_diff("twilio.yaml");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn adyen_is_compatible() {
+    assert_clean_self_diff("adyen-checkout.json");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn kubernetes_is_compatible() {
+    assert_clean_self_diff("kubernetes.json");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn intercom_is_compatible() {
+    assert_clean_self_diff("intercom.yaml");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn slack_reproduces_known_parameter_schema_failure() {
+    assert_known_failure(
+        "slack.json",
+        "no variant of enum ParameterSchemaOrContent",
+    );
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn figma_reproduces_known_duplicate_auth_failure() {
+    assert_known_failure("figma.yaml", "duplicate authentication identity");
+}
+
+#[test]
+#[ignore = "requires commit-pinned compatibility corpus"]
+fn openai_reproduces_known_yaml_parse_failure() {
+    assert_known_failure("openai.yaml", "failed to parse OpenAPI YAML");
+}

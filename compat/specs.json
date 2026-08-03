@@ -121,6 +121,131 @@
         "canonical_json_bytes": 40815,
         "deduplicated_yaml_bytes": 34221
       }
+    },
+    {
+      "name": "petstore",
+      "file": "petstore.yaml",
+      "url": "https://raw.githubusercontent.com/openapitools/openapi-petstore/19662bbe120189f6740836961f9ee7e0d3effcbc/src/main/resources/openapi.yaml",
+      "sha256": "d8af387ab4d079976e4734833584e65e6b2d87cda6ed24067c0ab6342d97f952",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 20,
+        "expanded_yaml_bytes": 86315,
+        "canonical_json_bytes": 47963,
+        "deduplicated_yaml_bytes": 18628
+      }
+    },
+    {
+      "name": "plaid",
+      "file": "plaid.yml",
+      "url": "https://raw.githubusercontent.com/plaid/plaid-openapi/bae08e213428e0260c3ac53d3f73b40b4d6ec113/2020-09-14.yml",
+      "sha256": "64c4514ea59b82526a1206024684ebc6e91cf2a3d73276772a0f818c13d828d9",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 335,
+        "expanded_yaml_bytes": 9655471,
+        "canonical_json_bytes": 3597553,
+        "deduplicated_yaml_bytes": 1607557
+      }
+    },
+    {
+      "name": "shopify",
+      "file": "shopify.json",
+      "url": "https://raw.githubusercontent.com/allengrant/shopify_openapi/030bf4edf884d07f0eb4a96c57d15f4f6f43ed89/shopify_openapi.json",
+      "sha256": "cbf89d87833a1c3e1dca35059adcb1b25959258daeea402d0ad4681d6257d841",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 1473,
+        "expanded_yaml_bytes": 1562643,
+        "canonical_json_bytes": 1167630,
+        "deduplicated_yaml_bytes": 793148
+      }
+    },
+    {
+      "name": "twilio",
+      "file": "twilio.yaml",
+      "url": "https://raw.githubusercontent.com/twilio/twilio-oai/bb6288e9f540d2d63540bbaadf6b73fd262c2df3/spec/yaml/twilio_api_v2010.yaml",
+      "sha256": "768720d76b47f1b75896c8fe092fac59b886bd3370278b27b6962b83cacae12e",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 197,
+        "expanded_yaml_bytes": 1921795,
+        "canonical_json_bytes": 1061970,
+        "deduplicated_yaml_bytes": 508457
+      }
+    },
+    {
+      "name": "adyen",
+      "file": "adyen-checkout.json",
+      "url": "https://raw.githubusercontent.com/Adyen/adyen-openapi/425d65d12163ebd4fe6fa6d2f859075817c81cba/json/CheckoutService-v72.json",
+      "sha256": "1498fbccd44b48a97328907bd1cbada2f6db9a92ae43ba4d0c68d45908356dc8",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 28,
+        "expanded_yaml_bytes": 2588380,
+        "canonical_json_bytes": 1167851,
+        "deduplicated_yaml_bytes": 393822
+      }
+    },
+    {
+      "name": "kubernetes",
+      "file": "kubernetes.json",
+      "url": "https://raw.githubusercontent.com/kubernetes/kubernetes/0f914a00561edadef5b6ef19c443cab232c39527/api/openapi-spec/v3/api__v1_openapi.json",
+      "sha256": "d09ab224a98fb9c0e7fd128b6f395f66b23d43b6635272109dcaaafc4a3dd9c9",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 248,
+        "expanded_yaml_bytes": 312536737,
+        "canonical_json_bytes": 91147295,
+        "deduplicated_yaml_bytes": 761018
+      }
+    },
+    {
+      "name": "intercom",
+      "file": "intercom.yaml",
+      "url": "https://raw.githubusercontent.com/intercom/Intercom-OpenAPI/d04d4798a68a8b77aabdf7d117d71865b72ed571/descriptions/2.16/api.intercom.io.yaml",
+      "sha256": "9bd5a638adefc6a81f18a25905151889a64f8a16378decc03ed9cc4e75c44a2e",
+      "max_bytes": 52428800,
+      "status": "passing",
+      "phase1_measurement": {
+        "operation_count": 231,
+        "expanded_yaml_bytes": 8259932,
+        "canonical_json_bytes": 3518184,
+        "deduplicated_yaml_bytes": 677286
+      }
+    },
+    {
+      "name": "slack",
+      "file": "slack.json",
+      "url": "https://raw.githubusercontent.com/slackapi/slack-api-specs/dfea73e06d146c368d7f94b52ac90796dc4e27e1/web-api/slack_web_openapi_v2.json",
+      "sha256": "742a5c977180a829df8767cf57bc417d99b3713583aee83741efb9c08ca731e7",
+      "max_bytes": 52428800,
+      "status": "known_failing",
+      "expected_error": "no variant of enum ParameterSchemaOrContent found in flattened data"
+    },
+    {
+      "name": "figma",
+      "file": "figma.yaml",
+      "url": "https://raw.githubusercontent.com/figma/rest-api-spec/e854a2c2dff3ff8cb743e9a06575fbbf225faa33/openapi/openapi.yaml",
+      "sha256": "06c46b4a12731d12ea51efaf01a946bb997d8103861cfa192e3e6df40883eba0",
+      "max_bytes": 52428800,
+      "status": "known_failing",
+      "expected_error": "duplicate authentication identity"
+    },
+    {
+      "name": "openai",
+      "file": "openai.yaml",
+      "url": "https://raw.githubusercontent.com/openai/openai-openapi/117ce5680e4269f6656a4fd70d28f9755630d938/openapi.yaml",
+      "sha256": "e9cfcc3a325093a640af9e3b289dd4fa69f0c03e3a9af425fda47a5fe1238361",
+      "max_bytes": 52428800,
+      "status": "known_failing",
+      "expected_error": "failed to parse OpenAPI YAML"
     }
   ]
 }

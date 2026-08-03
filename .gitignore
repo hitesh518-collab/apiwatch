@@ -5,3 +5,8 @@ implementation-log/
 .compat-cache/
 __pycache__/
 *.pyc
+fuzz/artifacts/
+fuzz/corpus/openapi_parse/*
+fuzz/corpus/lockfile_v4_roundtrip/*
+fuzz/corpus/observed_infer/*
+!fuzz/corpus/*/.gitkeep
