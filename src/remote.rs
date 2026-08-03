@@ -56,8 +56,7 @@ pub fn fetch_json(
     method: &str,
     headers: Option<&BTreeMap<String, String>>,
 ) -> Result<serde_json::Value> {
-    let parsed_url =
-        reqwest::Url::parse(url).map_err(|error| anyhow!("invalid URL: {error}"))?;
+    let parsed_url = reqwest::Url::parse(url).map_err(|error| anyhow!("invalid URL: {error}"))?;
     if !parsed_url.username().is_empty() || parsed_url.password().is_some() {
         return Err(anyhow!("URL credentials are not allowed"));
     }
@@ -100,8 +99,7 @@ pub fn fetch_json(
     }
 
     let body = read_limited_body(response)?;
-    let value =
-        serde_json::from_str(&body).context("failed to parse JSON response")?;
+    let value = serde_json::from_str(&body).context("failed to parse JSON response")?;
 
     Ok(value)
 }
@@ -229,7 +227,9 @@ mod tests {
     #[test]
     fn fetch_json_rejects_non_json_content_type() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
-        let address = listener.local_addr().expect("listener should have an address");
+        let address = listener
+            .local_addr()
+            .expect("listener should have an address");
         let url = format!("http://{}/data", address);
 
         std::thread::spawn(move || {

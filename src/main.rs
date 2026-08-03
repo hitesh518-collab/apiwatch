@@ -4,7 +4,6 @@ use std::fs;
 use anyhow::{Context, Result};
 use apiwatch::cli::{Cli, Command, OutputFormat};
 use apiwatch::{config, diff, har, lockfile, observed, openapi, output, remote};
-use url;
 use clap::Parser;
 
 fn main() {
@@ -59,13 +58,25 @@ jobs:
             }
 
             println!("\nNext steps:");
-            println!("  1. Record: apiwatch record --from-har capture.har --output {}", output.display());
-            println!("  2. Or lock: apiwatch lock --openapi spec.yaml --name my-api --output {}", output.display());
-            println!("  3. CI: git add {} .github/workflows/ && git commit -m \"add apiwatch\"", output.display());
+            println!(
+                "  1. Record: apiwatch record --from-har capture.har --output {}",
+                output.display()
+            );
+            println!(
+                "  2. Or lock: apiwatch lock --openapi spec.yaml --name my-api --output {}",
+                output.display()
+            );
+            println!(
+                "  3. CI: git add {} .github/workflows/ && git commit -m \"add apiwatch\"",
+                output.display()
+            );
 
             Ok(0)
         }
-        Command::Coverage { lock: lock_path, name } => {
+        Command::Coverage {
+            lock: lock_path,
+            name,
+        } => {
             let lock = lockfile::load(&lock_path)?;
             let observed = lock.observed_entries();
             if observed.is_empty() {
@@ -189,9 +200,8 @@ jobs:
                 }
             }
 
-            let source_count = from_har.is_some() as u8
-                + from_json.is_some() as u8
-                + from_url.is_some() as u8;
+            let source_count =
+                from_har.is_some() as u8 + from_json.is_some() as u8 + from_url.is_some() as u8;
             if source_count == 0 {
                 anyhow::bail!("a source is required: --from-json, --from-har, or --from-url");
             }
@@ -205,7 +215,12 @@ jobs:
                 let shape = observed::load_shape(json_path)?;
                 let mut lock = lockfile::load_or_create_for_record(&output)?;
                 lockfile::record_observed(
-                    &mut lock, &name, shape, merge, &map_at, required_threshold,
+                    &mut lock,
+                    &name,
+                    shape,
+                    merge,
+                    &map_at,
+                    required_threshold,
                 )?;
                 let rendered = lockfile::render(&lock)?;
                 fs::write(&output, rendered)
@@ -228,12 +243,22 @@ jobs:
                             let shape = observed::infer(&rec.body);
                             if first {
                                 lockfile::record_observed(
-                                    &mut lock, single_name, shape, false, &map_at, required_threshold,
+                                    &mut lock,
+                                    single_name,
+                                    shape,
+                                    false,
+                                    &map_at,
+                                    required_threshold,
                                 )?;
                                 first = false;
                             } else {
                                 lockfile::record_observed(
-                                    &mut lock, single_name, shape, true, &map_at, required_threshold,
+                                    &mut lock,
+                                    single_name,
+                                    shape,
+                                    true,
+                                    &map_at,
+                                    required_threshold,
                                 )?;
                             }
                         }
@@ -251,7 +276,12 @@ jobs:
                             shape
                         };
                         lockfile::record_observed(
-                            &mut lock, key, merged_shape, merge, &map_at, required_threshold,
+                            &mut lock,
+                            key,
+                            merged_shape,
+                            merge,
+                            &map_at,
+                            required_threshold,
                         )?;
                     }
                 }
@@ -305,8 +335,8 @@ jobs:
                 let body = remote::fetch_json(url, &method, remote_headers.as_ref())?;
                 let shape = observed::infer(&body);
 
-                let parsed_url = url::Url::parse(url)
-                    .with_context(|| format!("invalid URL: {url}"))?;
+                let parsed_url =
+                    url::Url::parse(url).with_context(|| format!("invalid URL: {url}"))?;
                 let path = parsed_url.path().to_string();
 
                 let entry_name = if let Some(ref n) = name {
@@ -314,12 +344,13 @@ jobs:
                 } else if !path_identity.is_empty() {
                     let mut matched = None;
                     for identity in &path_identity {
-                        let (ident_method, ident_path) = identity
-                            .split_once(' ')
-                            .ok_or_else(|| anyhow::anyhow!(
-                                "invalid --path-identity '{}': expected 'METHOD /path'",
-                                identity
-                            ))?;
+                        let (ident_method, ident_path) =
+                            identity.split_once(' ').ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "invalid --path-identity '{}': expected 'METHOD /path'",
+                                    identity
+                                )
+                            })?;
                         let ident_method = ident_method.to_uppercase();
                         if method == ident_method && path.starts_with(ident_path) {
                             matched = Some(format!("{} {}", ident_method, ident_path));
@@ -333,12 +364,16 @@ jobs:
 
                 let mut lock = lockfile::load_or_create_for_record(&output)?;
                 lockfile::record_observed(
-                    &mut lock, &entry_name, shape, merge, &map_at, required_threshold,
+                    &mut lock,
+                    &entry_name,
+                    shape,
+                    merge,
+                    &map_at,
+                    required_threshold,
                 )?;
                 let rendered = lockfile::render(&lock)?;
-                fs::write(&output, rendered).with_context(|| {
-                    format!("failed to write lockfile {}", output.display())
-                })?;
+                fs::write(&output, rendered)
+                    .with_context(|| format!("failed to write lockfile {}", output.display()))?;
                 println!("Wrote {}", output.display());
                 println!("Recorded {} from {}", entry_name, url);
             }
@@ -375,7 +410,8 @@ jobs:
                 let base_url = source_url
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("--source-url is required with --all"))?;
-                let observed_entries: Vec<_> = lock.observed_entries()
+                let observed_entries: Vec<_> = lock
+                    .observed_entries()
                     .iter()
                     .map(|(name, entry)| (name.clone(), entry.clone()))
                     .collect();
@@ -385,10 +421,7 @@ jobs:
 
                 let mut any_breaking = false;
                 for (entry_name, entry) in &observed_entries {
-                    let path = entry_name
-                        .split_once(' ')
-                        .map(|(_, p)| p)
-                        .unwrap_or("");
+                    let path = entry_name.split_once(' ').map(|(_, p)| p).unwrap_or("");
                     let url = format!("{base_url}{path}");
 
                     let body = match remote::fetch_json(&url, "GET", remote_headers.as_ref()) {
@@ -431,9 +464,7 @@ jobs:
                             &report,
                         )?,
                         OutputFormat::Sarif => output::render_observed_verify_with_tiers_sarif(
-                            &lock_path,
-                            entry_name,
-                            &report,
+                            &lock_path, entry_name, &report,
                         )?,
                     };
                     print!("{rendered}");
@@ -449,9 +480,8 @@ jobs:
             let openapi = openapi.ok_or_else(|| {
                 anyhow::anyhow!("OPENAPI source is required for single-entry verify")
             })?;
-            let name = name.ok_or_else(|| {
-                anyhow::anyhow!("--name is required for single-entry verify")
-            })?;
+            let name =
+                name.ok_or_else(|| anyhow::anyhow!("--name is required for single-entry verify"))?;
             let target = lockfile::select_verify_target(&lock, &name)?;
 
             match target.kind() {
@@ -643,11 +673,8 @@ fn collect_fields(
         } => {
             for (name, property) in properties {
                 let property_path = format!("{path}.{name}");
-                let hardened = observed::is_hardened(
-                    *observations,
-                    property.observations,
-                    threshold,
-                );
+                let hardened =
+                    observed::is_hardened(*observations, property.observations, threshold);
                 let kind = shape_kind_name(&property.shape);
                 let status = if hardened {
                     format!(
@@ -658,11 +685,11 @@ fn collect_fields(
                     let reason = if *observations < observed::MINIMUM_OBSERVATION_FLOOR {
                         format!(
                             "below floor ({} < {})",
-                            observations, observed::MINIMUM_OBSERVATION_FLOOR
+                            observations,
+                            observed::MINIMUM_OBSERVATION_FLOOR
                         )
                     } else {
-                        let ratio =
-                            property.observations as f64 / *observations as f64;
+                        let ratio = property.observations as f64 / *observations as f64;
                         format!("{:.2} < {:.2} threshold", ratio, threshold)
                     };
                     format!(
@@ -674,19 +701,19 @@ fn collect_fields(
                     path: property_path,
                     status,
                 });
-                collect_fields(&property.shape, &format!("{path}.{name}"), threshold, entries);
+                collect_fields(
+                    &property.shape,
+                    &format!("{path}.{name}"),
+                    threshold,
+                    entries,
+                );
             }
         }
         observed::Shape::Array { items } => {
             collect_fields(items, &format!("{path}[]"), threshold, entries);
         }
         observed::Shape::Map { values } => {
-            collect_fields(
-                values,
-                &format!("{path}.<map-value>"),
-                threshold,
-                entries,
-            );
+            collect_fields(values, &format!("{path}.<map-value>"), threshold, entries);
         }
         observed::Shape::Union { variants } => {
             for variant in variants {
