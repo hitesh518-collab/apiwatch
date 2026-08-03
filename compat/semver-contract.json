@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "subcommands": {
+    "diff": {
+      "description": "Compare two OpenAPI contracts",
+      "flags": {
+        "old": {"kind": "positional", "type": "PathBuf", "required": true},
+        "new": {"kind": "positional", "type": "PathBuf", "required": true},
+        "--format": {"kind": "named", "type": "OutputFormat (text|json|sarif)", "default": "text"},
+        "--ref-root": {"kind": "named", "type": "Option<PathBuf>"},
+        "--config": {"kind": "named", "type": "Option<PathBuf>"}
+      },
+      "exit_codes": {"0": "no changes detected", "1": "changes detected", "2": "error"}
+    },
+    "lock": {
+      "description": "Create an api.lock file from one OpenAPI contract",
+      "flags": {
+        "openapi": {"kind": "positional", "type": "PathBuf", "required": true},
+        "--name": {"kind": "named", "type": "String", "required": true},
+        "--output": {"kind": "named", "type": "PathBuf", "required": true},
+        "--update": {"kind": "named", "type": "bool"},
+        "--include-operation": {"kind": "named", "type": "Vec<String>"},
+        "--max-lock-bytes": {"kind": "named", "type": "u64", "default": "5242880"},
+        "--ref-root": {"kind": "named", "type": "Option<PathBuf>"}
+      },
+      "exit_codes": {"0": "success", "2": "error"}
+    },
+    "init": {
+      "description": "Scaffold a new api.lock and CI workflow",
+      "flags": {
+        "--output": {"kind": "named", "type": "PathBuf", "default": "api.lock"}
+      },
+      "exit_codes": {"0": "success", "2": "error"}
+    },
+    "coverage": {
+      "description": "Report endpoint and field coverage for observed entries",
+      "flags": {
+        "--lock": {"kind": "named", "type": "PathBuf", "required": true},
+        "--name": {"kind": "named", "type": "Option<String>"}
+      },
+      "exit_codes": {"0": "success", "2": "error"}
+    },
+    "record": {
+      "description": "Record the observed shape of one JSON body",
+      "flags": {
+        "--from-har": {"kind": "named", "type": "Option<PathBuf>"},
+        "--from-json": {"kind": "named", "type": "Option<PathBuf>"},
+        "--from-url": {"kind": "named", "type": "Option<String>"},
+        "--name": {"kind": "named", "type": "Option<String>"},
+        "--method": {"kind": "named", "type": "String", "default": "GET"},
+        "--header": {"kind": "named", "type": "Vec<String>"},
+        "--output": {"kind": "named", "type": "PathBuf", "required": true},
+        "--merge": {"kind": "named", "type": "bool"},
+        "--map-at": {"kind": "named", "type": "Vec<String>"},
+        "--required-threshold": {"kind": "named", "type": "Option<f64>"},
+        "--path-identity": {"kind": "named", "type": "Vec<String>"},
+        "--status": {"kind": "named", "type": "Vec<u16>"}
+      },
+      "exit_codes": {"0": "success", "2": "error"}
+    },
+    "verify": {
+      "description": "Verify one OpenAPI contract against a named api.lock entry",
+      "flags": {
+        "openapi": {"kind": "positional", "type": "Option<String>"},
+        "--name": {"kind": "named", "type": "Option<String>"},
+        "--lock": {"kind": "named", "type": "PathBuf", "required": true},
+        "--format": {"kind": "named", "type": "OutputFormat (text|json|sarif)", "default": "text"},
+        "--ref-root": {"kind": "named", "type": "Option<PathBuf>"},
+        "--config": {"kind": "named", "type": "Option<PathBuf>"},
+        "--header": {"kind": "named", "type": "Vec<String>"},
+        "--all": {"kind": "named", "type": "bool"},
+        "--source-url": {"kind": "named", "type": "Option<String>"}
+      },
+      "exit_codes": {"0": "verified, no changes", "1": "changes detected", "2": "error"}
+    }
+  },
+  "output_formats": {
+    "text": {"description": "human-readable, not guaranteed stable for parsing"},
+    "json": {"description": "machine-readable, schema versioned per command", "fields": ["version", "command", "summary", "changes"]},
+    "sarif": {"description": "SARIF 2.1.0 static analysis results interchange format", "spec": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/"}
+  }
+}

@@ -1,5 +1,16 @@
 # Changelog
 
+## Stability Guarantees (v1.0.0+)
+
+- The v4 lockfile format (`version: 4` in `api.lock`) is frozen. Future format
+  changes require a new version number — never a silent schema change.
+- CLI subcommands, flags, exit codes, and JSON/SARIF output schemas are stable
+  within a major release. Additions are allowed in minor/patch; removals
+  and renames require a major bump.
+- Text output is human-readable and not guaranteed stable for parsing.
+- v2 and v3 lockfiles remain readable behind the `legacy-lock-format` Cargo
+  feature (on by default).
+
 ## v0.10.0 - 2026-08-03
 
 ## v0.9.0 - 2026-08-02

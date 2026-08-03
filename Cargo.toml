@@ -24,6 +24,10 @@ tempfile = "3"
 mime = "0.3"
 url = "2"
 
+[features]
+default = ["legacy-lock-format"]
+legacy-lock-format = []
+
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"

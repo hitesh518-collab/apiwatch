@@ -280,7 +280,9 @@ pub fn load(path: &Path) -> Result<ApiLock> {
 
     match header.version {
         1 => serde_yml::from_str(&contents).context("failed to parse api.lock YAML"),
+        #[cfg(feature = "legacy-lock-format")]
         2 => load_v2(&contents),
+        #[cfg(feature = "legacy-lock-format")]
         3 => {
             let (declared, observed) = v3::load(&contents)?.into_parts();
             Ok(ApiLock {
@@ -301,6 +303,14 @@ pub fn load(path: &Path) -> Result<ApiLock> {
                 observed,
             })
         }
+        #[cfg(not(feature = "legacy-lock-format"))]
+        2 | 3 => Err(anyhow!(
+            "api.lock version {} requires the legacy-lock-format feature; see docs/migration.md",
+            header.version
+        )),
+        #[cfg(feature = "legacy-lock-format")]
+        version => Err(anyhow!("unsupported api.lock version {version}")),
+        #[cfg(not(feature = "legacy-lock-format"))]
         version => Err(anyhow!("unsupported api.lock version {version}")),
     }
 }
@@ -645,6 +655,7 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
             },
         });
     }
+    #[cfg(feature = "legacy-lock-format")]
     if let Some(entry) = lock.declared_v3.get(name) {
         return Ok(VerifyTarget {
             name: name.to_string(),
@@ -655,33 +666,40 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
             },
         });
     }
-    let api = lock
-        .legacy_declared
-        .get(name)
-        .ok_or_else(|| anyhow!("api {name} not found in lockfile"))?;
+    #[cfg(feature = "legacy-lock-format")]
+    {
+        let api = lock
+            .legacy_declared
+            .get(name)
+            .ok_or_else(|| anyhow!("api {name} not found in lockfile"))?;
 
-    if api.source.chars().any(char::is_control) {
-        return Err(anyhow!("api.lock source contains a control character"));
+        if api.source.chars().any(char::is_control) {
+            return Err(anyhow!("api.lock source contains a control character"));
+        }
+
+        if api.source != "openapi" {
+            return Err(anyhow!("unsupported api.lock source {}", api.source));
+        }
+
+        let operations = api
+            .operations
+            .iter()
+            .enumerate()
+            .map(|(index, operation)| {
+                normalized_locked_operation(operation)
+                    .with_context(|| format!("invalid locked operation {}", index + 1))
+            })
+            .collect::<Result<_>>()?;
+
+        return Ok(VerifyTarget {
+            name: name.to_string(),
+            kind: VerifyTargetKind::LegacyDeclared { operations },
+        });
     }
-
-    if api.source != "openapi" {
-        return Err(anyhow!("unsupported api.lock source {}", api.source));
-    }
-
-    let operations = api
-        .operations
-        .iter()
-        .enumerate()
-        .map(|(index, operation)| {
-            normalized_locked_operation(operation)
-                .with_context(|| format!("invalid locked operation {}", index + 1))
-        })
-        .collect::<Result<_>>()?;
-
-    Ok(VerifyTarget {
-        name: name.to_string(),
-        kind: VerifyTargetKind::LegacyDeclared { operations },
-    })
+    #[cfg(not(feature = "legacy-lock-format"))]
+    Err(anyhow!(
+        "api {name} not found in lockfile"
+    ))
 }
 
 pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Result<Vec<Change>> {
