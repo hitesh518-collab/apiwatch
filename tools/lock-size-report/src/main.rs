@@ -414,5 +414,64 @@ fn canonical_report_bytes(bytes: &[u8]) -> Vec<u8> {
             index += 1;
         }
     }
-    canonical
+    redact_apiwatch_version(&canonical)
+}
+
+/// The rendered reports embed `apiwatch::version_string()`, which bakes in
+/// the current git commit hash at compile time (see `build.rs`). That hash
+/// is necessarily stale by construction: the report has to be generated
+/// before the commit that checks it in exists, so a byte-exact `--check`
+/// comparison that includes this field can never succeed across a commit
+/// boundary. Redact it before comparing, the same way CRLF is normalized
+/// above, since it isn't part of the report's substantive content.
+fn redact_apiwatch_version(bytes: &[u8]) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return bytes.to_vec();
+    };
+    let mut redacted: Vec<&str> = Vec::new();
+    for line in text.split('\n') {
+        if line.contains("- APIWatch: ") || line.contains("\"apiwatch_version\"") {
+            redacted.push("<apiwatch_version redacted>");
+        } else {
+            redacted.push(line);
+        }
+    }
+    redacted.join("\n").into_bytes()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn canonical_report_bytes_ignores_apiwatch_version_drift() {
+        let before =
+            b"# Report\n- Report schema: 1\n- APIWatch: 1.0.1 (467e716)\n- Ceiling: 5 bytes\n";
+        let after =
+            b"# Report\n- Report schema: 1\n- APIWatch: 1.0.2 (b3629e2)\n- Ceiling: 5 bytes\n";
+        assert_eq!(
+            canonical_report_bytes(before),
+            canonical_report_bytes(after)
+        );
+    }
+
+    #[test]
+    fn canonical_report_bytes_ignores_apiwatch_version_json_field_drift() {
+        let before = br#"{"schema_version":1,"apiwatch_version":"1.0.1 (467e716)","x":1}"#;
+        let after = br#"{"schema_version":1,"apiwatch_version":"1.0.2 (b3629e2)","x":1}"#;
+        assert_eq!(
+            canonical_report_bytes(before),
+            canonical_report_bytes(after)
+        );
+    }
+
+    #[test]
+    fn canonical_report_bytes_still_detects_substantive_differences() {
+        let before = b"- APIWatch: 1.0.1 (467e716)\n- Ceiling: 5 bytes\n";
+        let after = b"- APIWatch: 1.0.1 (467e716)\n- Ceiling: 6 bytes\n";
+        assert_ne!(
+            canonical_report_bytes(before),
+            canonical_report_bytes(after)
+        );
+    }
 }
