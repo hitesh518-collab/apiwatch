@@ -75,3 +75,26 @@ jobs:
           openapi: testdata/openapi/verify_matching.yaml
           name: users
           lock: testdata/lock/verify_users.lock
+
+  perf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - uses: actions/cache@v4
+        with:
+          path: .compat-cache
+          key: compat-${{ runner.os }}-${{ hashFiles('compat/specs.json') }}
+      - run: python scripts/fetch_compat_specs.py
+      - run: cargo build --release
+      - name: Benchmark
+        run: |
+          python scripts/bench_perf.py
+        env:
+          APIWATCH_BINARY: ./target/release/apiwatch
+          APIWATCH_COMPAT_DIR: .compat-cache
