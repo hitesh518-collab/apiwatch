@@ -1,6 +1,13 @@
 #![doc = "Internal APIWatch library. Public interfaces are pre-v1 and unstable."]
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub fn version_string() -> &'static str {
+    let ver = env!("CARGO_PKG_VERSION");
+    let s = match option_env!("GIT_HASH") {
+        Some("") | None => ver.to_owned(),
+        Some(hash) => format!("{ver} ({hash})"),
+    };
+    Box::leak(s.into_boxed_str())
+}
 
 #[doc(hidden)]
 pub mod cli;

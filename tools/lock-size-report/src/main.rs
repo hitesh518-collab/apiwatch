@@ -223,7 +223,7 @@ fn run(args: &Args) -> Result<(), Failure> {
     verify_privacy(&args.privacy_fixture)?;
     let report = Report {
         schema_version: 1,
-        apiwatch_version: apiwatch::VERSION.to_owned(),
+        apiwatch_version: apiwatch::version_string(),
         max_lock_bytes: args.max_lock_bytes,
         corpus,
         privacy: PrivacyResult {

@@ -4,7 +4,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, Serialize)]
 pub struct Report {
     pub schema_version: u8,
-    pub apiwatch_version: String,
+    pub apiwatch_version: &'static str,
     pub max_lock_bytes: u64,
     pub corpus: Vec<CorpusResult>,
     pub privacy: PrivacyResult,
@@ -176,7 +176,7 @@ pub fn render_v4_markdown(report: &Report) -> Vec<u8> {
 fn v4_report(report: &Report) -> V4Report<'_> {
     V4Report {
         schema_version: report.schema_version,
-        apiwatch_version: &report.apiwatch_version,
+        apiwatch_version: report.apiwatch_version,
         max_lock_bytes: report.max_lock_bytes,
         corpus: report
             .corpus
