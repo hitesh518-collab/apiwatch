@@ -423,7 +423,7 @@ fn record_from_har_mutual_exclusion_with_from_json() {
         ])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("mutually exclusive"));
+        .stderr(predicate::str::contains("only one source may be specified"));
 }
 
 #[test]

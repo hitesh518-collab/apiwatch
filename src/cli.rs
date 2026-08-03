@@ -67,6 +67,15 @@ pub enum Command {
         /// optional for --from-har (entries auto-keyed by method+path).
         #[arg(long)]
         name: Option<String>,
+        /// Live URL to fetch and record (mutually exclusive with --from-json, --from-har).
+        #[arg(long)]
+        from_url: Option<String>,
+        /// HTTP method for --from-url (default GET).
+        #[arg(long, default_value = "GET")]
+        method: String,
+        /// Request headers for --from-url (NAME:${ENV_VAR}).
+        #[arg(long = "header", value_name = "NAME:${ENV_VAR}")]
+        header: Vec<String>,
         /// api.lock path to write.
         #[arg(long)]
         output: PathBuf,
