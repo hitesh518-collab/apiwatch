@@ -236,8 +236,9 @@ older locks retain the coverage limitations shown below.
 | Recursive schemas (D-14) | Circular schema references are currently rejected. | Phase 3 |
 | External references (D-15) | External and multi-file `$ref` targets are unsupported. | Phase 3 |
 | Legacy declared locks (D-16) | Versions 1 and 2 are route-only; v3 is partial for Phase 2. All require re-locking from original sources for full v4 coverage. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
-| Null observations (D-17) | A null-only sample can make an observed shape too narrow. | [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts) |
-| Observed requiredness (D-18) | Requiredness does not yet use a configurable confidence threshold. | Phase 4 |
+| Null observations (D-17) | Resolved with observation-floor hardening and lenient null at verify time. | [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts) |
+| Observed requiredness (D-18) | Resolved with configurable `--required-threshold` and confidence metadata. | Phase 4 |
+| Observed recording (D-19) | HAR import and live URL recording implemented; passive proxy is post-v1. | [Phase 5](ROADMAP.md#phase-5--frictionless-recording-and-ci-adoption) |
 | Distribution | The Action, Homebrew formula, and Scoop manifest still build from source. | [Continuous distribution](ROADMAP.md#continuous-distribution-track) |
 
 Repeated phase names in the table refer to the linked phase in the first row

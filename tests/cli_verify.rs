@@ -2389,3 +2389,183 @@ fn phase3_headers_config_loads_remote_section() {
         Some("${CONFIG_LOAD_TOKEN}")
     );
 }
+
+fn temp_lock_path(name: &str) -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after Unix epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "apiwatch-{name}-{}-{suffix}.lock",
+        std::process::id()
+    ))
+}
+
+fn serve_multi(handlers: Vec<(String, String)>) -> (String, u16) {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("test server should bind");
+    let address = listener.local_addr().expect("server should have address");
+    let port = address.port();
+    listener.set_nonblocking(true).ok();
+
+    let handlers = handlers.clone();
+    std::thread::spawn(move || {
+        for (_, body) in &handlers {
+            loop {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let mut buf = Vec::new();
+                        while !buf.ends_with(b"\r\n\r\n") {
+                            let mut byte = [0u8; 1];
+                            if stream.read_exact(&mut byte).is_err() {
+                                break;
+                            }
+                            buf.push(byte[0]);
+                        }
+                        write!(
+                            stream,
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                        .ok();
+                        break;
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+    });
+
+    (format!("http://127.0.0.1:{port}"), port)
+}
+
+#[test]
+fn verify_all_checks_observed_entries_against_live_url() {
+    let lock_out = temp_lock_path("verify-all-multi");
+    let lock_arg = lock_out.to_str().expect("valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--name",
+            "GET /portfolio",
+            "--output",
+            lock_arg,
+        ])
+        .assert()
+        .success();
+
+    let temp_dir = std::env::temp_dir();
+    let orders_json = temp_dir.join("apiwatch-verify-all-orders.json");
+    fs::write(&orders_json, r#"{"order_id":1,"total":29.99}"#).expect("write fixture");
+    let orders_arg = orders_json.to_str().expect("valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            orders_arg,
+            "--name",
+            "GET /orders",
+            "--output",
+            lock_arg,
+        ])
+        .assert()
+        .success();
+
+    let (_, port) = serve_multi(vec![
+        (
+            "/portfolio".to_string(),
+            r#"{"total_value":5000.00,"holdings":[],"live_price":null}"#.to_string(),
+        ),
+        (
+            "/orders".to_string(),
+            r#"{"order_id":1,"total":29.99}"#.to_string(),
+        ),
+    ]);
+
+    let base_arg = format!("http://127.0.0.1:{port}");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "verify",
+            "--all",
+            "--lock",
+            lock_arg,
+            "--source-url",
+            &base_arg,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("=== GET /portfolio ==="))
+        .stdout(predicate::str::contains("=== GET /orders ==="))
+        .stdout(predicate::str::contains("Verified"));
+
+    fs::remove_file(&lock_out).ok();
+    fs::remove_file(&orders_json).ok();
+}
+
+#[test]
+fn verify_all_errors_when_no_observed_entries() {
+    let lock_out = temp_lock_path("verify-all-empty");
+    let lock_arg = lock_out.to_str().expect("valid UTF-8");
+
+    fs::write(&lock_out, "version: 4\napis: {}\n").expect("write empty lock");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "verify",
+            "--all",
+            "--lock",
+            lock_arg,
+            "--source-url",
+            "https://api.example.com",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no observed entries"));
+
+    fs::remove_file(&lock_out).ok();
+}
+
+#[test]
+fn verify_all_requires_source_url() {
+    let lock_out = temp_lock_path("verify-all-no-url");
+    let lock_arg = lock_out.to_str().expect("valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--name",
+            "portfolio",
+            "--output",
+            lock_arg,
+        ])
+        .assert()
+        .success();
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["verify", "--all", "--lock", lock_arg])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "--source-url is required with --all",
+        ));
+
+    fs::remove_file(&lock_out).ok();
+}

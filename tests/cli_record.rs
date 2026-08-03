@@ -543,3 +543,223 @@ fn record_from_har_with_map_at_applies_map_annotations() {
     assert!(lock.contains("kind: map"));
     assert!(!lock.contains("\"alice\""));
 }
+
+#[test]
+fn record_from_url_creates_observed_entry() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("test server should bind");
+    let address = listener.local_addr().expect("listener should have address");
+    let url = format!("http://{}/users", address);
+
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("should accept");
+        let mut buf = Vec::new();
+        while !buf.ends_with(b"\r\n\r\n") {
+            let mut byte = [0u8; 1];
+            stream.read_exact(&mut byte).expect("should read headers");
+            buf.push(byte[0]);
+        }
+        let body = r#"{"id":1,"name":"alice"}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .expect("should write response");
+    });
+
+    let output = temp_lock_path("from-url");
+    let output_arg = output.to_str().expect("valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["record", "--from-url", &url, "--output", output_arg])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Wrote"))
+        .stdout(predicate::str::contains("GET /users"));
+
+    let lock = fs::read_to_string(&output).expect("lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.starts_with("version: 2\n"));
+    assert!(lock.contains("provenance: observed"));
+    assert!(lock.contains("GET /users"));
+    assert!(!lock.contains("\"alice\""));
+}
+
+#[test]
+fn record_from_url_rejects_non_json_response() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("test server should bind");
+    let address = listener.local_addr().expect("listener should have address");
+    let url = format!("http://{}/binary", address);
+
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("should accept");
+        let mut buf = Vec::new();
+        while !buf.ends_with(b"\r\n\r\n") {
+            let mut byte = [0u8; 1];
+            stream.read_exact(&mut byte).expect("should read headers");
+            buf.push(byte[0]);
+        }
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello"
+        )
+        .expect("should write response");
+    });
+
+    let output = temp_lock_path("from-url-non-json");
+    let output_arg = output.to_str().expect("valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["record", "--from-url", &url, "--output", output_arg])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("not JSON"));
+
+    assert!(!output.exists());
+}
+
+#[test]
+fn init_creates_lock_and_ci_workflow() {
+    let output = temp_lock_path("init");
+    let output_arg = output.to_str().expect("valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["init", "--output", output_arg])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created"))
+        .stdout(predicate::str::contains("Next steps:"));
+
+    let lock = fs::read_to_string(&output).expect("lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.contains("version: 4"));
+    assert!(lock.contains("apis: {}"));
+
+    let workflow = std::path::Path::new(".github/workflows/apiwatch.yml");
+    assert!(workflow.exists(), "CI workflow should be created");
+    let wf = fs::read_to_string(workflow).expect("workflow should be readable");
+    fs::remove_file(workflow).ok();
+    let _ = std::fs::remove_dir(".github/workflows");
+    let _ = std::fs::remove_dir(".github");
+
+    assert!(wf.contains("apiwatch"));
+    assert!(wf.contains("push:"));
+}
+
+#[test]
+fn init_refuses_to_overwrite_existing_lock() {
+    let output = temp_lock_path("init-exists");
+    let output_arg = output.to_str().expect("valid UTF-8");
+    fs::write(&output, "existing content").expect("should write existing file");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["init", "--output", output_arg])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("already exists"));
+
+    fs::remove_file(&output).ok();
+}
+
+#[test]
+fn coverage_reports_hardened_and_lenient_fields() {
+    let output = temp_lock_path("coverage");
+    let output_arg = output.to_str().expect("valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--name",
+            "portfolio",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .success();
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["coverage", "--lock", output_arg])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("portfolio"))
+        .stdout(predicate::str::contains("threshold"))
+        .stdout(predicate::str::contains("observations"))
+        .stdout(predicate::str::contains("Fields:"))
+        .stdout(predicate::str::contains("lenient"))
+        .stdout(predicate::str::contains("below floor"));
+
+    fs::remove_file(&output).ok();
+}
+
+#[test]
+fn coverage_with_name_filter_reports_single_entry() {
+    let output = temp_lock_path("coverage-name");
+    let output_arg = output.to_str().expect("valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--name",
+            "portfolio",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .success();
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["coverage", "--lock", output_arg, "--name", "portfolio"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("portfolio"));
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["coverage", "--lock", output_arg, "--name", "nonexistent"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("not found"));
+
+    fs::remove_file(&output).ok();
+}
+
+#[test]
+fn coverage_no_observed_entries_reports_clean() {
+    let output = temp_lock_path("coverage-empty");
+    let output_arg = output.to_str().expect("valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["init", "--output", output_arg])
+        .assert()
+        .success();
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args(["coverage", "--lock", output_arg])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no observed entries"));
+
+    fs::remove_file(&output).ok();
+}
