@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "apiwatch_version": "0.9.0",
+  "apiwatch_version": "1.0.1 (467e716)",
   "max_lock_bytes": 5242880,
   "corpus": [
     {
@@ -73,20 +73,35 @@
       }
     },
     {
-      "name": "digitalocean",
-      "source_commit": "7667351a0c8a1a526343160e1778cb5e97b2c9da",
-      "sha256": "cda2db55fb97ceef551a3e35682dca49ad331b486f88f712f7c93f4ba05eefbc",
-      "source_bytes": 110982,
-      "normalization_status": "known_failing",
-      "expected_error": "missing field `responses`"
-    },
-    {
       "name": "stripe",
       "source_commit": "86b6ae4db114ff06968dcc191ff4a898e9b5db7c",
       "sha256": "e24a26de4188fd64dec4c043d5d3726277fdcb07556a493ea481c305b0a223d8",
       "source_bytes": 7866866,
       "normalization_status": "known_failing",
-      "expected_error": "circular schema reference detected: #/components/schemas/file"
+      "expected_error": "schema expansion exceeded resolution budget"
+    },
+    {
+      "name": "digitalocean",
+      "source_commit": "7667351a0c8a1a526343160e1778cb5e97b2c9da",
+      "sha256": "cda2db55fb97ceef551a3e35682dca49ad331b486f88f712f7c93f4ba05eefbc",
+      "source_bytes": 110982,
+      "normalization_status": "passing",
+      "operation_count": 0,
+      "measurements": {
+        "operation_count": 0,
+        "expanded_yaml": {
+          "bytes": 15,
+          "within_ceiling": true
+        },
+        "canonical_json": {
+          "bytes": 18,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 27,
+          "within_ceiling": true
+        }
+      }
     },
     {
       "name": "paystack",
@@ -172,6 +187,161 @@
           "within_ceiling": true
         }
       }
+    },
+    {
+      "name": "petstore",
+      "source_commit": "19662bbe120189f6740836961f9ee7e0d3effcbc",
+      "sha256": "d8af387ab4d079976e4734833584e65e6b2d87cda6ed24067c0ab6342d97f952",
+      "source_bytes": 20436,
+      "normalization_status": "passing",
+      "operation_count": 20,
+      "measurements": {
+        "operation_count": 20,
+        "expanded_yaml": {
+          "bytes": 86315,
+          "within_ceiling": true
+        },
+        "canonical_json": {
+          "bytes": 47963,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 18628,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "plaid",
+      "source_commit": "bae08e213428e0260c3ac53d3f73b40b4d6ec113",
+      "sha256": "64c4514ea59b82526a1206024684ebc6e91cf2a3d73276772a0f818c13d828d9",
+      "source_bytes": 3041896,
+      "normalization_status": "passing",
+      "operation_count": 335,
+      "measurements": {
+        "operation_count": 335,
+        "expanded_yaml": {
+          "bytes": 9655471,
+          "within_ceiling": false
+        },
+        "canonical_json": {
+          "bytes": 3597553,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 1607557,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "shopify",
+      "source_commit": "030bf4edf884d07f0eb4a96c57d15f4f6f43ed89",
+      "sha256": "cbf89d87833a1c3e1dca35059adcb1b25959258daeea402d0ad4681d6257d841",
+      "source_bytes": 3122904,
+      "normalization_status": "known_failing",
+      "expected_error": "parameter name contains invalid characters"
+    },
+    {
+      "name": "twilio",
+      "source_commit": "bb6288e9f540d2d63540bbaadf6b73fd262c2df3",
+      "sha256": "768720d76b47f1b75896c8fe092fac59b886bd3370278b27b6962b83cacae12e",
+      "source_bytes": 1496453,
+      "normalization_status": "passing",
+      "operation_count": 197,
+      "measurements": {
+        "operation_count": 197,
+        "expanded_yaml": {
+          "bytes": 1921795,
+          "within_ceiling": true
+        },
+        "canonical_json": {
+          "bytes": 1061970,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 508457,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "adyen",
+      "source_commit": "425d65d12163ebd4fe6fa6d2f859075817c81cba",
+      "sha256": "1498fbccd44b48a97328907bd1cbada2f6db9a92ae43ba4d0c68d45908356dc8",
+      "source_bytes": 937956,
+      "normalization_status": "passing",
+      "operation_count": 28,
+      "measurements": {
+        "operation_count": 28,
+        "expanded_yaml": {
+          "bytes": 2588380,
+          "within_ceiling": true
+        },
+        "canonical_json": {
+          "bytes": 1167851,
+          "within_ceiling": true
+        },
+        "deduplicated_yaml": {
+          "bytes": 393822,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "kubernetes",
+      "source_commit": "0f914a00561edadef5b6ef19c443cab232c39527",
+      "sha256": "d09ab224a98fb9c0e7fd128b6f395f66b23d43b6635272109dcaaafc4a3dd9c9",
+      "source_bytes": 2135483,
+      "normalization_status": "passing",
+      "operation_count": 248,
+      "measurements": {
+        "operation_count": 248,
+        "expanded_yaml": {
+          "bytes": 312536737,
+          "within_ceiling": false
+        },
+        "canonical_json": {
+          "bytes": 91147295,
+          "within_ceiling": false
+        },
+        "deduplicated_yaml": {
+          "bytes": 761018,
+          "within_ceiling": true
+        }
+      }
+    },
+    {
+      "name": "intercom",
+      "source_commit": "d04d4798a68a8b77aabdf7d117d71865b72ed571",
+      "sha256": "9bd5a638adefc6a81f18a25905151889a64f8a16378decc03ed9cc4e75c44a2e",
+      "source_bytes": 1317483,
+      "normalization_status": "known_failing",
+      "expected_error": "path template placeholder job_identifier is not bound to a path parameter"
+    },
+    {
+      "name": "slack",
+      "source_commit": "dfea73e06d146c368d7f94b52ac90796dc4e27e1",
+      "sha256": "742a5c977180a829df8767cf57bc417d99b3713583aee83741efb9c08ca731e7",
+      "source_bytes": 1237332,
+      "normalization_status": "known_failing",
+      "expected_error": "no variant of enum ParameterSchemaOrContent found in flattened data"
+    },
+    {
+      "name": "figma",
+      "source_commit": "e854a2c2dff3ff8cb743e9a06575fbbf225faa33",
+      "sha256": "06c46b4a12731d12ea51efaf01a946bb997d8103861cfa192e3e6df40883eba0",
+      "source_bytes": 388252,
+      "normalization_status": "known_failing",
+      "expected_error": "duplicate authentication identity"
+    },
+    {
+      "name": "openai",
+      "source_commit": "117ce5680e4269f6656a4fd70d28f9755630d938",
+      "sha256": "e9cfcc3a325093a640af9e3b289dd4fa69f0c03e3a9af425fda47a5fe1238361",
+      "source_bytes": 2845483,
+      "normalization_status": "known_failing",
+      "expected_error": "failed to parse OpenAPI YAML"
     }
   ],
   "privacy": {

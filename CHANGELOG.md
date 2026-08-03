@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.0.2] — 2026-08-04
+
+### Fixed
+- **D-28 (re-fix):** The v1.0.1 schema memoization cache only activated for
+  top-level references (`visiting.len() <= 1`), so it never helped the
+  deeply-nested, densely-shared schema graphs it was meant to fix — Stripe's
+  spec still hung indefinitely. The cache now applies at every depth, and
+  cache hits are additionally charged against a size-aware expansion budget
+  (materializing a fully-inlined tree from a shared schema DAG can blow up
+  combinatorially even without a true cycle). Stripe now fails fast (~9s)
+  with a clear `schema expansion exceeded resolution budget` error instead of
+  hanging forever and burning the CI runner.
+- **Compat corpus drift:** The v1.0.1 D-33/D-34 validation fixes were correct
+  but exposed genuine upstream defects in two specs the corpus manifest
+  still labeled `"passing"`: `shopify.json` has parameter names containing
+  literal embedded description text (e.g. `"ids\n  required"`), and
+  `intercom.yaml` binds two `{job_identifier}` path placeholders to
+  parameters declared `in: query` instead of `in: path`. Both now correctly
+  fail `diff`/`lock`, and are reclassified `known_failing` in
+  `compat/specs.json` with matching `tests/compat.rs` coverage — previously
+  this was undetected because `assert_clean_self_diff` never exercised
+  `lock`, only `diff`.
+- **digitalocean.yaml reclassified `passing`:** D-13 (stripping path
+  operations missing `responses`) already fixed this spec; the corpus
+  manifest and test were never updated to match, so it was still asserted
+  as a `known_failing` case with a now-unreachable error string.
+- **Release pipeline:** The `x86_64-apple-darwin` build job was pinned to
+  the `macos-13` hosted runner, which has no available capacity for this
+  account and queues indefinitely, blocking every tagged release behind one
+  job that never starts. Switched to `macos-latest` (already proven to work
+  for the `aarch64-apple-darwin` target in the same matrix).
+
 ## [1.0.1] — 2026-08-03
 
 ### Fixed

@@ -2,55 +2,51 @@
   "version": 1,
   "snapshots": {
     "github": {
-      "lock_sha256": "aecd9e50d8c1c88068c602a8b88549e45cad971383bf519181876046a031491b",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "asana": {
-      "lock_sha256": "0e9078d0a61e750d71ad1f731c855decbedd21217cef2b6d385f7b40e2a04ac6",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "box": {
-      "lock_sha256": "18015298dc1339ca7e659fac4f8f4c40433389d3d2d861edc1cd73bfbbfddd0a",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
+      "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
+    },
+    "digitalocean": {
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "mercadopago": {
-      "lock_sha256": "edf45eda24933c692d5b4e38b63365a1a67488ec0bc723b3bbabe2bf04a7e640",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "line": {
-      "lock_sha256": "d7c566dd52376e6a27a90a519c791c89f95bc3b95666a679490ad62005bf37f9",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "humanitas-fhir": {
-      "lock_sha256": "f41d8706d584bbe2d50c183d91924200f40e50e462d4b1a3853bec7e64a33b75",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "petstore": {
-      "lock_sha256": "b3af97231c568cabd5ed7ecf853c54691046d3ac6fc55fe7b9b01c26a583381b",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "plaid": {
-      "lock_sha256": "5f37075f5c30cd9136320e4199d62d7a3fc8d43601a155291e10a600a59f55cf",
-      "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
-    },
-    "shopify": {
-      "lock_sha256": "88f0ebfbae762c5b3366d97b7f3e9f32fe7f2481cc25df9106ef145913da7e1f",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "twilio": {
-      "lock_sha256": "12eca3c3170eb093a970f4b2e6151bad414367dec78ea1f407f73d442f2e1e95",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "adyen": {
-      "lock_sha256": "d9544a08ed62dcd18ee9e2efebe26d44ea131ca442899cfe8d932204dfb13fb3",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     },
     "kubernetes": {
-      "lock_sha256": "fd0aedd83b17ce80686176d0e80bfb79deb993aa1e5b2f1c2c2f7edf3b0bd01e",
-      "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
-    },
-    "intercom": {
-      "lock_sha256": "926bd47bc9196a05af8264ac829f25a4137f6231fc2cd2d4679e98f9d31e4c39",
+      "lock_sha256": "30f18576e11049dbeb8acd5fdb3136d04c440ea8637ffb47dcf5d971fc483e91",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     }
   }

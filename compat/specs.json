@@ -51,7 +51,7 @@
       "sha256": "e24a26de4188fd64dec4c043d5d3726277fdcb07556a493ea481c305b0a223d8",
       "max_bytes": 52428800,
       "status": "known_failing",
-      "expected_error": "circular schema reference detected: #/components/schemas/file"
+      "expected_error": "schema expansion exceeded resolution budget"
     },
     {
       "name": "digitalocean",
@@ -59,8 +59,7 @@
       "url": "https://raw.githubusercontent.com/digitalocean/openapi/7667351a0c8a1a526343160e1778cb5e97b2c9da/specification/DigitalOcean-public.v2.yaml",
       "sha256": "cda2db55fb97ceef551a3e35682dca49ad331b486f88f712f7c93f4ba05eefbc",
       "max_bytes": 52428800,
-      "status": "known_failing",
-      "expected_error": "missing field `responses`"
+      "status": "passing"
     },
     {
       "name": "paystack",
@@ -156,13 +155,8 @@
       "url": "https://raw.githubusercontent.com/allengrant/shopify_openapi/030bf4edf884d07f0eb4a96c57d15f4f6f43ed89/shopify_openapi.json",
       "sha256": "cbf89d87833a1c3e1dca35059adcb1b25959258daeea402d0ad4681d6257d841",
       "max_bytes": 52428800,
-      "status": "passing",
-      "phase1_measurement": {
-        "operation_count": 1473,
-        "expanded_yaml_bytes": 1562643,
-        "canonical_json_bytes": 1167630,
-        "deduplicated_yaml_bytes": 793148
-      }
+      "status": "known_failing",
+      "expected_error": "parameter name contains invalid characters"
     },
     {
       "name": "twilio",
@@ -212,13 +206,8 @@
       "url": "https://raw.githubusercontent.com/intercom/Intercom-OpenAPI/d04d4798a68a8b77aabdf7d117d71865b72ed571/descriptions/2.16/api.intercom.io.yaml",
       "sha256": "9bd5a638adefc6a81f18a25905151889a64f8a16378decc03ed9cc4e75c44a2e",
       "max_bytes": 52428800,
-      "status": "passing",
-      "phase1_measurement": {
-        "operation_count": 231,
-        "expanded_yaml_bytes": 8259932,
-        "canonical_json_bytes": 3518184,
-        "deduplicated_yaml_bytes": 677286
-      }
+      "status": "known_failing",
+      "expected_error": "path template placeholder job_identifier is not bound to a path parameter"
     },
     {
       "name": "slack",
