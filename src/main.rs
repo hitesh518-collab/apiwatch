@@ -265,9 +265,10 @@ fn run() -> Result<i32> {
             ref_root,
             config: config_path,
             header,
+            all,
+            source_url,
         } => {
             let lock = lockfile::load(&lock_path)?;
-            let target = lockfile::select_verify_target(&lock, &name)?;
             let cfg =
                 load_optional_config_with_discovery(config_path.as_deref(), Some(&lock_path))?;
             let remote_headers = config::resolve_headers(
@@ -281,6 +282,90 @@ fn run() -> Result<i32> {
             } else {
                 Some(remote_headers)
             };
+
+            if all {
+                let base_url = source_url
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("--source-url is required with --all"))?;
+                let observed_entries: Vec<_> = lock.observed_entries()
+                    .iter()
+                    .map(|(name, entry)| (name.clone(), entry.clone()))
+                    .collect();
+                if observed_entries.is_empty() {
+                    anyhow::bail!("no observed entries in lockfile");
+                }
+
+                let mut any_breaking = false;
+                for (entry_name, entry) in &observed_entries {
+                    let path = entry_name
+                        .split_once(' ')
+                        .map(|(_, p)| p)
+                        .unwrap_or("");
+                    let url = format!("{base_url}{path}");
+
+                    let body = match remote::fetch_json(&url, "GET", remote_headers.as_ref()) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            eprintln!("error: {entry_name}: {e:#}");
+                            continue;
+                        }
+                    };
+
+                    let current = observed::infer(&body);
+                    let report =
+                        observed::verify_with_tiers(&entry.shape, &current, entry.threshold);
+                    let has_changes = !report.changes.is_empty();
+                    let has_tiered = !report.tiered.is_empty();
+
+                    let rendered = match format {
+                        OutputFormat::Text if !has_changes && !has_tiered => {
+                            format!(
+                                "=== {} ===\nVerified {}\n  first seen: {}\n  last seen:  {}\n\n",
+                                entry_name, entry_name, entry.first_seen, entry.last_seen
+                            )
+                        }
+                        OutputFormat::Text => format!(
+                            "=== {} ===\n{}",
+                            entry_name,
+                            output::render_observed_verify_with_tiers(
+                                entry_name,
+                                entry.threshold,
+                                &entry.first_seen,
+                                &entry.last_seen,
+                                &report,
+                            )
+                        ),
+                        OutputFormat::Json => output::render_observed_verify_with_tiers_json(
+                            entry_name,
+                            entry.threshold,
+                            &entry.first_seen,
+                            &entry.last_seen,
+                            &report,
+                        )?,
+                        OutputFormat::Sarif => output::render_observed_verify_with_tiers_sarif(
+                            &lock_path,
+                            entry_name,
+                            &report,
+                        )?,
+                    };
+                    print!("{rendered}");
+
+                    if has_changes {
+                        any_breaking = true;
+                    }
+                }
+
+                return Ok(if any_breaking { 1 } else { 0 });
+            }
+
+            let openapi = openapi.ok_or_else(|| {
+                anyhow::anyhow!("OPENAPI source is required for single-entry verify")
+            })?;
+            let name = name.ok_or_else(|| {
+                anyhow::anyhow!("--name is required for single-entry verify")
+            })?;
+            let target = lockfile::select_verify_target(&lock, &name)?;
+
             match target.kind() {
                 lockfile::VerifyTargetKind::Observed {
                     shape: expected,

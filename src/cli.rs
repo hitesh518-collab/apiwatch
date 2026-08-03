@@ -99,10 +99,11 @@ pub enum Command {
     /// Verify one OpenAPI contract against a named api.lock entry.
     Verify {
         /// Current local OpenAPI YAML/JSON file or HTTP(S) URL to verify.
-        openapi: String,
+        /// Required unless --all is set.
+        openapi: Option<String>,
         /// API name to verify from the lockfile.
         #[arg(long)]
-        name: String,
+        name: Option<String>,
         /// api.lock file to compare against.
         #[arg(long)]
         lock: PathBuf,
@@ -114,5 +115,11 @@ pub enum Command {
         config: Option<PathBuf>,
         #[arg(long = "header", value_name = "NAME:${ENV_VAR}")]
         header: Vec<String>,
+        /// Verify all observed entries in the lock.
+        #[arg(long)]
+        all: bool,
+        /// Base URL for --all: each entry's path is appended.
+        #[arg(long = "source-url", requires = "all")]
+        source_url: Option<String>,
     },
 }
