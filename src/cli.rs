@@ -57,12 +57,16 @@ pub enum Command {
     },
     /// Record the observed shape of one JSON body.
     Record {
+        /// HAR file to import (mutually exclusive with --from-json).
+        #[arg(long)]
+        from_har: Option<PathBuf>,
         /// Local JSON body to record.
         #[arg(long)]
-        from_json: PathBuf,
-        /// API name to use as the lockfile key.
+        from_json: Option<PathBuf>,
+        /// API name to use as the lockfile key. Required for --from-json;
+        /// optional for --from-har (entries auto-keyed by method+path).
         #[arg(long)]
-        name: String,
+        name: Option<String>,
         /// api.lock path to write.
         #[arg(long)]
         output: PathBuf,
@@ -75,6 +79,13 @@ pub enum Command {
         /// Observation ratio (0.0-1.0) required before a field hardens.
         #[arg(long = "required-threshold")]
         required_threshold: Option<f64>,
+        /// Group HAR entries under this key (repeatable METHOD /path).
+        #[arg(long = "path-identity", value_name = "METHOD /path")]
+        path_identity: Vec<String>,
+        /// Only record responses with these HTTP status codes (repeatable).
+        /// When absent, only 2xx responses are recorded.
+        #[arg(long = "status", value_name = "CODE")]
+        status: Vec<u16>,
     },
     /// Verify one OpenAPI contract against a named api.lock entry.
     Verify {

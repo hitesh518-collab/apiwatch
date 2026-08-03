@@ -197,3 +197,349 @@ fn duplicate_map_annotation_does_not_overwrite_a_recorded_lock() {
     fs::remove_file(&output).ok();
     assert_eq!(after, before);
 }
+
+#[test]
+fn record_from_har_single_entry_creates_observed_lock() {
+    let output = temp_lock_path("har-single");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/single-entry.har",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Recorded 1 endpoints:"))
+        .stdout(predicate::str::contains("GET /users/42"));
+
+    let lock = fs::read_to_string(&output).expect("lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.starts_with("version: 2\n"));
+    assert!(lock.contains("provenance: observed"));
+    assert!(lock.contains("GET /users/42"));
+    assert!(!lock.contains("\"alice\""));
+}
+
+#[test]
+fn record_from_har_multi_entry_groups_by_path() {
+    let output = temp_lock_path("har-multi");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/multi-entry.har",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Recorded 3 endpoints:"))
+        .stdout(predicate::str::contains("GET /users/42"))
+        .stdout(predicate::str::contains("GET /users/99"))
+        .stdout(predicate::str::contains("GET /orders/7"));
+
+    let lock = fs::read_to_string(&output).expect("lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.starts_with("version: 2\n"));
+    assert!(lock.contains("provenance: observed"));
+}
+
+#[test]
+fn record_from_har_with_path_identity_groups_entries() {
+    let output = temp_lock_path("har-identity");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/multi-entry.har",
+            "--output",
+            output_arg,
+            "--path-identity",
+            "GET /users",
+            "--path-identity",
+            "GET /orders",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Recorded 2 endpoints:"))
+        .stdout(predicate::str::contains("GET /orders: 1 sample(s)"))
+        .stdout(predicate::str::contains("GET /users: 2 sample(s)"));
+
+    let lock = fs::read_to_string(&output).expect("lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.contains("GET /users"));
+    assert!(lock.contains("GET /orders"));
+}
+
+#[test]
+fn record_from_har_reports_skipped_entries() {
+    let output = temp_lock_path("har-mixed");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/mixed-content.har",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Recorded 1 endpoints:"))
+        .stdout(predicate::str::contains("Skipped 3 response(s):"))
+        .stdout(predicate::str::contains("non-JSON content type"))
+        .stdout(predicate::str::contains("JSON parse error"))
+        .stdout(predicate::str::contains("empty body"));
+
+    let lock = fs::read_to_string(&output).expect("lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.starts_with("version: 2\n"));
+}
+
+#[test]
+fn record_from_har_no_json_entries_fails() {
+    let output = temp_lock_path("har-no-json");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/non-json-entry.har",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no HAR entries matched"));
+
+    assert!(!output.exists());
+}
+
+#[test]
+fn record_from_har_with_status_filter() {
+    let output = temp_lock_path("har-status");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/single-entry.har",
+            "--output",
+            output_arg,
+            "--status",
+            "200",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Recorded 1 endpoints:"));
+
+    let lock = fs::read_to_string(&output).expect("lock should exist");
+    fs::remove_file(&output).ok();
+    assert!(lock.starts_with("version: 2\n"));
+}
+
+#[test]
+fn record_from_har_with_name_merges_all_under_single_key() {
+    let output = temp_lock_path("har-name");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/multi-entry.har",
+            "--output",
+            output_arg,
+            "--name",
+            "my-api",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Recorded 3 endpoints:"));
+
+    let lock = fs::read_to_string(&output).expect("lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.contains("my-api"));
+    assert_eq!(lock.matches("provenance: observed").count(), 1);
+}
+
+#[test]
+fn record_from_har_file_not_found() {
+    let output = temp_lock_path("har-missing");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/does-not-exist.har",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("failed to read HAR file"));
+}
+
+#[test]
+fn record_from_har_mutual_exclusion_with_from_json() {
+    let output = temp_lock_path("har-exclusive");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/single-entry.har",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("mutually exclusive"));
+}
+
+#[test]
+fn record_from_har_existing_from_json_still_works() {
+    let output = temp_lock_path("har-backcompat");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-json",
+            "testdata/observed/portfolio-empty.json",
+            "--name",
+            "portfolio",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .success();
+
+    let lock = fs::read_to_string(&output).expect("lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.starts_with("version: 2\n"));
+    assert!(lock.contains("provenance: observed"));
+}
+
+#[test]
+fn record_from_har_base64_encoded_is_skipped() {
+    let output = temp_lock_path("har-base64");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/base64-entry.har",
+            "--output",
+            output_arg,
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no HAR entries matched"));
+
+    assert!(!output.exists());
+}
+
+#[test]
+fn record_from_har_merge_with_same_path_identity() {
+    let output = temp_lock_path("har-merge");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/single-entry.har",
+            "--output",
+            output_arg,
+            "--path-identity",
+            "GET /users",
+        ])
+        .assert()
+        .success();
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/multi-entry.har",
+            "--output",
+            output_arg,
+            "--path-identity",
+            "GET /users",
+            "--merge",
+        ])
+        .assert()
+        .success();
+
+    let lock = fs::read_to_string(&output).expect("merged lock should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.starts_with("version: 2\n"));
+    assert!(lock.contains("GET /users"));
+    assert_eq!(lock.matches("provenance: observed").count(), 1);
+}
+
+#[test]
+fn record_from_har_with_map_at_applies_map_annotations() {
+    let output = temp_lock_path("har-map-at");
+    let output_arg = output.to_str().expect("temp path should be valid UTF-8");
+
+    Command::cargo_bin("apiwatch")
+        .expect("binary should build")
+        .args([
+            "record",
+            "--from-har",
+            "testdata/har/single-entry.har",
+            "--output",
+            output_arg,
+            "--name",
+            "map-api",
+            "--map-at",
+            "$",
+        ])
+        .assert()
+        .success();
+
+    let lock = fs::read_to_string(&output).expect("should exist");
+    fs::remove_file(&output).ok();
+
+    assert!(lock.starts_with("version: 2\n"));
+    assert!(lock.contains("kind: map"));
+    assert!(!lock.contains("\"alice\""));
+}
