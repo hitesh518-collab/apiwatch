@@ -32,6 +32,8 @@ composition, and responses. Version 3 remains readable with partial coverage
 and requires re-locking from the original OpenAPI source for full Phase 2
 coverage. Versions 1 and 2 remain readable as route-only legacy formats.
 
+See [docs/migration.md](docs/migration.md) for lockfile version upgrade instructions.
+
 ## CLI
 
 ```bash
