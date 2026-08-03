@@ -240,7 +240,7 @@ mod tests {
                     "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello"
                 );
                 let _ = stream.flush();
-                let _ = std::thread::sleep(Duration::from_millis(500));
+                std::thread::sleep(Duration::from_millis(500));
             }
         });
 

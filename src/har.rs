@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn load_har_single_json_entry() {
         let path = std::path::Path::new("testdata/har/single-entry.har");
-        let (recordings, skips) = load_har(&path, &[], &[]).expect("should load");
+        let (recordings, skips) = load_har(path, &[], &[]).expect("should load");
         assert_eq!(recordings.len(), 1);
         assert!(skips.is_empty());
         let key = recordings.keys().next().unwrap();
@@ -307,7 +307,7 @@ mod tests {
     #[test]
     fn path_identity_with_no_matching_entries_is_error() {
         let path = std::path::Path::new("testdata/har/single-entry.har");
-        let result = load_har(&path, &["GET /api/nonexistent".to_string()], &[]);
+        let result = load_har(path, &["GET /api/nonexistent".to_string()], &[]);
         assert!(result.is_err());
     }
 

@@ -20,33 +20,103 @@ inputs:
     description: Relative SARIF output path within working-directory; enables Code Scanning upload when set.
     required: false
     default: ""
+  apiwatch-version:
+    description: APIWatch version tag to download (e.g. v0.10.0), or 'latest'.
+    required: false
+    default: latest
 
 runs:
   using: composite
   steps:
-    - name: Install stable Rust
+    - name: Detect platform target
+      id: platform
+      shell: bash
+      run: |
+        case "$RUNNER_OS" in
+          Linux)   TARGET="x86_64-unknown-linux-gnu" ;;
+          macOS)
+            if [ "$(uname -m)" = "arm64" ]; then
+              TARGET="aarch64-apple-darwin"
+            else
+              TARGET="x86_64-apple-darwin"
+            fi
+            ;;
+          Windows) TARGET="x86_64-pc-windows-msvc" ;;
+          *)       echo "::error::unsupported runner OS: $RUNNER_OS"; exit 2 ;;
+        esac
+        echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+    - name: Download apiwatch binary
+      id: download
+      shell: bash
+      continue-on-error: true
+      env:
+        VERSION: ${{ inputs.apiwatch-version }}
+        TARGET: ${{ steps.platform.outputs.target }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        EXT="tar.gz"
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          EXT="zip"
+        fi
+
+        if [ "$VERSION" = "latest" ]; then
+          gh release download \
+            --repo "${{ github.action_repository }}" \
+            --pattern "apiwatch-${TARGET}.${EXT}" \
+            --dir "$RUNNER_TEMP"
+        else
+          gh release download "$VERSION" \
+            --repo "${{ github.action_repository }}" \
+            --pattern "apiwatch-${TARGET}.${EXT}" \
+            --dir "$RUNNER_TEMP"
+        fi
+
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          unzip -o "$RUNNER_TEMP/apiwatch-${TARGET}.zip" -d "$RUNNER_TEMP"
+        else
+          tar xzf "$RUNNER_TEMP/apiwatch-${TARGET}.tar.gz" -C "$RUNNER_TEMP"
+        fi
+
+        chmod +x "$RUNNER_TEMP/apiwatch" 2>/dev/null || true
+        echo "binary=$RUNNER_TEMP/apiwatch" >> "$GITHUB_OUTPUT"
+
+    - name: Install Rust (source-build fallback)
+      if: ${{ steps.download.outcome == 'failure' }}
       uses: dtolnay/rust-toolchain@stable
-    - name: Build apiwatch
+
+    - name: Build apiwatch from source (fallback)
+      if: ${{ steps.download.outcome == 'failure' }}
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
       run: cargo build --release --manifest-path "$ACTION_PATH/Cargo.toml"
+
+    - name: Resolve binary path
+      id: binary
+      shell: bash
+      run: |
+        if [ "${{ steps.download.outcome }}" = "success" ]; then
+          echo "path=${{ steps.download.outputs.binary }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "path=${{ github.action_path }}/target/release/apiwatch" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Verify API contract
       if: ${{ inputs.sarif-file == '' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        ACTION_PATH: ${{ github.action_path }}
         OPENAPI: ${{ inputs.openapi }}
         API_NAME: ${{ inputs.name }}
         LOCK: ${{ inputs.lock }}
-      run: '"$ACTION_PATH/target/release/apiwatch" verify "$OPENAPI" --name "$API_NAME" --lock "$LOCK"'
+      run: '"${{ steps.binary.outputs.path }}" verify "$OPENAPI" --name "$API_NAME" --lock "$LOCK"'
+
     - name: Generate SARIF
       if: ${{ inputs.sarif-file != '' }}
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
-        ACTION_PATH: ${{ github.action_path }}
         OPENAPI: ${{ inputs.openapi }}
         API_NAME: ${{ inputs.name }}
         LOCK: ${{ inputs.lock }}
@@ -60,19 +130,21 @@ runs:
         esac
         mkdir -p -- "$(dirname "$SARIF_FILE")"
         set +e
-        "$ACTION_PATH/target/release/apiwatch" verify "$OPENAPI" --name "$API_NAME" --lock "$LOCK" --format sarif > "$SARIF_FILE"
+        "${{ steps.binary.outputs.path }}" verify "$OPENAPI" --name "$API_NAME" --lock "$LOCK" --format sarif > "$SARIF_FILE"
         status=$?
         set -e
         if [ "$status" -eq 2 ]; then
           exit 2
         fi
         echo "APIWATCH_SARIF_EXIT_CODE=$status" >> "$GITHUB_ENV"
+
     - name: Upload SARIF
       if: ${{ inputs.sarif-file != '' && env.APIWATCH_SARIF_EXIT_CODE != '' }}
       uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: ${{ inputs.working-directory }}/${{ inputs.sarif-file }}
         category: apiwatch-${{ inputs.name }}
+
     - name: Report Verify result
       if: ${{ inputs.sarif-file != '' && env.APIWATCH_SARIF_EXIT_CODE != '' }}
       shell: bash
