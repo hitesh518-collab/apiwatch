@@ -19,11 +19,10 @@ external API expectations reviewable in Git and enforceable in CI.
 
 ## Status
 
-APIWatch is in early development. The v0.7.0 release adds observed JSON
-recording, monotonic shape merging, value-free observed verification, and
-explicit `--map-at` annotations. It also adds output-format parity, an explicit
-Rust 1.86 floor, accurate OpenAPI 3.1 rejection, and a pinned real-world
-compatibility smoke suite.
+APIWatch v1.0.0 is the first stable release. It bundles declared and observed
+contract verification, the complete Phase 2 comparison model, lockfile v4,
+JSON and SARIF output, a reusable GitHub Action, and source-building Homebrew
+and Scoop definitions.
 
 Current v4 declared locks contain the complete Phase 2 normalized contract.
 Declared `verify` uses the same semantic comparison engine as `diff`, covering
@@ -62,8 +61,17 @@ be left partially migrated. Version 3 Verify reports partial Phase 2 coverage;
 v1/v2 Verify remains route-only. Each limitation is reported in text, JSON,
 and SARIF.
 
+`apiwatch diff` and `apiwatch verify` accept `--header NAME:${ENV_VAR}` for
+authenticated remote fetches and `--config .apiwatch.yaml` for
+per-project configuration (ignore rules, severity overrides, fail thresholds).
+Use `--ref-root <PATH>` when the spec is in a different directory than its
+`$ref` targets.
+
+`apiwatch coverage api.lock` reports endpoint and field coverage for observed
+entries.
+
 Remote verification uses a 10-second timeout and a 10 MiB response limit.
-Authentication, custom headers, and configuration files are not included.
+Custom headers can be supplied via `--header` or `.apiwatch.yaml` configuration.
 
 ## Observed JSON Contracts
 
@@ -73,6 +81,7 @@ local JSON response, then verify future local JSON responses against it:
 ```bash
 apiwatch record --from-json body.json --name portfolio --output api.lock
 apiwatch record --from-json updated.json --name portfolio --output api.lock --merge
+apiwatch record --from-url https://api.example.com/data --name portfolio --output api.lock
 apiwatch verify body.json --name portfolio --lock api.lock
 ```
 
@@ -148,12 +157,12 @@ invalid input or operational failure. Declared Verify JSON version 2 includes
 
 ## Installation
 
-Source builds require Rust 1.86 or newer. APIWatch declares and checks this
+Source builds require Rust 1.88 or newer. APIWatch declares and checks this
 minimum in CI so dependency changes cannot raise it silently.
 
 ### Homebrew
 
-The repository includes a source-building Homebrew formula for the v0.6.0
+The repository includes a source-building Homebrew formula for the v1.0.0
 tagged release:
 
 ```bash
@@ -167,7 +176,7 @@ available.
 
 ### Scoop
 
-The repository includes a source-building Scoop manifest for the v0.6.0
+The repository includes a source-building Scoop manifest for the v1.0.0
 tagged release:
 
 ```powershell
@@ -215,9 +224,9 @@ APIWatch from source with Cargo, propagates Verify's `0`/`1`/`2` exit codes,
 and supports the `working-directory` input. It does not provide caching,
 action outputs, authentication, custom headers, or configuration files.
 
-## Known Limitations
+### Known Limitations
 
-APIWatch is pre-v1. Current v4 locks cover the completed Phase 2 audit classes;
+Current v4 locks cover the completed Phase 2 audit classes;
 older locks retain the coverage limitations shown below.
 
 | Area | Current limitation | Tracked work |
@@ -233,7 +242,7 @@ older locks retain the coverage limitations shown below.
 | Composition (D-09) | Resolved through `allOf` intersection and order-independent `oneOf`/`anyOf` comparison. | Phase 2 |
 | Array model (D-10) | Resolved with first-class array items. | Phase 2 |
 | Enum severity (D-11) | Resolved with directional request/response enum policy. | Phase 2 |
-| OpenAPI 3.1 (D-12) | OpenAPI 3.1 is explicitly rejected until it is implemented. | [Phase 3](ROADMAP.md#phase-3--real-world-compatibility) |
+| OpenAPI 3.1 (D-12) | Resolved: OpenAPI 3.1 nullable type arrays are supported. | [Phase 3](ROADMAP.md#phase-3--real-world-compatibility) |
 | Strict metadata parsing (D-13) | Irrelevant malformed metadata can reject an otherwise usable specification. | Phase 3 |
 | Recursive schemas (D-14) | Circular schema references are currently rejected. | Phase 3 |
 | External references (D-15) | External and multi-file `$ref` targets are unsupported. | Phase 3 |

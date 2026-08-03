@@ -17,16 +17,17 @@ single country, industry, or design-partner project.
 
 ## Current State
 
-The latest tagged release is v0.9.0, which bundles Phases 1 and 2. It includes
+The latest tagged release is v1.0.0, which bundles all six phases. It includes
 v3 and v4 declared lockfiles with the complete comparison model, full-contract
 declared Verify, versioned observed JSON contracts, JSON and SARIF output, a
 reusable GitHub Action, and source-building Homebrew and Scoop definitions.
+OpenAPI 3.1 is implemented, external `$ref` targets are supported, and the
+comparison engine covers all Phase 1 and 2 defect classes.
 
 Important limitations remain:
 
 - declared v1 and v2 locks remain route-only, v3 locks have partial Phase 2
   coverage, and all need original sources to migrate to current v4;
-- OpenAPI 3.1 and external or multi-file references are not supported;
 - real-world specification compatibility and binary distribution are
   incomplete;
 - observed contracts prove sampled structure, not complete runtime coverage.

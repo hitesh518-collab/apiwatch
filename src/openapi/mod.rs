@@ -29,7 +29,11 @@ pub fn load_contract_with_ref_root(path: &Path, ref_root: Option<PathBuf>) -> Re
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read OpenAPI file {}", path.display()))?;
     let is_json = path.extension().and_then(|value| value.to_str()) == Some("json");
-    let computed_ref_root = ref_root.or_else(|| path.parent().map(Path::to_path_buf));
+    let computed_ref_root = ref_root.or_else(|| {
+        path.parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+    });
     load_contract_text(
         &raw,
         is_json,
@@ -80,9 +84,40 @@ fn tolerant_openapi_yaml(bytes: &[u8]) -> Result<OpenAPI> {
     strip_deep(&mut value, "examples");
     strip_deep(&mut value, "callbacks");
     strip_deep_by_prefix(&mut value, "x-");
+    strip_broken_path_operations(&mut value);
 
     let cleaned = serde_yml::to_string(&value).context("failed to re-serialize OpenAPI YAML")?;
     serde_yml::from_str(&cleaned).context("failed to parse cleaned OpenAPI YAML")
+}
+
+fn strip_broken_path_operations(value: &mut serde_yml::Value) {
+    const HTTP_METHODS: &[&str] = &[
+        "get", "put", "post", "delete", "options", "head", "patch", "trace",
+    ];
+    let Some(paths) = value.get_mut("paths") else {
+        return;
+    };
+    let serde_yml::Value::Mapping(paths_map) = paths else {
+        return;
+    };
+    paths_map.retain(|_path_key, path_value| {
+        let serde_yml::Value::Mapping(path_obj) = path_value else {
+            return true;
+        };
+        path_obj.retain(|method_key, op_value| {
+            let Some(method_str) = method_key.as_str() else {
+                return true;
+            };
+            if !HTTP_METHODS.contains(&method_str) {
+                return true;
+            }
+            let serde_yml::Value::Mapping(op_map) = op_value else {
+                return false;
+            };
+            op_map.contains_key(serde_yml::Value::String("responses".into()))
+        });
+        !path_obj.is_empty()
+    });
 }
 
 fn strip_deep(value: &mut serde_yml::Value, key: &str) {
@@ -669,7 +704,9 @@ fn canonicalize_path_parameters(
         }
     }
     for name in placeholder_names {
-        if !canonical.values().any(|parameter| parameter.name == *name) {
+        if !canonical.iter().any(|(key, parameter)| {
+            key.location == ParameterLocation::Path && parameter.name == *name
+        }) {
             return Err(anyhow!(
                 "path template placeholder {name} is not bound to a path parameter"
             ));
@@ -908,6 +945,7 @@ struct SchemaResolver {
     schemas: BTreeMap<String, ReferenceOr<OpenApiSchema>>,
     ref_root: Option<PathBuf>,
     loaded_files: RefCell<BTreeMap<PathBuf, OpenAPI>>,
+    normalized_schema_cache: RefCell<BTreeMap<String, Schema>>,
 }
 
 impl SchemaResolver {
@@ -959,6 +997,7 @@ impl SchemaResolver {
             schemas,
             ref_root,
             loaded_files: RefCell::new(BTreeMap::new()),
+            normalized_schema_cache: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -1092,12 +1131,26 @@ impl SchemaResolver {
             });
         }
 
+        if visiting.len() <= 1 {
+            if let Some(cached) = self.normalized_schema_cache.borrow().get(&name) {
+                visiting.remove(&name);
+                return Ok(cached.clone());
+            }
+        }
+
         let schema = self
             .schemas
             .get(&name)
             .ok_or_else(|| anyhow!("schema reference not found: {reference}"))?;
         let normalized = normalize_schema_ref(schema, self, visiting);
         visiting.remove(&name);
+        if let Ok(ref result) = normalized {
+            if !matches!(result.kind, SchemaKind::CycleRef) {
+                self.normalized_schema_cache
+                    .borrow_mut()
+                    .insert(name, result.clone());
+            }
+        }
         normalized
     }
 
@@ -1165,6 +1218,13 @@ impl SchemaResolver {
             });
         }
 
+        if visiting.len() <= 1 {
+            if let Some(cached) = self.normalized_schema_cache.borrow().get(&visit_key) {
+                visiting.remove(&visit_key);
+                return Ok(cached.clone());
+            }
+        }
+
         let schema_ref = doc
             .components
             .as_ref()
@@ -1175,9 +1235,18 @@ impl SchemaResolver {
             SchemaResolver::from_components(doc.components.as_ref(), Some(canonical_root.clone()));
 
         *external_resolver.loaded_files.borrow_mut() = loaded.clone();
+        *external_resolver.normalized_schema_cache.borrow_mut() =
+            self.normalized_schema_cache.borrow().clone();
 
         let result = normalize_schema_ref(schema_ref, &external_resolver, visiting);
         visiting.remove(&visit_key);
+        if let Ok(ref schema) = result {
+            if !matches!(schema.kind, SchemaKind::CycleRef) {
+                self.normalized_schema_cache
+                    .borrow_mut()
+                    .insert(visit_key, schema.clone());
+            }
+        }
         result
     }
 }
@@ -1201,9 +1270,67 @@ fn parse_external_file(path: &Path) -> Result<OpenAPI> {
     if is_json {
         serde_json::from_str(&raw)
             .with_context(|| format!("failed to parse external JSON {}", path.display()))
+            .or_else(|_| parse_external_components_json(&raw, path))
     } else {
         tolerant_openapi_yaml(raw.as_bytes())
             .with_context(|| format!("failed to parse external YAML {}", path.display()))
+            .or_else(|_| parse_external_components_yaml(raw.as_bytes(), path))
+    }
+}
+
+fn parse_external_components_json(raw: &str, path: &Path) -> Result<OpenAPI> {
+    let components: openapiv3::Components = serde_json::from_str(raw).with_context(|| {
+        format!(
+            "failed to parse external JSON components {}",
+            path.display()
+        )
+    })?;
+    Ok(OpenAPI {
+        openapi: "3.0.3".to_string(),
+        info: openapiv3::Info {
+            title: "external-fragment".to_string(),
+            version: "0.0.0".to_string(),
+            ..Default::default()
+        },
+        paths: openapiv3::Paths::default(),
+        components: Some(components),
+        ..Default::default()
+    })
+}
+
+fn parse_external_components_yaml(bytes: &[u8], path: &Path) -> Result<OpenAPI> {
+    let mut value: serde_yml::Value =
+        serde_yml::from_slice(bytes).context("failed to parse external YAML")?;
+    strip_deep(&mut value, "tags");
+    strip_deep(&mut value, "externalDocs");
+    strip_deep(&mut value, "examples");
+    strip_deep(&mut value, "callbacks");
+    strip_deep_by_prefix(&mut value, "x-");
+    if let Some(components) = value.get_mut("components") {
+        let cleaned = serde_yml::to_string(components).context("failed to serialize components")?;
+        let components: openapiv3::Components =
+            serde_yml::from_str(&cleaned).with_context(|| {
+                format!(
+                    "failed to parse external YAML components {}",
+                    path.display()
+                )
+            })?;
+        Ok(OpenAPI {
+            openapi: "3.0.3".to_string(),
+            info: openapiv3::Info {
+                title: "external-fragment".to_string(),
+                version: "0.0.0".to_string(),
+                ..Default::default()
+            },
+            paths: openapiv3::Paths::default(),
+            components: Some(components),
+            ..Default::default()
+        })
+    } else {
+        Err(anyhow::anyhow!(
+            "external file {} contains no components",
+            path.display()
+        ))
     }
 }
 
@@ -1289,6 +1416,12 @@ fn normalize_parameter_ref(
     };
 
     let (location, data) = parameter_location_and_data(parameter);
+    if data.name.is_empty() || data.name.chars().any(char::is_control) {
+        return Err(anyhow!(
+            "parameter name contains invalid characters: {:?}",
+            data.name
+        ));
+    }
     let schema = normalize_parameter_schema(data, schema_resolver)?;
     let key_name = normalize_parameter_key_name(location, &data.name);
 

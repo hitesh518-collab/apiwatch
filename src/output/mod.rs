@@ -792,7 +792,12 @@ pub fn render_observed_verify_with_tiers(
     last_seen: &str,
     report: &crate::observed::ObservedVerifyReport,
 ) -> String {
-    let mut rendered = format!("Verified {name} (observed, threshold {threshold:.2})\n");
+    let verb = if report.changes.is_empty() {
+        "Verified"
+    } else {
+        "Drift detected in"
+    };
+    let mut rendered = format!("{verb} {name} (observed, threshold {threshold:.2})\n");
     if !first_seen.is_empty() {
         rendered.push_str(&format!("  first seen: {first_seen}\n"));
     }

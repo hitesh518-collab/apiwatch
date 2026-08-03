@@ -16,12 +16,10 @@ fn migrate_v2_loads_and_updates() {
         "rerendered v2 lock should contain version marker"
     );
 
-    let update_path =
-        tempfile::NamedTempFile::new().expect("tempfile").into_temp_path();
-    update_path
-        .as_os_str()
-        .to_str()
-        .expect("UTF-8 temp path");
+    let update_path = tempfile::NamedTempFile::new()
+        .expect("tempfile")
+        .into_temp_path();
+    update_path.as_os_str().to_str().expect("UTF-8 temp path");
 
     std::fs::write(&update_path, fixture).expect("write v2 fixture to update target");
 
@@ -54,8 +52,9 @@ fn migrate_v3_loads_and_updates() {
         "rerendered v3 lock should contain version marker"
     );
 
-    let update_path =
-        tempfile::NamedTempFile::new().expect("tempfile").into_temp_path();
+    let update_path = tempfile::NamedTempFile::new()
+        .expect("tempfile")
+        .into_temp_path();
     std::fs::write(&update_path, fixture).expect("write v3 fixture to update target");
 
     Command::cargo_bin("apiwatch")

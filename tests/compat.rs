@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -49,6 +50,51 @@ fn assert_known_failure(filename: &str, expected_error: &str) {
         .stderr(predicate::str::contains(expected_error));
 }
 
+fn assert_known_failure_with_timeout(filename: &str, expected_error: &str, timeout: Duration) {
+    let path = corpus_file(filename);
+    let path = path.to_str().expect("compatibility path should be UTF-8");
+    let path = path.to_string();
+    let expected_error = expected_error.to_string();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let bin = std::env::var("CARGO_BIN_EXE_apiwatch")
+            .unwrap_or_else(|_| format!("target/release/apiwatch{}", std::env::consts::EXE_SUFFIX));
+        let output = std::process::Command::new(bin)
+            .args(["diff", &path, &path])
+            .output();
+        tx.send(output).ok();
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(output)) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(
+                output.status.code(),
+                Some(2),
+                "expected exit code 2, got {:?}\nstderr: {}\nstdout: {}",
+                output.status.code(),
+                stderr,
+                String::from_utf8_lossy(&output.stdout)
+            );
+            assert!(
+                stderr.contains(&expected_error),
+                "expected '{}' in stderr, got '{}'",
+                expected_error,
+                stderr
+            );
+        }
+        Ok(Err(e)) => panic!("failed to execute apiwatch: {e}"),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            panic!(
+                "test timed out after {}s (likely D-28: Stripe schema expansion hangs)",
+                timeout.as_secs()
+            );
+        }
+        Err(_) => panic!("thread panicked"),
+    }
+}
+
 #[test]
 #[ignore = "requires commit-pinned compatibility corpus"]
 fn github_rest_is_compatible() {
@@ -70,9 +116,10 @@ fn box_is_compatible() {
 #[test]
 #[ignore = "requires commit-pinned compatibility corpus"]
 fn stripe_reproduces_known_recursive_schema_failure() {
-    assert_known_failure(
+    assert_known_failure_with_timeout(
         "stripe.json",
         "circular schema reference detected: #/components/schemas/file",
+        Duration::from_secs(30),
     );
 }
 
@@ -157,10 +204,7 @@ fn intercom_is_compatible() {
 #[test]
 #[ignore = "requires commit-pinned compatibility corpus"]
 fn slack_reproduces_known_parameter_schema_failure() {
-    assert_known_failure(
-        "slack.json",
-        "no variant of enum ParameterSchemaOrContent",
-    );
+    assert_known_failure("slack.json", "no variant of enum ParameterSchemaOrContent");
 }
 
 #[test]
