@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -46,8 +47,8 @@ def main():
         )
 
         version = run([binary, "--version"]).stdout
-        if "apiwatch 0.7.0" not in version:
-            raise RuntimeError(f"unexpected version output: {version}")
+        if not re.fullmatch(r"apiwatch \d+\.\d+\.\d+( \([0-9a-f]+\))?\n?$", version):
+            raise RuntimeError(f"unexpected version output: {version!r}")
 
         run(
             [
