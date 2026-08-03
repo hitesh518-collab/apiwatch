@@ -65,6 +65,52 @@ jobs:
 
             Ok(0)
         }
+        Command::Coverage { lock: lock_path, name } => {
+            let lock = lockfile::load(&lock_path)?;
+            let observed = lock.observed_entries();
+            if observed.is_empty() {
+                println!("no observed entries in lock");
+                return Ok(0);
+            }
+
+            let entries: Vec<_> = if let Some(ref filter) = name {
+                if let Some(entry) = observed.get(filter) {
+                    vec![(filter.as_str(), entry)]
+                } else {
+                    anyhow::bail!("observed entry '{}' not found in lock", filter);
+                }
+            } else {
+                observed.iter().map(|(k, v)| (k.as_str(), v)).collect()
+            };
+
+            for (entry_name, entry) in &entries {
+                println!(
+                    "{} (threshold {:.2}, {} total observations)",
+                    entry_name,
+                    entry.threshold,
+                    total_observations(&entry.shape),
+                );
+                if !entry.first_seen.is_empty() {
+                    println!("  first seen: {}", entry.first_seen);
+                }
+                if !entry.last_seen.is_empty() {
+                    println!("  last seen:  {}", entry.last_seen);
+                }
+                println!("\n  Fields:");
+
+                let mut fields = Vec::new();
+                collect_fields(&entry.shape, "$", entry.threshold, &mut fields);
+                for field in &fields {
+                    println!("    {} {}", field.path, field.status);
+                }
+                if fields.is_empty() {
+                    println!("    (no fields)");
+                }
+                println!();
+            }
+
+            Ok(0)
+        }
         Command::Diff {
             old,
             new,
@@ -569,5 +615,98 @@ fn load_optional_config_with_discovery(
             },
             None => Ok(None),
         },
+    }
+}
+
+fn total_observations(shape: &observed::Shape) -> u64 {
+    match shape {
+        observed::Shape::Object { observations, .. } => *observations,
+        _ => 0,
+    }
+}
+
+struct FieldInfo {
+    path: String,
+    status: String,
+}
+
+fn collect_fields(
+    shape: &observed::Shape,
+    path: &str,
+    threshold: f64,
+    entries: &mut Vec<FieldInfo>,
+) {
+    match shape {
+        observed::Shape::Object {
+            observations,
+            properties,
+        } => {
+            for (name, property) in properties {
+                let property_path = format!("{path}.{name}");
+                let hardened = observed::is_hardened(
+                    *observations,
+                    property.observations,
+                    threshold,
+                );
+                let kind = shape_kind_name(&property.shape);
+                let status = if hardened {
+                    format!(
+                        "{}  {}/{} observations  hardened",
+                        kind, property.observations, observations
+                    )
+                } else {
+                    let reason = if *observations < observed::MINIMUM_OBSERVATION_FLOOR {
+                        format!(
+                            "below floor ({} < {})",
+                            observations, observed::MINIMUM_OBSERVATION_FLOOR
+                        )
+                    } else {
+                        let ratio =
+                            property.observations as f64 / *observations as f64;
+                        format!("{:.2} < {:.2} threshold", ratio, threshold)
+                    };
+                    format!(
+                        "{}  {}/{} observations  lenient ({})",
+                        kind, property.observations, observations, reason
+                    )
+                };
+                entries.push(FieldInfo {
+                    path: property_path,
+                    status,
+                });
+                collect_fields(&property.shape, &format!("{path}.{name}"), threshold, entries);
+            }
+        }
+        observed::Shape::Array { items } => {
+            collect_fields(items, &format!("{path}[]"), threshold, entries);
+        }
+        observed::Shape::Map { values } => {
+            collect_fields(
+                values,
+                &format!("{path}.<map-value>"),
+                threshold,
+                entries,
+            );
+        }
+        observed::Shape::Union { variants } => {
+            for variant in variants {
+                collect_fields(variant, path, threshold, entries);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn shape_kind_name(shape: &observed::Shape) -> &'static str {
+    match shape {
+        observed::Shape::Null => "null",
+        observed::Shape::Boolean => "boolean",
+        observed::Shape::Number => "number",
+        observed::Shape::String => "string",
+        observed::Shape::Object { .. } => "object",
+        observed::Shape::Map { .. } => "map",
+        observed::Shape::Array { .. } => "array",
+        observed::Shape::Union { .. } => "union",
+        observed::Shape::Unknown => "unknown",
     }
 }

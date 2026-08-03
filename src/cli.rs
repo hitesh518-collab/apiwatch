@@ -61,6 +61,15 @@ pub enum Command {
         #[arg(long, default_value = "api.lock")]
         output: PathBuf,
     },
+    /// Report endpoint and field coverage for observed entries.
+    Coverage {
+        /// api.lock file to inspect.
+        #[arg(long)]
+        lock: PathBuf,
+        /// Filter to a specific observed entry.
+        #[arg(long)]
+        name: Option<String>,
+    },
     /// Record the observed shape of one JSON body.
     Record {
         /// HAR file to import (mutually exclusive with --from-json).
