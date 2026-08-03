@@ -51,6 +51,59 @@ pub fn fetch(
     Ok(Some(RemoteOpenApi { text, is_json }))
 }
 
+pub fn fetch_json(
+    url: &str,
+    method: &str,
+    headers: Option<&BTreeMap<String, String>>,
+) -> Result<serde_json::Value> {
+    let parsed_url = reqwest::Url::parse(url).map_err(|error| anyhow!("invalid URL: {error}"))?;
+    if !parsed_url.username().is_empty() || parsed_url.password().is_some() {
+        return Err(anyhow!("URL credentials are not allowed"));
+    }
+
+    let client = Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(10))
+        .redirect(Policy::limited(5))
+        .build()
+        .context("failed to build HTTP client")?;
+
+    let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes())
+        .map_err(|_| anyhow!("invalid HTTP method: {method}"))?;
+    let mut request = client.request(method, parsed_url);
+    if let Some(hdrs) = headers {
+        for (name, value) in hdrs {
+            request = request.header(name.as_str(), value.as_str());
+        }
+    }
+
+    let response = request
+        .send()
+        .with_context(|| format!("failed to fetch {url}"))?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "server returned {} for {}",
+            response.status().as_u16(),
+            url
+        ));
+    }
+
+    if !response_is_json(&response) {
+        let ct = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown");
+        return Err(anyhow!("response is not JSON (content-type: {ct})"));
+    }
+
+    let body = read_limited_body(response)?;
+    let value = serde_json::from_str(&body).context("failed to parse JSON response")?;
+
+    Ok(value)
+}
+
 fn remote_url(input: &str) -> Result<Option<reqwest::Url>> {
     let Some((scheme, remainder)) = input.split_once(':') else {
         return Ok(None);
@@ -169,5 +222,33 @@ mod tests {
             "remote OpenAPI URL credentials are not allowed"
         );
         assert!(matches!(listener.accept(), Err(error) if error.kind() == ErrorKind::WouldBlock));
+    }
+
+    #[test]
+    fn fetch_json_rejects_non_json_content_type() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        let address = listener
+            .local_addr()
+            .expect("listener should have an address");
+        let url = format!("http://{}/data", address);
+
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                use std::io::Write;
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello"
+                );
+                let _ = stream.flush();
+                let _ = std::thread::sleep(Duration::from_millis(500));
+            }
+        });
+
+        std::thread::sleep(Duration::from_millis(100));
+
+        let result = fetch_json(&url, "GET", None);
+        assert!(result.is_err(), "expected error, got: {result:?}");
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not JSON"), "unexpected error: {err}");
     }
 }

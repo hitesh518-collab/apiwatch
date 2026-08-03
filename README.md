@@ -83,6 +83,22 @@ that every endpoint, response variant, conditional field, or error shape has
 been observed. Confidence-aware requiredness and coverage reporting are
 planned in [Roadmap Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts).
 
+## Quickstart
+
+```bash
+# 1. Record from browser traffic (export HAR from DevTools)
+apiwatch record --from-har traffic.har --output api.lock
+# Try it with our example: apiwatch record --from-har testdata/har/example-quickstart.har --output api.lock
+
+# 2. Verify all observed entries against a live API
+apiwatch verify --all --lock api.lock --source-url https://api.example.com
+
+# 3. Scaffold CI
+apiwatch init --output api.lock
+git add api.lock .github/workflows/
+git commit -m "add apiwatch contract evidence"
+```
+
 ### Observed JSON Maps
 
 When object keys are dynamic data rather than API fields, mark the object
@@ -222,7 +238,6 @@ older locks retain the coverage limitations shown below.
 | Legacy declared locks (D-16) | Versions 1 and 2 are route-only; v3 is partial for Phase 2. All require re-locking from original sources for full v4 coverage. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
 | Null observations (D-17) | A null-only sample can make an observed shape too narrow. | [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts) |
 | Observed requiredness (D-18) | Requiredness does not yet use a configurable confidence threshold. | Phase 4 |
-| Observed inputs (D-19) | Observed Verify accepts local JSON only; HAR and live capture are not implemented. | [Phase 5](ROADMAP.md#phase-5--frictionless-recording-and-ci-adoption) |
 | Distribution | The Action, Homebrew formula, and Scoop manifest still build from source. | [Continuous distribution](ROADMAP.md#continuous-distribution-track) |
 
 Repeated phase names in the table refer to the linked phase in the first row

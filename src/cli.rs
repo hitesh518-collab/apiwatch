@@ -55,6 +55,21 @@ pub enum Command {
         #[arg(long, value_hint = clap::ValueHint::DirPath)]
         ref_root: Option<PathBuf>,
     },
+    /// Scaffold a new api.lock and CI workflow.
+    Init {
+        /// Lockfile path to create.
+        #[arg(long, default_value = "api.lock")]
+        output: PathBuf,
+    },
+    /// Report endpoint and field coverage for observed entries.
+    Coverage {
+        /// api.lock file to inspect.
+        #[arg(long)]
+        lock: PathBuf,
+        /// Filter to a specific observed entry.
+        #[arg(long)]
+        name: Option<String>,
+    },
     /// Record the observed shape of one JSON body.
     Record {
         /// HAR file to import (mutually exclusive with --from-json).
@@ -67,6 +82,15 @@ pub enum Command {
         /// optional for --from-har (entries auto-keyed by method+path).
         #[arg(long)]
         name: Option<String>,
+        /// Live URL to fetch and record (mutually exclusive with --from-json, --from-har).
+        #[arg(long)]
+        from_url: Option<String>,
+        /// HTTP method for --from-url (default GET).
+        #[arg(long, default_value = "GET")]
+        method: String,
+        /// Request headers for --from-url (NAME:${ENV_VAR}).
+        #[arg(long = "header", value_name = "NAME:${ENV_VAR}")]
+        header: Vec<String>,
         /// api.lock path to write.
         #[arg(long)]
         output: PathBuf,
@@ -90,10 +114,11 @@ pub enum Command {
     /// Verify one OpenAPI contract against a named api.lock entry.
     Verify {
         /// Current local OpenAPI YAML/JSON file or HTTP(S) URL to verify.
-        openapi: String,
+        /// Required unless --all is set.
+        openapi: Option<String>,
         /// API name to verify from the lockfile.
         #[arg(long)]
-        name: String,
+        name: Option<String>,
         /// api.lock file to compare against.
         #[arg(long)]
         lock: PathBuf,
@@ -105,5 +130,11 @@ pub enum Command {
         config: Option<PathBuf>,
         #[arg(long = "header", value_name = "NAME:${ENV_VAR}")]
         header: Vec<String>,
+        /// Verify all observed entries in the lock.
+        #[arg(long)]
+        all: bool,
+        /// Base URL for --all: each entry's path is appended.
+        #[arg(long = "source-url", requires = "all")]
+        source_url: Option<String>,
     },
 }

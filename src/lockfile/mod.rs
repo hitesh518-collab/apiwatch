@@ -74,6 +74,12 @@ pub struct ApiLock {
     observed: BTreeMap<String, observed::ObservedEntry>,
 }
 
+impl ApiLock {
+    pub fn observed_entries(&self) -> &BTreeMap<String, observed::ObservedEntry> {
+        &self.observed
+    }
+}
+
 #[derive(Deserialize)]
 struct LockVersion {
     version: u8,
