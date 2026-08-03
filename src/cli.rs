@@ -55,6 +55,12 @@ pub enum Command {
         #[arg(long, value_hint = clap::ValueHint::DirPath)]
         ref_root: Option<PathBuf>,
     },
+    /// Scaffold a new api.lock and CI workflow.
+    Init {
+        /// Lockfile path to create.
+        #[arg(long, default_value = "api.lock")]
+        output: PathBuf,
+    },
     /// Record the observed shape of one JSON body.
     Record {
         /// HAR file to import (mutually exclusive with --from-json).

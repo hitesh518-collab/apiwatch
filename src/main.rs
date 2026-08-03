@@ -23,6 +23,48 @@ fn run() -> Result<i32> {
     let cli = Cli::parse();
 
     match cli.command {
+        Command::Init { output } => {
+            if output.exists() {
+                anyhow::bail!(
+                    "{} already exists; use --output to specify a different path",
+                    output.display()
+                );
+            }
+
+            let empty_lock = "version: 4\napis: {}\n";
+            fs::write(&output, empty_lock)
+                .with_context(|| format!("failed to write {}", output.display()))?;
+            println!("Created {}", output.display());
+
+            let workflows_dir = std::path::Path::new(".github/workflows");
+            let workflow_path = workflows_dir.join("apiwatch.yml");
+            if !workflow_path.exists() {
+                fs::create_dir_all(workflows_dir)
+                    .context("failed to create .github/workflows directory")?;
+                let workflow = r#"name: apiwatch
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  verify:
+    uses: hitesh518-collab/apiwatch/.github/workflows/action.yml@main
+"#;
+                fs::write(&workflow_path, workflow)
+                    .with_context(|| format!("failed to write {}", workflow_path.display()))?;
+                println!("Created {}", workflow_path.display());
+            } else {
+                println!("Skipped {} (already exists)", workflow_path.display());
+            }
+
+            println!("\nNext steps:");
+            println!("  1. Record: apiwatch record --from-har capture.har --output {}", output.display());
+            println!("  2. Or lock: apiwatch lock --openapi spec.yaml --name my-api --output {}", output.display());
+            println!("  3. CI: git add {} .github/workflows/ && git commit -m \"add apiwatch\"", output.display());
+
+            Ok(0)
+        }
         Command::Diff {
             old,
             new,
