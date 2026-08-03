@@ -420,12 +420,16 @@ jobs:
                 }
 
                 let mut any_breaking = false;
+                let mut any_success = false;
                 for (entry_name, entry) in &observed_entries {
-                    let path = entry_name.split_once(' ').map(|(_, p)| p).unwrap_or("");
+                    let (method, path) = entry_name.split_once(' ').unwrap_or(("GET", entry_name));
                     let url = format!("{base_url}{path}");
 
-                    let body = match remote::fetch_json(&url, "GET", remote_headers.as_ref()) {
-                        Ok(b) => b,
+                    let body = match remote::fetch_json(&url, method, remote_headers.as_ref()) {
+                        Ok(b) => {
+                            any_success = true;
+                            b
+                        }
                         Err(e) => {
                             eprintln!("error: {entry_name}: {e:#}");
                             continue;
@@ -472,6 +476,10 @@ jobs:
                     if has_changes {
                         any_breaking = true;
                     }
+                }
+
+                if !any_success {
+                    anyhow::bail!("all observed entries failed to fetch from {base_url}");
                 }
 
                 return Ok(if any_breaking { 1 } else { 0 });
