@@ -1,11 +1,11 @@
 {
-  "version": "0.7.0",
+  "version": "1.0.2",
   "description": "Lock, diff, and verify external API contracts",
   "homepage": "https://github.com/hitesh518-collab/apiwatch",
   "license": "Apache-2.0",
-  "url": "https://github.com/hitesh518-collab/apiwatch/archive/refs/tags/v0.7.0.tar.gz",
-  "hash": "a42b7bf0e5f4559add1d856da18e6dda60613549f9203f4c8f3d0eee7d1d1ebe",
-  "extract_dir": "apiwatch-0.7.0",
+  "url": "https://github.com/hitesh518-collab/apiwatch/archive/refs/tags/v1.0.2.tar.gz",
+  "hash": "fca9bc66eba610854a451dd1c10ecbd4c7603c11c6bc3042ea85efa91534486c",
+  "extract_dir": "apiwatch-1.0.2",
   "depends": "rust",
   "installer": {
     "script": "cargo build --release --locked --manifest-path \"$dir\\Cargo.toml\""
