@@ -55,23 +55,22 @@ runs:
         TARGET: ${{ steps.platform.outputs.target }}
         GH_TOKEN: ${{ github.token }}
       run: |
-        if [ "$VERSION" = "latest" ]; then
-          RELEASE="latest/download"
-        else
-          RELEASE="download/$VERSION"
-        fi
-
         EXT="tar.gz"
         if [ "$RUNNER_OS" = "Windows" ]; then
           EXT="zip"
         fi
 
-        URL="https://github.com/${{ github.action_repository }}/releases/$RELEASE/apiwatch-${TARGET}.${EXT}"
-        echo "Downloading $URL"
-        gh release download "$VERSION" \
-          --repo "${{ github.action_repository }}" \
-          --pattern "apiwatch-${TARGET}.${EXT}" \
-          --dir "$RUNNER_TEMP"
+        if [ "$VERSION" = "latest" ]; then
+          gh release download \
+            --repo "${{ github.action_repository }}" \
+            --pattern "apiwatch-${TARGET}.${EXT}" \
+            --dir "$RUNNER_TEMP"
+        else
+          gh release download "$VERSION" \
+            --repo "${{ github.action_repository }}" \
+            --pattern "apiwatch-${TARGET}.${EXT}" \
+            --dir "$RUNNER_TEMP"
+        fi
 
         if [ "$RUNNER_OS" = "Windows" ]; then
           unzip -o "$RUNNER_TEMP/apiwatch-${TARGET}.zip" -d "$RUNNER_TEMP"
