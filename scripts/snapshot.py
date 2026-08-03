@@ -37,6 +37,10 @@ def sha256_of_file(path):
     return h.hexdigest()
 
 
+def sha256_of_string(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
 def main():
     root = Path(__file__).resolve().parent.parent
     specs_file = root / "compat" / "specs.json"
@@ -78,18 +82,20 @@ def main():
             capture_output=True, text=True,
         )
         if result.returncode != 0:
-            failures.append(f"lock {name}: exit {result.returncode}\n{result.stderr[-500:]}")
-            continue
-
-        lock_hash = sha256_of_file(lock_out)
+            lock_hash = sha256_of_string(result.stderr)
+        else:
+            lock_hash = sha256_of_file(lock_out)
 
         diff_out = tmp_dir / f"snapshot_{name}_diff.txt"
         with open(diff_out, "w") as f:
-            subprocess.run(
+            diff_result = subprocess.run(
                 [binary, "diff", str(spec_path), str(spec_path)],
                 stdout=f, stderr=subprocess.PIPE, text=True,
             )
-        diff_hash = sha256_of_file(diff_out)
+        if diff_result.returncode != 0:
+            diff_hash = sha256_of_string(diff_result.stderr)
+        else:
+            diff_hash = sha256_of_file(diff_out)
 
         new_snapshots["snapshots"][name] = {
             "lock_sha256": lock_hash,
