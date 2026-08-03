@@ -3,6 +3,7 @@ implementation-log/
 .worktrees/
 .superpowers/
 .compat-cache/
+tmp/
 __pycache__/
 *.pyc
 fuzz/artifacts/

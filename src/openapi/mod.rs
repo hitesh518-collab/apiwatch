@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use anyhow::{anyhow, Context, Result};
 use openapiv3::{
@@ -938,6 +939,36 @@ fn normalize_auth_requirements(
     Ok(auth)
 }
 
+/// Upper bound on the number of concrete schema nodes `normalize_schema` may
+/// construct while normalizing a single contract. Real-world specs with
+/// densely-shared (but acyclic) component schemas can materialize into an
+/// exponentially large fully-inlined tree even though the underlying
+/// reference graph is modest in size; this budget turns that runaway
+/// expansion into a prompt, deterministic error instead of an unbounded hang.
+const MAX_SCHEMA_EXPANSIONS: usize = 3_000_000;
+
+/// Counts the schema nodes reachable from `schema` (itself included). Used to
+/// charge cache hits against the expansion budget in proportion to the size
+/// of the (already fully-inlined) tree a clone would materialize, since a
+/// cache hit is cheap to look up but not cheap to clone when the cached value
+/// is a large, densely-shared subtree.
+fn schema_node_count(schema: &Schema) -> usize {
+    let mut count = 1;
+    for property in schema.properties.values() {
+        count += schema_node_count(&property.schema);
+    }
+    if let Some(items) = &schema.items {
+        count += schema_node_count(items);
+    }
+    if let AdditionalProperties::Schema(inner) = &schema.additional_properties {
+        count += schema_node_count(inner);
+    }
+    for branch in &schema.branches {
+        count += schema_node_count(branch);
+    }
+    count
+}
+
 struct SchemaResolver {
     parameters: BTreeMap<String, ReferenceOr<OpenApiParameter>>,
     request_bodies: BTreeMap<String, ReferenceOr<OpenApiRequestBody>>,
@@ -946,6 +977,8 @@ struct SchemaResolver {
     ref_root: Option<PathBuf>,
     loaded_files: RefCell<BTreeMap<PathBuf, OpenAPI>>,
     normalized_schema_cache: RefCell<BTreeMap<String, Schema>>,
+    normalized_schema_sizes: RefCell<BTreeMap<String, usize>>,
+    expansion_count: Rc<RefCell<usize>>,
 }
 
 impl SchemaResolver {
@@ -998,7 +1031,22 @@ impl SchemaResolver {
             ref_root,
             loaded_files: RefCell::new(BTreeMap::new()),
             normalized_schema_cache: RefCell::new(BTreeMap::new()),
+            normalized_schema_sizes: RefCell::new(BTreeMap::new()),
+            expansion_count: Rc::new(RefCell::new(0)),
         }
+    }
+
+    fn record_expansion(&self, amount: usize) -> Result<()> {
+        let mut count = self.expansion_count.borrow_mut();
+        *count += amount;
+        if *count > MAX_SCHEMA_EXPANSIONS {
+            return Err(anyhow!(
+                "schema expansion exceeded resolution budget of {MAX_SCHEMA_EXPANSIONS} nodes; \
+                 the schema graph likely contains deeply/densely shared component schemas that \
+                 expand exponentially when fully inlined"
+            ));
+        }
+        Ok(())
     }
 
     fn resolve_parameter(
@@ -1131,11 +1179,15 @@ impl SchemaResolver {
             });
         }
 
-        if visiting.len() <= 1 {
-            if let Some(cached) = self.normalized_schema_cache.borrow().get(&name) {
-                visiting.remove(&name);
-                return Ok(cached.clone());
-            }
+        if let Some(cached) = self.normalized_schema_cache.borrow().get(&name).cloned() {
+            visiting.remove(&name);
+            let size = *self
+                .normalized_schema_sizes
+                .borrow()
+                .get(&name)
+                .unwrap_or(&1);
+            self.record_expansion(size)?;
+            return Ok(cached);
         }
 
         let schema = self
@@ -1146,6 +1198,9 @@ impl SchemaResolver {
         visiting.remove(&name);
         if let Ok(ref result) = normalized {
             if !matches!(result.kind, SchemaKind::CycleRef) {
+                self.normalized_schema_sizes
+                    .borrow_mut()
+                    .insert(name.clone(), schema_node_count(result));
                 self.normalized_schema_cache
                     .borrow_mut()
                     .insert(name, result.clone());
@@ -1218,11 +1273,20 @@ impl SchemaResolver {
             });
         }
 
-        if visiting.len() <= 1 {
-            if let Some(cached) = self.normalized_schema_cache.borrow().get(&visit_key) {
-                visiting.remove(&visit_key);
-                return Ok(cached.clone());
-            }
+        if let Some(cached) = self
+            .normalized_schema_cache
+            .borrow()
+            .get(&visit_key)
+            .cloned()
+        {
+            visiting.remove(&visit_key);
+            let size = *self
+                .normalized_schema_sizes
+                .borrow()
+                .get(&visit_key)
+                .unwrap_or(&1);
+            self.record_expansion(size)?;
+            return Ok(cached);
         }
 
         let schema_ref = doc
@@ -1231,17 +1295,23 @@ impl SchemaResolver {
             .and_then(|c| c.schemas.get(&name))
             .ok_or_else(|| anyhow!("schema {} not found in external file {:?}", name, canonical))?;
 
-        let external_resolver =
+        let mut external_resolver =
             SchemaResolver::from_components(doc.components.as_ref(), Some(canonical_root.clone()));
 
         *external_resolver.loaded_files.borrow_mut() = loaded.clone();
         *external_resolver.normalized_schema_cache.borrow_mut() =
             self.normalized_schema_cache.borrow().clone();
+        *external_resolver.normalized_schema_sizes.borrow_mut() =
+            self.normalized_schema_sizes.borrow().clone();
+        external_resolver.expansion_count = self.expansion_count.clone();
 
         let result = normalize_schema_ref(schema_ref, &external_resolver, visiting);
         visiting.remove(&visit_key);
         if let Ok(ref schema) = result {
             if !matches!(schema.kind, SchemaKind::CycleRef) {
+                self.normalized_schema_sizes
+                    .borrow_mut()
+                    .insert(visit_key.clone(), schema_node_count(schema));
                 self.normalized_schema_cache
                     .borrow_mut()
                     .insert(visit_key, schema.clone());
@@ -1580,6 +1650,8 @@ fn normalize_schema(
     schema_resolver: &SchemaResolver,
     visiting: &mut BTreeSet<String>,
 ) -> Result<Schema> {
+    schema_resolver.record_expansion(1)?;
+
     let mut normalized = unknown_schema();
     normalized.nullable = schema.schema_data.nullable;
 
