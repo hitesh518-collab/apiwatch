@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0] — 2026-08-03
+
+### Added
+- Frozen v4 lockfile format with SemVer guarantees
+- Legacy lock format feature gate (`legacy-lock-format`)
+- SemVer contract enforcement test (`cli_semver.rs`)
+- Parser fuzzing with `cargo-fuzz` for OpenAPI, v4 roundtrip, and observed infer
+- Performance budget regression gates (diff and lock on compat corpus)
+- Expanded compatibility corpus (20 specs: 13 passing, 7 known-failing)
+- Deterministic output snapshot hashes for lock and diff
+- Migration documentation and version upgrade tests
+- Post-release install verification smoke test
+- Compat corpus documentation
+
+### Changed
+- v2/v3 lock loading gated behind `legacy-lock-format` feature (on by default)
+- Public library interface marked as v1 stable
+
 ## Stability Guarantees (v1.0.0+)
 
 - The v4 lockfile format (`version: 4` in `api.lock`) is frozen. Future format
