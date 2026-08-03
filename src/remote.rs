@@ -244,7 +244,7 @@ mod tests {
             }
         });
 
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(500));
 
         let result = fetch_json(&url, "GET", None);
         assert!(result.is_err(), "expected error, got: {result:?}");
