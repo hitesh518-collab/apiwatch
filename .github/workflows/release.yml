@@ -193,10 +193,10 @@ jobs:
           toolchain: stable
 
       - name: Dry-run publish
-        run: cargo publish --dry-run
+        run: cargo publish --dry-run --allow-dirty
 
       - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --allow-dirty --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   bump-packages:
     needs: release
