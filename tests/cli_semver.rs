@@ -14,6 +14,7 @@ struct SubcommandContract {
     #[allow(dead_code)]
     description: String,
     flags: BTreeMap<String, FlagContract>,
+    #[allow(dead_code)]
     exit_codes: BTreeMap<String, String>,
 }
 
@@ -30,8 +31,8 @@ struct FlagContract {
 
 #[test]
 fn semver_contract_is_satisfied() {
-    let contract_data =
-        std::fs::read_to_string("compat/semver-contract.json").expect("semver contract should be readable");
+    let contract_data = std::fs::read_to_string("compat/semver-contract.json")
+        .expect("semver contract should be readable");
     let contract: SemverContract =
         serde_json::from_str(&contract_data).expect("semver contract should be valid JSON");
 
@@ -39,7 +40,9 @@ fn semver_contract_is_satisfied() {
     let cmd = apiwatch::cli::Cli::command();
 
     for subcommand_name in contract.subcommands.keys() {
-        let found = cmd.get_subcommands().any(|sc| sc.get_name() == subcommand_name);
+        let found = cmd
+            .get_subcommands()
+            .any(|sc| sc.get_name() == subcommand_name);
         assert!(
             found,
             "semver contract lists subcommand '{subcommand_name}' but CLI no longer has it"
@@ -49,12 +52,12 @@ fn semver_contract_is_satisfied() {
     for subcommand_name in contract.subcommands.keys() {
         let contract_sub = &contract.subcommands[subcommand_name];
         if let Some(cli_sub) = cmd.find_subcommand(subcommand_name) {
-            for (flag_name, flag_contract) in &contract_sub.flags {
+            for flag_name in contract_sub.flags.keys() {
                 if flag_name.starts_with("--") {
                     let long = flag_name.trim_start_matches("--");
                     let found = cli_sub.get_arguments().any(|a| {
                         a.get_long_and_visible_aliases()
-                            .map_or(false, |longs| longs.iter().any(|l| *l == long))
+                            .is_some_and(|longs| longs.contains(&long))
                     });
                     assert!(
                         found,

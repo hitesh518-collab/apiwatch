@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.0.1] — 2026-08-03
+
+### Fixed
+- **D-32:** Restored `cargo fmt` and `cargo clippy` cleanliness on `main`.
+- **D-25 + D-26:** `--required-threshold` is now persisted in v2 lockfiles and
+  round-tripped correctly (was silently discarded). Fixed double-offset timestamp
+  calculation that produced year-3996 dates.
+- **D-27:** The text output header now says "Drift detected in" instead of
+  "Verified" when observed verify finds breaking changes.
+- **D-28:** Added schema memoization cache to prevent exponential re-expansion
+  of densely-shared schema graphs (caused an indefinite hang on Stripe specs).
+- **D-29:** External `$ref` targets containing only components (no top-level
+  `openapi:` field) are now accepted as fragment files.
+- **D-30:** Bare relative filenames (e.g. `main.yaml` without `./` prefix)
+  are now resolved correctly relative to CWD.
+- **D-13:** Path operations missing a `responses` field no longer reject an
+  otherwise usable specification.
+- **D-33:** Parameter names containing control characters are now rejected at
+  OpenAPI ingestion time with a clear error message.
+- **D-34:** Path template placeholder binding validation now only considers
+  path parameters, preventing false mismatches from query parameters with
+  matching names.
+
+### Changed
+- **D-31:** Compat corpus CI job is now enabled on `push`/`pull_request`
+  (previously gated to `workflow_dispatch`). Stripe test has a 30-second
+  wall-clock timeout.
+- **D-35:** README updated to reflect v1.0.0 capabilities: corrected MSRV
+  (1.88), removed stale v0.7.0/v0.6.0 release references, removed false
+  "not included" claims about headers/config, documented `--ref-root`,
+  `--header`, `--config`, `coverage`, and `--from-url`.
+- **D-20-R:** README.md and ROADMAP.md version references updated to v1.0.0.
+
 ## [1.0.0] — 2026-08-03
 
 ### Added

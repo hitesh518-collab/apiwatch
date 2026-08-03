@@ -97,6 +97,12 @@ struct V2LockedApi {
     source: Option<String>,
     operations: Option<Vec<LockedOperation>>,
     shape: Option<Shape>,
+    #[serde(default)]
+    threshold: Option<f64>,
+    #[serde(default)]
+    first_seen: Option<String>,
+    #[serde(default)]
+    last_seen: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -116,6 +122,9 @@ enum V2RenderedApi<'a> {
     Observed {
         provenance: &'static str,
         shape: &'a Shape,
+        threshold: f64,
+        first_seen: &'a str,
+        last_seen: &'a str,
     },
 }
 
@@ -264,6 +273,9 @@ pub fn render(lock: &ApiLock) -> Result<String> {
             V2RenderedApi::Observed {
                 provenance: "observed",
                 shape: &entry.shape,
+                threshold: entry.threshold,
+                first_seen: &entry.first_seen,
+                last_seen: &entry.last_seen,
             },
         );
     }
@@ -554,7 +566,7 @@ fn chrono_now() -> String {
     let hours = time_of_day / 3600;
     let minutes = (time_of_day % 3600) / 60;
     let seconds = time_of_day % 60;
-    let (year, month, day) = civil_from_days(days_since_epoch as i64 + 719468);
+    let (year, month, day) = civil_from_days(days_since_epoch as i64);
     format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
 }
 
@@ -613,9 +625,9 @@ fn load_v2(contents: &str) -> Result<ApiLock> {
                     name,
                     ObservedEntry {
                         shape,
-                        threshold: 1.0,
-                        first_seen: String::new(),
-                        last_seen: String::new(),
+                        threshold: api.threshold.unwrap_or(1.0),
+                        first_seen: api.first_seen.unwrap_or_default(),
+                        last_seen: api.last_seen.unwrap_or_default(),
                     },
                 );
             }
@@ -691,15 +703,13 @@ pub fn select_verify_target(lock: &ApiLock, name: &str) -> Result<VerifyTarget> 
             })
             .collect::<Result<_>>()?;
 
-        return Ok(VerifyTarget {
+        Ok(VerifyTarget {
             name: name.to_string(),
             kind: VerifyTargetKind::LegacyDeclared { operations },
-        });
+        })
     }
     #[cfg(not(feature = "legacy-lock-format"))]
-    Err(anyhow!(
-        "api {name} not found in lockfile"
-    ))
+    Err(anyhow!("api {name} not found in lockfile"))
 }
 
 pub fn compare_verify_target(target: &VerifyTarget, current: &ApiContract) -> Result<Vec<Change>> {
