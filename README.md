@@ -19,7 +19,7 @@ external API expectations reviewable in Git and enforceable in CI.
 
 ## Status
 
-APIWatch v1.0.0 is the first stable release. It bundles declared and observed
+APIWatch v1.0.2 is the current stable release. It bundles declared and observed
 contract verification, the complete Phase 2 comparison model, lockfile v4,
 JSON and SARIF output, a reusable GitHub Action, and source-building Homebrew
 and Scoop definitions.
@@ -87,7 +87,7 @@ apiwatch verify body.json --name portfolio --lock api.lock
 
 APIWatch records JSON structure, never captured values. `record` is an
 explicit learning command that updates a lock; `verify` only checks it.
-Observed entries currently accept local JSON files only.
+Observed entries accept local JSON files, HAR captures, and live URL recording.
 
 An observed contract represents the samples supplied to it. It does not prove
 that every endpoint, response variant, conditional field, or error shape has
@@ -157,12 +157,31 @@ invalid input or operational failure. Declared Verify JSON version 2 includes
 
 ## Installation
 
-Source builds require Rust 1.88 or newer. APIWatch declares and checks this
-minimum in CI so dependency changes cannot raise it silently.
+APIWatch is published on [crates.io](https://crates.io/crates/apiwatch) and
+requires Rust 1.88 or newer. APIWatch declares and checks this minimum in CI
+so dependency changes cannot raise it silently.
+
+### cargo install (recommended)
+
+```bash
+cargo install apiwatch
+```
+
+This is the fastest way to get started and pulls the latest published version.
+
+### Source build
+
+```bash
+git clone https://github.com/hitesh518-collab/apiwatch.git
+cd apiwatch
+cargo build --release
+```
+
+The binary is then available at `target/release/apiwatch`.
 
 ### Homebrew
 
-The repository includes a source-building Homebrew formula for the v1.0.0
+The repository includes a source-building Homebrew formula for the v1.0.2
 tagged release:
 
 ```bash
@@ -176,7 +195,7 @@ available.
 
 ### Scoop
 
-The repository includes a source-building Scoop manifest for the v1.0.0
+The repository includes a source-building Scoop manifest for the v1.0.2
 tagged release:
 
 ```powershell
@@ -189,8 +208,8 @@ Scoop installs Rust automatically. Rust source builds on Windows also require
 Microsoft C++ Build Tools and a Windows SDK. This manifest is not yet in a
 Scoop bucket.
 
-Prebuilt binaries, crates.io installation, a Homebrew tap, a Scoop bucket, and
-automated release updates are part of the
+Prebuilt binaries, a Homebrew tap, a Scoop bucket, and automated release
+updates are part of the
 [continuous distribution track](ROADMAP.md#continuous-distribution-track).
 
 ## GitHub Action
@@ -243,9 +262,9 @@ older locks retain the coverage limitations shown below.
 | Array model (D-10) | Resolved with first-class array items. | Phase 2 |
 | Enum severity (D-11) | Resolved with directional request/response enum policy. | Phase 2 |
 | OpenAPI 3.1 (D-12) | Resolved: OpenAPI 3.1 nullable type arrays are supported. | [Phase 3](ROADMAP.md#phase-3--real-world-compatibility) |
-| Strict metadata parsing (D-13) | Irrelevant malformed metadata can reject an otherwise usable specification. | Phase 3 |
-| Recursive schemas (D-14) | Circular schema references are currently rejected. | Phase 3 |
-| External references (D-15) | External and multi-file `$ref` targets are unsupported. | Phase 3 |
+| Strict metadata parsing (D-13) | Resolved: metadata strictness relaxed for real-world specs like DigitalOcean. | Phase 3 |
+| Recursive schemas (D-14) | Resolved: cycle detection and schema expansion budget handles recursive and densely-shared schemas. | Phase 3 |
+| External references (D-15) | Resolved: external `$ref` targets with `components:`-wrapped fragments are supported. | Phase 3 |
 | Legacy declared locks (D-16) | Versions 1 and 2 are route-only; v3 is partial for Phase 2. All require re-locking from original sources for full v4 coverage. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
 | Null observations (D-17) | Resolved with observation-floor hardening and lenient null at verify time. | [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts) |
 | Observed requiredness (D-18) | Resolved with configurable `--required-threshold` and confidence metadata. | Phase 4 |

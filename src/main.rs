@@ -63,7 +63,7 @@ jobs:
                 output.display()
             );
             println!(
-                "  2. Or lock: apiwatch lock --openapi spec.yaml --name my-api --output {}",
+                "  2. Or lock: apiwatch lock spec.yaml --name my-api --output {}",
                 output.display()
             );
             println!(
@@ -237,6 +237,14 @@ jobs:
 
                 let effective_name = name.as_deref();
                 if let Some(single_name) = effective_name {
+                    if recordings.len() > 1 {
+                        anyhow::bail!(
+                            "--from-har contains {} distinct endpoints; --name would merge them \
+                             into one incoherent entry. Remove --name to auto-key by method+path, \
+                             or use --path-identity to scope to a single endpoint.",
+                            recordings.len()
+                        );
+                    }
                     let mut first = true;
                     for recs in recordings.values() {
                         for rec in recs {

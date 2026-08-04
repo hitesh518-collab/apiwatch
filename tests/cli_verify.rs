@@ -1403,7 +1403,7 @@ fn verify_matching_observed_json_honors_json_format() {
     assert_eq!(parsed["command"], "verify");
     assert_eq!(parsed["name"], "portfolio");
     assert_eq!(parsed["provenance"], "observed");
-    assert_eq!(parsed["threshold"], 0.5);
+    assert_eq!(parsed["threshold"], 1.0);
     assert_eq!(parsed["summary"]["breaking"], 0);
     assert!(parsed["changes"].as_array().is_some_and(|a| a.is_empty()));
     assert!(parsed["tiered"].as_array().is_some_and(|a| !a.is_empty()));

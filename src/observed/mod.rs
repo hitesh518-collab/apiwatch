@@ -29,7 +29,7 @@ pub enum Shape {
     Unknown,
 }
 
-pub const DEFAULT_REQUIRED_THRESHOLD: f64 = 0.5;
+pub const DEFAULT_REQUIRED_THRESHOLD: f64 = 1.0;
 pub const MINIMUM_OBSERVATION_FLOOR: u64 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

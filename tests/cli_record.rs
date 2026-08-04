@@ -360,8 +360,8 @@ fn record_from_har_with_status_filter() {
 }
 
 #[test]
-fn record_from_har_with_name_merges_all_under_single_key() {
-    let output = temp_lock_path("har-name");
+fn record_from_har_with_name_rejects_multi_endpoint() {
+    let output = temp_lock_path("har-name-multi");
     let output_arg = output.to_str().expect("temp path should be valid UTF-8");
 
     Command::cargo_bin("apiwatch")
@@ -376,14 +376,12 @@ fn record_from_har_with_name_merges_all_under_single_key() {
             "my-api",
         ])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("Recorded 3 endpoints:"));
+        .failure()
+        .stderr(predicate::str::contains(
+            "--from-har contains 3 distinct endpoints; --name would merge them",
+        ));
 
-    let lock = fs::read_to_string(&output).expect("lock should exist");
     fs::remove_file(&output).ok();
-
-    assert!(lock.contains("my-api"));
-    assert_eq!(lock.matches("provenance: observed").count(), 1);
 }
 
 #[test]
