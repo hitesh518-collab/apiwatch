@@ -85,6 +85,11 @@ apis:
   observed. Union variants are deterministic.
 - Version-1 declared locks remain readable. Adding an observed entry upgrades
   the rendered lock to version 2.
+- Observed entries currently serialize as v2 (extended with `threshold`,
+  `first_seen`, and `last_seen` metadata as of v1.0.3). A migration to a
+  content-addressed observed format (v4/v5) is planned for APIWatch v2.0.0.
+  Until then, v2 is the stable observed format and covered by the same
+  legacy read support as declared v2/v3 entries.
 
 ### Observed Maps
 
