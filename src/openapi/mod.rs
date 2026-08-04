@@ -705,13 +705,32 @@ fn canonicalize_path_parameters(
             return Err(anyhow!("duplicate path parameter binding"));
         }
     }
-    for name in placeholder_names {
+    for (slot, name) in placeholder_names.iter().enumerate() {
         if !canonical.iter().any(|(key, parameter)| {
             key.location == ParameterLocation::Path && parameter.name == *name
         }) {
-            return Err(anyhow!(
-                "path template placeholder {name} is not bound to a path parameter"
-            ));
+            let synthesized = Parameter {
+                name: name.clone(),
+                required: true,
+                schema: Schema {
+                    kind: SchemaKind::String,
+                    nullable: false,
+                    format: None,
+                    enum_values: Vec::new(),
+                    properties: BTreeMap::new(),
+                    items: None,
+                    additional_properties: AdditionalProperties::Forbidden,
+                    branches: Vec::new(),
+                    cycle_target: None,
+                },
+            };
+            canonical.insert(
+                ParameterKey {
+                    location: ParameterLocation::Path,
+                    name: format!("{{{slot}}}"),
+                },
+                synthesized,
+            );
         }
     }
     Ok(canonical)
@@ -917,7 +936,7 @@ fn normalize_auth_requirements(
                 if !matches!(identity, AuthIdentity::Unknown { .. })
                     && !identities.insert(identity.clone())
                 {
-                    return Err(anyhow!("duplicate authentication identity"));
+                    continue;
                 }
             }
 
