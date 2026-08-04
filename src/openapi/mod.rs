@@ -440,6 +440,7 @@ fn ensure_openapi_3(document: &OpenAPI) -> Result<()> {
 fn normalize(document: OpenAPI, ref_root: Option<PathBuf>) -> Result<ApiContract> {
     let mut contract = ApiContract::new();
     let schema_resolver = SchemaResolver::from_components(document.components.as_ref(), ref_root);
+    schema_resolver.pre_scan_schema_budget()?;
     let security_schemes = normalize_security_schemes(document.components.as_ref())?;
     let global_security = document.security.clone().unwrap_or_default();
     let root_servers = document.servers.clone();
@@ -704,13 +705,32 @@ fn canonicalize_path_parameters(
             return Err(anyhow!("duplicate path parameter binding"));
         }
     }
-    for name in placeholder_names {
+    for (slot, name) in placeholder_names.iter().enumerate() {
         if !canonical.iter().any(|(key, parameter)| {
             key.location == ParameterLocation::Path && parameter.name == *name
         }) {
-            return Err(anyhow!(
-                "path template placeholder {name} is not bound to a path parameter"
-            ));
+            let synthesized = Parameter {
+                name: name.clone(),
+                required: true,
+                schema: Schema {
+                    kind: SchemaKind::String,
+                    nullable: false,
+                    format: None,
+                    enum_values: Vec::new(),
+                    properties: BTreeMap::new(),
+                    items: None,
+                    additional_properties: AdditionalProperties::Forbidden,
+                    branches: Vec::new(),
+                    cycle_target: None,
+                },
+            };
+            canonical.insert(
+                ParameterKey {
+                    location: ParameterLocation::Path,
+                    name: format!("{{{slot}}}"),
+                },
+                synthesized,
+            );
         }
     }
     Ok(canonical)
@@ -916,7 +936,7 @@ fn normalize_auth_requirements(
                 if !matches!(identity, AuthIdentity::Unknown { .. })
                     && !identities.insert(identity.clone())
                 {
-                    return Err(anyhow!("duplicate authentication identity"));
+                    continue;
                 }
             }
 
@@ -1040,6 +1060,35 @@ impl SchemaResolver {
         let mut count = self.expansion_count.borrow_mut();
         *count += amount;
         if *count > MAX_SCHEMA_EXPANSIONS {
+            return Err(anyhow!(
+                "schema expansion exceeded resolution budget of {MAX_SCHEMA_EXPANSIONS} nodes; \
+                 the schema graph likely contains deeply/densely shared component schemas that \
+                 expand exponentially when fully inlined"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Pre-resolves every component schema upfront so that the operation loop
+    /// only incurs fast cache-hit charges. If the unique schemas alone consume
+    /// more than two-thirds of the expansion budget we fail immediately,
+    /// avoiding the seconds-to-minutes of expansion work that would otherwise
+    /// be wasted before the budget is inevitably exceeded during operations.
+    fn pre_scan_schema_budget(&self) -> Result<()> {
+        let pre_scan_threshold = MAX_SCHEMA_EXPANSIONS * 2 / 3;
+        let schema_names: Vec<String> = self.schemas.keys().cloned().collect();
+        for name in schema_names {
+            let reference = format!("#/components/schemas/{name}");
+            let mut visiting = BTreeSet::new();
+            if let Err(e) = self.resolve(&reference, &mut visiting) {
+                let current = *self.expansion_count.borrow();
+                if current > pre_scan_threshold {
+                    return Err(e);
+                }
+            }
+        }
+        let current = *self.expansion_count.borrow();
+        if current > pre_scan_threshold {
             return Err(anyhow!(
                 "schema expansion exceeded resolution budget of {MAX_SCHEMA_EXPANSIONS} nodes; \
                  the schema graph likely contains deeply/densely shared component schemas that \

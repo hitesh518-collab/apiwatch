@@ -147,11 +147,8 @@ fn kubernetes_is_compatible() {
 
 #[test]
 #[ignore = "requires commit-pinned compatibility corpus"]
-fn intercom_reproduces_known_path_parameter_binding_failure() {
-    assert_known_failure(
-        "intercom.yaml",
-        "path template placeholder job_identifier is not bound to a path parameter",
-    );
+fn intercom_is_compatible() {
+    assert_clean_self_diff("intercom.yaml");
 }
 
 #[test]
@@ -162,8 +159,8 @@ fn slack_reproduces_known_parameter_schema_failure() {
 
 #[test]
 #[ignore = "requires commit-pinned compatibility corpus"]
-fn figma_reproduces_known_duplicate_auth_failure() {
-    assert_known_failure("figma.yaml", "duplicate authentication identity");
+fn figma_is_compatible() {
+    assert_clean_self_diff("figma.yaml");
 }
 
 #[test]

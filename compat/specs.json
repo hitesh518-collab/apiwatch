@@ -206,8 +206,7 @@
       "url": "https://raw.githubusercontent.com/intercom/Intercom-OpenAPI/d04d4798a68a8b77aabdf7d117d71865b72ed571/descriptions/2.16/api.intercom.io.yaml",
       "sha256": "9bd5a638adefc6a81f18a25905151889a64f8a16378decc03ed9cc4e75c44a2e",
       "max_bytes": 52428800,
-      "status": "known_failing",
-      "expected_error": "path template placeholder job_identifier is not bound to a path parameter"
+      "status": "passing"
     },
     {
       "name": "slack",
@@ -224,8 +223,7 @@
       "url": "https://raw.githubusercontent.com/figma/rest-api-spec/e854a2c2dff3ff8cb743e9a06575fbbf225faa33/openapi/openapi.yaml",
       "sha256": "06c46b4a12731d12ea51efaf01a946bb997d8103861cfa192e3e6df40883eba0",
       "max_bytes": 52428800,
-      "status": "known_failing",
-      "expected_error": "duplicate authentication identity"
+      "status": "passing"
     },
     {
       "name": "openai",

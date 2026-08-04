@@ -8,6 +8,7 @@
 | v2 | Observed entries, per-entry shapes | None | Run `apiwatch lock` to upgrade |
 | v3 | Phase 1 payload reduction, partial coverage | None | Re-lock from original OpenAPI source |
 | v4 (current) | Full contract payload, observed contracts | None | Already current |
+| v4/v5 (planned, v2.0.0) | Content-addressed observed entries | TBD | Re-record from original HAR/JSON/URL source |
 
 ## Compatibility Guarantee
 
@@ -24,7 +25,7 @@ produces v4.
 v2 locks contain route-only declared entries and optional observed shapes.
 
 ```
-apiwatch lock --openapi path/to/spec.yaml --name my-api --output api.lock --update
+apiwatch lock path/to/spec.yaml --name my-api --output api.lock --update
 ```
 
 This loads the existing v2 lock, replaces the named entry with a full v4
@@ -36,7 +37,7 @@ v3 locks contain Phase 1 contract payloads with reduced scope. For full
 contract coverage:
 
 ```
-apiwatch lock --openapi path/to/spec.yaml --name my-api --output api.lock --update
+apiwatch lock path/to/spec.yaml --name my-api --output api.lock --update
 ```
 
 v3 locks work correctly for diff and verify, but declared verify provides only
@@ -47,7 +48,7 @@ coverage.
 
 ```
 apiwatch init --output api.lock
-apiwatch lock --openapi spec.yaml --name my-api --output api.lock
+apiwatch lock spec.yaml --name my-api --output api.lock
 apiwatch record --from-har capture.har --output api.lock
 git add api.lock .github/workflows/
 git commit -m "add apiwatch contract checking"
