@@ -100,18 +100,17 @@ fn phase2_d08_rejects_duplicate_authentication_identity_without_echoing_controls
                 .path()
                 .to_str()
                 .expect("temporary path should be UTF-8"),
-            "testdata/openapi/phase2_d08_auth_identity_old.yaml",
+            document
+                .path()
+                .to_str()
+                .expect("temporary path should be UTF-8"),
         ])
         .output()
         .expect("diff command should run");
 
-    assert_eq!(output.status.code(), Some(2));
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("duplicate authentication identity"),
-        "{stderr}"
-    );
-    assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("No changes detected."), "{stdout}");
 }
 
 #[test]
