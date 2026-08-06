@@ -1,7 +1,7 @@
 # APIWatch Phase 2 v4 Lock-Size Report
 
 - Report schema: 1
-- APIWatch: 1.0.2 (b3629e2)
+- APIWatch: 1.0.3 (f52a5b4)
 - Ceiling: 5242880 bytes
 
 | Corpus | Commit | SHA-256 | Source bytes | Status | Operations | v4 contract payload |
@@ -34,18 +34,12 @@ Expected `shopify` failure: `parameter name contains invalid characters`
 | twilio | `bb6288e9f540d2d63540bbaadf6b73fd262c2df3` | `768720d76b47f1b75896c8fe092fac59b886bd3370278b27b6962b83cacae12e` | 1496453 | passing | 197 | 521155 (fits) |
 | adyen | `425d65d12163ebd4fe6fa6d2f859075817c81cba` | `1498fbccd44b48a97328907bd1cbada2f6db9a92ae43ba4d0c68d45908356dc8` | 937956 | passing | 28 | 389292 (fits) |
 | kubernetes | `0f914a00561edadef5b6ef19c443cab232c39527` | `d09ab224a98fb9c0e7fd128b6f395f66b23d43b6635272109dcaaafc4a3dd9c9` | 2135483 | passing | 248 | 776349 (fits) |
-| intercom | `d04d4798a68a8b77aabdf7d117d71865b72ed571` | `9bd5a638adefc6a81f18a25905151889a64f8a16378decc03ed9cc4e75c44a2e` | 1317483 | known_failing | — | — |
-
-Expected `intercom` failure: `path template placeholder job_identifier is not bound to a path parameter`
-
+| intercom | `d04d4798a68a8b77aabdf7d117d71865b72ed571` | `9bd5a638adefc6a81f18a25905151889a64f8a16378decc03ed9cc4e75c44a2e` | 1317483 | passing | 231 | 681063 (fits) |
 | slack | `dfea73e06d146c368d7f94b52ac90796dc4e27e1` | `742a5c977180a829df8767cf57bc417d99b3713583aee83741efb9c08ca731e7` | 1237332 | known_failing | — | — |
 
 Expected `slack` failure: `no variant of enum ParameterSchemaOrContent found in flattened data`
 
-| figma | `e854a2c2dff3ff8cb743e9a06575fbbf225faa33` | `06c46b4a12731d12ea51efaf01a946bb997d8103861cfa192e3e6df40883eba0` | 388252 | known_failing | — | — |
-
-Expected `figma` failure: `duplicate authentication identity`
-
+| figma | `e854a2c2dff3ff8cb743e9a06575fbbf225faa33` | `06c46b4a12731d12ea51efaf01a946bb997d8103861cfa192e3e6df40883eba0` | 388252 | passing | 50 | 548202 (fits) |
 | openai | `117ce5680e4269f6656a4fd70d28f9755630d938` | `e9cfcc3a325093a640af9e3b289dd4fa69f0c03e3a9af425fda47a5fe1238361` | 2845483 | known_failing | — | — |
 
 Expected `openai` failure: `failed to parse OpenAPI YAML`

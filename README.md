@@ -21,8 +21,9 @@ external API expectations reviewable in Git and enforceable in CI.
 
 APIWatch v1.0.2 is the current stable release. It bundles declared and observed
 contract verification, the complete Phase 2 comparison model, lockfile v4,
-JSON and SARIF output, a reusable GitHub Action, and source-building Homebrew
-and Scoop definitions.
+JSON and SARIF output, a reusable GitHub Action, release binaries, a container
+image, crates.io publication, and source-building Homebrew and Scoop
+definitions.
 
 Current v4 declared locks contain the complete Phase 2 normalized contract.
 Declared `verify` uses the same semantic comparison engine as `diff`, covering
@@ -46,7 +47,7 @@ apiwatch verify openapi.yaml --name users --lock api.lock
 apiwatch verify https://api.example.com/openapi.yaml --name users --lock api.lock
 ```
 
-The declared-contract path currently targets OpenAPI 3.0 YAML and JSON.
+The declared-contract path supports OpenAPI 3.0 and 3.1 YAML and JSON.
 `apiwatch diff` normalizes two documents and reports semantic changes.
 `apiwatch lock` creates a deterministic v4 full-contract entry and refuses to
 overwrite an existing file. Use `--update` for deliberate atomic replacement.
@@ -67,7 +68,7 @@ per-project configuration (ignore rules, severity overrides, fail thresholds).
 Use `--ref-root <PATH>` when the spec is in a different directory than its
 `$ref` targets.
 
-`apiwatch coverage api.lock` reports endpoint and field coverage for observed
+`apiwatch coverage --lock api.lock` reports endpoint and field coverage for observed
 entries.
 
 Remote verification uses a 10-second timeout and a 10 MiB response limit.
@@ -91,8 +92,9 @@ Observed entries accept local JSON files, HAR captures, and live URL recording.
 
 An observed contract represents the samples supplied to it. It does not prove
 that every endpoint, response variant, conditional field, or error shape has
-been observed. Confidence-aware requiredness and coverage reporting are
-planned in [Roadmap Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts).
+been observed. Current v2 observed locks retain observation counts, timestamps,
+requiredness thresholds, and coverage reporting; content-addressed observed
+entries are planned for APIWatch v2.0.0.
 
 ## Quickstart
 
@@ -127,8 +129,7 @@ APIWatch never infers maps automatically. An annotation is required because
 choosing map semantics changes compatibility. Stored locks and Verify
 diagnostics contain field names, JSON paths, and shape names only—never
 dynamic map keys or captured scalar values. Bracket notation, arrays,
-wildcards, filters, scripts, advanced JSONPath, and coverage reporting are not
-currently supported.
+wildcards, filters, and scripts are not currently supported.
 
 When a dynamic map value is incompatible, diagnostics use the stable redacted
 segment `<map-value>`—for example,
@@ -238,10 +239,11 @@ and `working-directory` defaults to `.`. `sarif-file` is relative to
 `security-events: write`. A Verify drift report uploads before the action
 returns exit `1`.
 
-Pin the action to a commit SHA or release tag. The action currently builds
-APIWatch from source with Cargo, propagates Verify's `0`/`1`/`2` exit codes,
-and supports the `working-directory` input. It does not provide caching,
-action outputs, authentication, custom headers, or configuration files.
+Pin the action to a commit SHA or release tag. The action downloads the
+matching release binary when available and falls back to building APIWatch from
+source with Cargo. It propagates Verify's `0`/`1`/`2` exit codes and supports
+the `working-directory` input. It does not yet verify `SHA256SUMS` or expose
+custom header and configuration-file inputs.
 
 ### Known Limitations
 
@@ -261,15 +263,17 @@ older locks retain the coverage limitations shown below.
 | Composition (D-09) | Resolved through `allOf` intersection and order-independent `oneOf`/`anyOf` comparison. | Phase 2 |
 | Array model (D-10) | Resolved with first-class array items. | Phase 2 |
 | Enum severity (D-11) | Resolved with directional request/response enum policy. | Phase 2 |
-| OpenAPI 3.1 (D-12) | Resolved: OpenAPI 3.1 nullable type arrays are supported. | [Phase 3](ROADMAP.md#phase-3--real-world-compatibility) |
-| Strict metadata parsing (D-13) | Resolved: metadata strictness relaxed for real-world specs like DigitalOcean. | Phase 3 |
-| Recursive schemas (D-14) | Resolved: cycle detection and schema expansion budget handles recursive and densely-shared schemas. | Phase 3 |
-| External references (D-15) | Resolved: external `$ref` targets with `components:`-wrapped fragments are supported. | Phase 3 |
+| OpenAPI 3.1 (D-12) | Resolved: OpenAPI 3.1 nullable type arrays are supported. | Completed |
+| Strict metadata parsing (D-13) | Resolved: metadata strictness relaxed for real-world specs like DigitalOcean. | Completed |
+| Recursive schemas (D-14) | Resolved: cycle detection and schema expansion budget handles recursive and densely-shared schemas. | Completed |
+| External references (D-15) | Resolved: external `$ref` targets with `components:`-wrapped fragments are supported. | Completed |
 | Legacy declared locks (D-16) | Versions 1 and 2 are route-only; v3 is partial for Phase 2. All require re-locking from original sources for full v4 coverage. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
 | Null observations (D-17) | Resolved with observation-floor hardening and lenient null at verify time. | [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts) |
 | Observed requiredness (D-18) | Resolved with configurable `--required-threshold` and confidence metadata. | Phase 4 |
 | Observed recording (D-19) | HAR import and live URL recording implemented; passive proxy is post-v1. | [Phase 5](ROADMAP.md#phase-5--frictionless-recording-and-ci-adoption) |
-| Distribution | The Action, Homebrew formula, and Scoop manifest still build from source. | [Continuous distribution](ROADMAP.md#continuous-distribution-track) |
+| Distribution | The Action downloads release binaries with a source-build fallback; Homebrew and Scoop remain source-build integrations without published taps or buckets. | [Continuous distribution](ROADMAP.md#continuous-distribution-track) |
+| Observed lock format | Observed entries remain v2 through v1.x; content-addressed observed entries are planned for v2.0.0. | [Migration guide](docs/migration.md) |
+| Swagger 2.0 | Not supported; the pinned `deutsche-bahn` corpus entry remains known-failing. | [Post-v1 queue](ROADMAP.md#post-v1-delivery-queue) |
 
 Repeated phase names in the table refer to the linked phase in the first row
 for that group. See [ROADMAP.md](ROADMAP.md) for exit criteria.

@@ -1,7 +1,7 @@
 # APIWatch Phase 1 Lock-Size Report
 
 - Report schema: 1
-- APIWatch: 1.0.2 (b3629e2)
+- APIWatch: 1.0.3 (f52a5b4)
 - Ceiling: 5242880 bytes
 
 | Corpus | Commit | Source bytes | Status | Operations | Expanded YAML | Canonical JSON | Deduplicated YAML |
@@ -34,18 +34,12 @@ Expected `shopify` failure: `parameter name contains invalid characters`
 | twilio | `bb6288e9f540d2d63540bbaadf6b73fd262c2df3` | 1496453 | passing | 197 | 1921795 (fits) | 1061970 (fits) | 508457 (fits) |
 | adyen | `425d65d12163ebd4fe6fa6d2f859075817c81cba` | 937956 | passing | 28 | 2588380 (fits) | 1167851 (fits) | 393822 (fits) |
 | kubernetes | `0f914a00561edadef5b6ef19c443cab232c39527` | 2135483 | passing | 248 | 312536737 (over) | 91147295 (over) | 761018 (fits) |
-| intercom | `d04d4798a68a8b77aabdf7d117d71865b72ed571` | 1317483 | known_failing | — | — | — | — |
-
-Expected `intercom` failure: `path template placeholder job_identifier is not bound to a path parameter`
-
+| intercom | `d04d4798a68a8b77aabdf7d117d71865b72ed571` | 1317483 | passing | 231 | 8260580 (over) | 3518638 (fits) | 677598 (fits) |
 | slack | `dfea73e06d146c368d7f94b52ac90796dc4e27e1` | 1237332 | known_failing | — | — | — | — |
 
 Expected `slack` failure: `no variant of enum ParameterSchemaOrContent found in flattened data`
 
-| figma | `e854a2c2dff3ff8cb743e9a06575fbbf225faa33` | 388252 | known_failing | — | — | — | — |
-
-Expected `figma` failure: `duplicate authentication identity`
-
+| figma | `e854a2c2dff3ff8cb743e9a06575fbbf225faa33` | 388252 | passing | 50 | 50878054 (over) | 12344002 (over) | 553437 (fits) |
 | openai | `117ce5680e4269f6656a4fd70d28f9755630d938` | 2845483 | known_failing | — | — | — | — |
 
 Expected `openai` failure: `failed to parse OpenAPI YAML`

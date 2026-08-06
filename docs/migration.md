@@ -7,7 +7,7 @@
 | v1 | Route-only declared entries | None | Automatic: re-serialize writes v2 |
 | v2 | Observed entries, per-entry shapes | None | Run `apiwatch lock` to upgrade |
 | v3 | Phase 1 payload reduction, partial coverage | None | Re-lock from original OpenAPI source |
-| v4 (current) | Full contract payload, observed contracts | None | Already current |
+| v4 (current declared) | Full declared contract payload; observed entries remain v2 | None | Already current for declared entries |
 | v4/v5 (planned, v2.0.0) | Content-addressed observed entries | TBD | Re-record from original HAR/JSON/URL source |
 
 ## Compatibility Guarantee

@@ -17,44 +17,44 @@ single country, industry, or design-partner project.
 
 ## Current State
 
-The latest tagged release is v1.0.0, which bundles all six phases. It includes
-v3 and v4 declared lockfiles with the complete comparison model, full-contract
-declared Verify, versioned observed JSON contracts, JSON and SARIF output, a
-reusable GitHub Action, and source-building Homebrew and Scoop definitions.
-OpenAPI 3.1 is implemented, external `$ref` targets are supported, and the
-comparison engine covers all Phase 1 and 2 defect classes.
+The latest tagged release is v1.0.2. It includes v4 declared lockfiles with the
+complete comparison model, full-contract declared Verify, versioned observed
+JSON contracts, JSON and SARIF output, a reusable GitHub Action, release
+binaries, a container image, crates.io publication, and source-building
+Homebrew and Scoop definitions. OpenAPI 3.1 is implemented, external `$ref`
+targets are supported, and the comparison engine covers all Phase 1 and 2
+defect classes.
 
 Important limitations remain:
 
 - declared v1 and v2 locks remain route-only, v3 locks have partial Phase 2
   coverage, and all need original sources to migrate to current v4;
-- real-world specification compatibility and binary distribution are
-  incomplete;
+- the compatibility corpus still records known failures for Swagger 2.0,
+  unsupported path references, malformed upstream metadata, and parser limits;
+- Homebrew and Scoop are source-build integrations rather than published taps or
+  buckets, and the Action retains a source-build fallback;
 - observed contracts prove sampled structure, not complete runtime coverage.
 
 ## Milestone Transition
 
-The former v0.6.5 roadmap was an unreleased planning milestone. It is retired
-as a delivery sequence. Completed observed-contract and `--map-at` work is
-preserved and carried into the planned v0.7.0 release.
+Phases 0–6 are the historical delivery sequence behind the v1.0.2 release.
+The Phase 5 recording and adoption features shipped before v1.0.0, and the
+Phase 6 release and compatibility gates were hardened through v1.0.2. New work
+is now ordered around green CI, accurate documentation, distribution polish,
+and the next observed-lock format rather than the old pre-v1 feature list.
 
-Remaining v0.6.5 tasks move according to product dependency:
-
-- output correctness, release integrity, and honest documentation move into
-  Phase 0;
-- observed confidence and coverage move into Phase 4;
-- HAR and live recording move into Phase 5;
-- proxy or passive runtime capture moves to post-v1.
-
-New observed features remain frozen while Phases 0–3 establish a trustworthy
-declared-contract foundation. No completed observed work is discarded.
+Proxy or passive runtime capture remains post-v1 exploration. Observed entries
+remain in the stable v2 representation through the v1.x line; a content-
+addressed observed representation is planned for APIWatch v2.0.0.
 
 Roadmap phases specify dependency order. Target release numbers communicate
 intent but may change without reordering the phases.
 
 ## Phase 0 — Stabilize and Release Honestly
 
-**Target:** v0.7.0
+**Status:** Completed in v0.7.0 and subsequent stabilization releases.
+
+**Historical target:** v0.7.0
 
 **Goal:** make the existing product installable, internally aligned, and
 accurately represented before adding features.
@@ -86,7 +86,9 @@ understand exactly what APIWatch does and does not verify.
 
 ## Phase 1 — Make `verify` Meaningful
 
-**Target:** v0.8.0
+**Status:** Completed and superseded by the current v4 declared format.
+
+**Historical target:** v0.8.0
 
 **Goal:** make a declared API lock contain enough information to detect the
 contract changes APIWatch promises to catch.
@@ -130,7 +132,9 @@ exits `1` with four correctly classified breaking findings.
 
 ## Phase 2 — Make the Comparison Engine Trustworthy
 
-**Target:** v0.9.0
+**Status:** Completed. D-01 through D-11 have regression coverage.
+
+**Historical target:** v0.9.0
 
 **Goal:** eliminate the confirmed cases where semantic diffing misses real
 breakage or reports harmless changes as breaking.
@@ -173,7 +177,10 @@ corpus entry, and the complete local phase gate passes.
 
 ## Phase 3 — Real-World Compatibility
 
-**Target:** v0.10.0
+**Status:** Core scope completed through v1.0.2; the corpus continues to track
+known upstream and unsupported-input failures.
+
+**Historical target:** v0.10.0
 
 **Goal:** make declared contracts work against the specifications and delivery
 patterns users encounter outside controlled fixtures.
@@ -206,7 +213,11 @@ correctly, and a split specification resolves `./schemas.yaml#/User` safely.
 
 ## Phase 4 — Trustworthy Observed Contracts
 
-**Target:** v0.11.0
+**Status:** Core confidence, requiredness, privacy, coverage, and deterministic
+observed-lock behavior are implemented. Content-addressed observed migration is
+deferred to v2.0.0.
+
+**Historical target:** v0.11.0
 
 **Goal:** make the confidence and boundaries of inferred response shapes
 explicit enough for reliable CI use.
@@ -241,7 +252,10 @@ captured scalar values, credentials, or dynamic map keys.
 
 ## Phase 5 — Frictionless Recording and CI Adoption
 
-**Target:** v0.12.0
+**Status:** Completed. HAR import, live recording, multi-entry Verify, `init`,
+coverage reporting, and onboarding are shipped.
+
+**Historical target:** v0.12.0
 
 **Goal:** let users adopt observed contracts from real traffic without writing
 an OpenAPI document or application harness.
@@ -273,6 +287,11 @@ value-free lock, and have CI fail when a recorded response shape drifts.
 
 ## Continuous Distribution Track
 
+**Status:** The v1.0.2 tag successfully produced release binaries, checksums,
+the container image, crates.io publication, package metadata updates, and
+install verification. Published package-manager taps and checksum validation
+inside the consumer Action remain follow-up work.
+
 Distribution starts in Phase 0 and improves alongside every product phase:
 
 1. Publish and verify `cargo install apiwatch`.
@@ -291,7 +310,9 @@ users from installing; distribution is not a final cleanup project.
 
 ## Phase 6 — v1 Stabilization and Adoption
 
-**Target:** v1.0.0
+**Status:** Released in v1.0.0 and stabilized through v1.0.2.
+
+**Historical target:** v1.0.0
 
 **Goal:** make the proven REST contract workflow stable enough for long-term
 automation.
@@ -315,6 +336,19 @@ interfaces.
 APIWatch can lock and verify declared and observed REST contracts with
 documented compatibility, migration, privacy, performance, and release
 guarantees.
+
+## Post-v1 Delivery Queue
+
+1. Keep generated compatibility snapshots and lock-size reports synchronized
+   with every corpus status change, and require the full CI matrix to be green
+   before tagging a release.
+2. Finish distribution polish: verify release checksums in the consumer Action,
+   broaden install verification beyond the Linux binary, and publish Homebrew
+   and Scoop integrations through their normal tap or bucket channels.
+3. Design and implement the content-addressed observed-entry format planned for
+   APIWatch v2.0.0, with a migration path from stable v2 observed entries.
+4. Decide whether Swagger 2.0 support is in scope, using the pinned
+   `deutsche-bahn` corpus entry as the acceptance boundary if it is approved.
 
 ## Engineering Quality Gates
 

@@ -48,6 +48,14 @@
     "kubernetes": {
       "lock_sha256": "fd0aedd83b17ce80686176d0e80bfb79deb993aa1e5b2f1c2c2f7edf3b0bd01e",
       "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
+    },
+    "intercom": {
+      "lock_sha256": "c86dddd9359696f64f8797cd9af1162f7143d26e22e642b4f83efa22590b5d71",
+      "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
+    },
+    "figma": {
+      "lock_sha256": "f3343ac7b93853ccf89ba3028fdf5ec6cf30083ea68a01ee81fb1808aba46863",
+      "diff_output_sha256": "42e221f5f557234a4b3b024bcb69ff85385ebec9c266c1ddfa2649d15c0b2aa0"
     }
   }
 }

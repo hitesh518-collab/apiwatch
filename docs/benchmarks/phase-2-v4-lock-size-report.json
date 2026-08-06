@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "apiwatch_version": "1.0.2 (b3629e2)",
+  "apiwatch_version": "1.0.3 (f52a5b4)",
   "max_lock_bytes": 5242880,
   "corpus": [
     {
@@ -160,8 +160,10 @@
       "source_commit": "d04d4798a68a8b77aabdf7d117d71865b72ed571",
       "sha256": "9bd5a638adefc6a81f18a25905151889a64f8a16378decc03ed9cc4e75c44a2e",
       "source_bytes": 1317483,
-      "normalization_status": "known_failing",
-      "expected_error": "path template placeholder job_identifier is not bound to a path parameter"
+      "normalization_status": "passing",
+      "operation_count": 231,
+      "v4_contract_bytes": 681063,
+      "within_ceiling": true
     },
     {
       "name": "slack",
@@ -176,8 +178,10 @@
       "source_commit": "e854a2c2dff3ff8cb743e9a06575fbbf225faa33",
       "sha256": "06c46b4a12731d12ea51efaf01a946bb997d8103861cfa192e3e6df40883eba0",
       "source_bytes": 388252,
-      "normalization_status": "known_failing",
-      "expected_error": "duplicate authentication identity"
+      "normalization_status": "passing",
+      "operation_count": 50,
+      "v4_contract_bytes": 548202,
+      "within_ceiling": true
     },
     {
       "name": "openai",

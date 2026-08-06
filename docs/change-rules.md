@@ -140,8 +140,10 @@ schema.
 
 Rules should be high-confidence and explainable. False positives reduce trust, so uncertain cases should be warnings before they become breaking changes.
 
-OpenAPI 3.0 is the current declared-contract target. OpenAPI 3.1 support is
-planned in [Roadmap Phase 3](../ROADMAP.md#phase-3--real-world-compatibility).
+OpenAPI 3.0 and 3.1 are supported declared-contract targets, including nullable
+type arrays in 3.1 documents. The compatibility corpus still records separate
+unsupported-input limitations such as Swagger 2.0 and selected path-level
+references.
 Invalid input, unsupported OpenAPI versions, unsupported `$ref` locations,
 circular schema/parameter/response/request body/security scheme/path item
 references, and parse failures are input errors rather than semantic warnings.

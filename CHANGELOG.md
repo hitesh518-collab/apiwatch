@@ -1,6 +1,13 @@
 # Changelog
 
-## v1.0.2 - 2026-08-03
+## v1.0.3 - 2026-08-07
+
+### Fixed
+
+- Refreshed compatibility snapshots and lock-size reports after promoting
+  DigitalOcean, Intercom, and Figma corpus entries to their current statuses.
+- Synchronized the roadmap, compatibility documentation, and Action guidance
+  with the shipped v1.0.2 implementation and the planned v2.0.0 observed format.
 
 ## [1.0.2] — 2026-08-04
 
