@@ -2,12 +2,36 @@
 
 ## v1.0.3 - 2026-08-07
 
+### Added
+
+- Observed JSON drift hero demo with committed fixtures (local, deterministic, credential-free).
+- Three example demos: observed JSON drift, HAR-to-lock, declared OpenAPI drift.
+- `check_examples.py` smoke runner — continuously verifies all demo commands.
+- Dogfood CI workflow: weekly verification of GitHub REST API PR operations.
+- Release checksum verification script (`verify_checksum.sh`) with cross-platform support.
+- Example-smoke job in CI (`example-smoke`).
+- Reproducible terminal demo script (`demo.sh`).
+- Launch readiness checklist (`docs/adoption/launch-checklist.md`).
+
+### Changed
+
+- **README restructured:** pain-first headline, observed contracts as hero workflow, 60-second demo, fit guide, and clear privacy/limitation statements.
+- Installation order: prebuilt binaries first, `cargo install` second.
+- Action now verifies release archive checksums before extraction; integrity failure is fatal. Source-build fallback preserved only for unavailable assets.
+- CONTRIBUTING.md updated with current workflow, demo path, and privacy rules.
+
 ### Fixed
 
-- Refreshed compatibility snapshots and lock-size reports after promoting
-  DigitalOcean, Intercom, and Figma corpus entries to their current statuses.
-- Synchronized the roadmap, compatibility documentation, and Action guidance
-  with the shipped v1.0.2 implementation and the planned v2.0.0 observed format.
+- **Release pipeline trust defects:** `install-verify` pipefail ensures failure propagation; `bump-packages` now waits for install verification; release notes prepend install results instead of replacing them; `container` job waits for release creation; `cargo-publish` waits for build verification.
+- CI workflow indentation fixed for `test`, `example-smoke`, and `msrv` jobs.
+- Dogfood workflow permissions fixed (`security-events: write`).
+- GitHub Actions Node.js 20 deprecation warnings (cosmetic — checkouts already at v4).
+
+### Repository
+
+- Description updated to pain/value-focused statement.
+- Topics: `api-contract`, `drift-detection`, `lockfile` added.
+- GHCR container visibility set to Public.
 
 ## [1.0.2] — 2026-08-04
 

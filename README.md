@@ -1,5 +1,7 @@
 # apiwatch
 
+[![Latest release](https://img.shields.io/github/v/release/hitesh518-collab/apiwatch?label=release)](https://github.com/hitesh518-collab/apiwatch/releases/latest)
+
 **Catch third-party API changes before they break your app.**
 
 APIWatch records or locks the API contract your application relies on, stores
