@@ -10,6 +10,10 @@ on:
       - ci/dogfood/**
       - .github/workflows/dogfood.yml
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   verify-github-api:
     runs-on: ubuntu-latest
