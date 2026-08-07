@@ -46,7 +46,7 @@ runs:
         esac
         echo "target=$TARGET" >> "$GITHUB_OUTPUT"
 
-    - name: Download apiwatch binary
+    - name: Download release assets
       id: download
       shell: bash
       continue-on-error: true
@@ -59,25 +59,45 @@ runs:
         if [ "$RUNNER_OS" = "Windows" ]; then
           EXT="zip"
         fi
+        ARCHIVE="apiwatch-${TARGET}.${EXT}"
 
-        if [ "$VERSION" = "latest" ]; then
-          gh release download \
-            --repo "${{ github.action_repository }}" \
-            --pattern "apiwatch-${TARGET}.${EXT}" \
-            --dir "$RUNNER_TEMP"
-        else
-          gh release download "$VERSION" \
-            --repo "${{ github.action_repository }}" \
-            --pattern "apiwatch-${TARGET}.${EXT}" \
-            --dir "$RUNNER_TEMP"
+        DOWNLOAD_ARGS=(
+          --repo "${{ github.action_repository }}"
+          --dir "$RUNNER_TEMP"
+        )
+        if [ "$VERSION" != "latest" ]; then
+          DOWNLOAD_ARGS+=("$VERSION")
         fi
 
+        gh release download "${DOWNLOAD_ARGS[@]}" \
+          --pattern "$ARCHIVE" \
+          --pattern "SHA256SUMS"
+
+        echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+        echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+    - name: Verify release checksum
+      if: ${{ steps.download.outcome == 'success' }}
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        bash "$ACTION_PATH/scripts/verify_checksum.sh" \
+          "$RUNNER_TEMP/${{ steps.download.outputs.archive }}" \
+          "$RUNNER_TEMP/SHA256SUMS" \
+          "${{ steps.download.outputs.archive }}"
+
+    - name: Extract binary
+      if: ${{ steps.download.outcome == 'success' }}
+      id: extract
+      shell: bash
+      run: |
+        ARCHIVE="$RUNNER_TEMP/${{ steps.download.outputs.archive }}"
         if [ "$RUNNER_OS" = "Windows" ]; then
-          unzip -o "$RUNNER_TEMP/apiwatch-${TARGET}.zip" -d "$RUNNER_TEMP"
+          unzip -o "$ARCHIVE" -d "$RUNNER_TEMP"
         else
-          tar xzf "$RUNNER_TEMP/apiwatch-${TARGET}.tar.gz" -C "$RUNNER_TEMP"
+          tar xzf "$ARCHIVE" -C "$RUNNER_TEMP"
         fi
-
         chmod +x "$RUNNER_TEMP/apiwatch" 2>/dev/null || true
         echo "binary=$RUNNER_TEMP/apiwatch" >> "$GITHUB_OUTPUT"
 
@@ -97,7 +117,7 @@ runs:
       shell: bash
       run: |
         if [ "${{ steps.download.outcome }}" = "success" ]; then
-          echo "path=${{ steps.download.outputs.binary }}" >> "$GITHUB_OUTPUT"
+          echo "path=${{ steps.extract.outputs.binary }}" >> "$GITHUB_OUTPUT"
         else
           echo "path=${{ github.action_path }}/target/release/apiwatch" >> "$GITHUB_OUTPUT"
         fi

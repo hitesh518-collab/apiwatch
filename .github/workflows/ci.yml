@@ -18,16 +18,29 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-      - run: cargo test --workspace
+   test:
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v4
+       - uses: dtolnay/rust-toolchain@master
+         with:
+           toolchain: stable
+       - run: cargo test --workspace
 
-  msrv:
+   example-smoke:
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v4
+       - uses: dtolnay/rust-toolchain@master
+         with:
+           toolchain: stable
+       - uses: actions/setup-python@v5
+         with:
+           python-version: "3.x"
+       - run: cargo build --release
+       - run: python scripts/check_examples.py --binary target/release/apiwatch
+
+   msrv:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

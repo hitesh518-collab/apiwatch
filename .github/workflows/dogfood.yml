@@ -1,0 +1,30 @@
+name: Dogfood
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ci/dogfood/**
+      - .github/workflows/dogfood.yml
+
+jobs:
+  verify-github-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch latest GitHub API spec
+        run: |
+          mkdir -p .compat-cache
+          curl -sL -o .compat-cache/github-latest.json \
+            "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json"
+
+      - uses: ./
+        with:
+          openapi: .compat-cache/github-latest.json
+          name: github-pull-requests
+          lock: ci/dogfood/api.lock
+          sarif-file: apiwatch-dogfood.sarif

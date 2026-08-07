@@ -1,0 +1,2073 @@
+version: 4
+apis:
+  github-pull-requests:
+    provenance: declared
+    source: openapi
+    scope:
+      operations:
+      - GET /repos/{0}/{1}/pulls
+      - GET /repos/{0}/{1}/pulls/{2}
+      - GET /repos/{0}/{1}/pulls/{2}/comments
+    max_lock_bytes: 5242880
+    contract_bytes: 75742
+    contract_digest: sha256:6162506113fda72f583f7d0e7a3274685689019f84953937811632f7589f3eca
+    contract:
+      operations:
+        GET /repos/{0}/{1}/pulls:
+          display_path: /repos/{owner}/{repo}/pulls
+          auth: {}
+          servers:
+          - https://api.github.com/
+          parameters:
+            path:{0}:
+              name: owner
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            path:{1}:
+              name: repo
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            query:base:
+              name: base
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            query:direction:
+              name: direction
+              required: false
+              schema: sha256:e1310d11aae8390a8943cae87ad498857f927c09ec767c5e08a77c852e19fa01
+            query:head:
+              name: head
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            query:page:
+              name: page
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            query:per_page:
+              name: per_page
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            query:sort:
+              name: sort
+              required: false
+              schema: sha256:5f3934fff1e456454bcff5f9117dab62951ba2a1c2229d2d26547b0f84193ad1
+            query:state:
+              name: state
+              required: false
+              schema: sha256:ab481fe0f8a5932576be15ff60637b6be5987979554493cbe5f311fb12304292
+          request_body: null
+          responses:
+            '200':
+              application/json: sha256:d8275b396c104262e9e6b484b1ff84978e20ac726fbce73cf45f4387b9855632
+            '304': {}
+            '422':
+              application/json: sha256:896f545c4e5f92422ca48aaec1ac50f51a817937d01579943f2c793c8adfb09a
+        GET /repos/{0}/{1}/pulls/{2}:
+          display_path: /repos/{owner}/{repo}/pulls/{pull_number}
+          auth: {}
+          servers:
+          - https://api.github.com/
+          parameters:
+            path:{0}:
+              name: owner
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            path:{1}:
+              name: repo
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            path:{2}:
+              name: pull_number
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+          request_body: null
+          responses:
+            '200':
+              application/json: sha256:19ba8f7c56d7b4f52a299f1bf1159fa406ee573ae41b9af9d3ac8a4563aa807e
+            '304': {}
+            '404':
+              application/json: sha256:c94324baaf686cdbf15f65b72809c3418f6cdae3d29e2bf588fe35c8c630f041
+            '406':
+              application/json: sha256:c94324baaf686cdbf15f65b72809c3418f6cdae3d29e2bf588fe35c8c630f041
+            '500':
+              application/json: sha256:c94324baaf686cdbf15f65b72809c3418f6cdae3d29e2bf588fe35c8c630f041
+            '503':
+              application/json: sha256:f9e7e49323d22a20351b5ab164b5d4f01b24e5e58492073ea9f2810246719340
+        GET /repos/{0}/{1}/pulls/{2}/comments:
+          display_path: /repos/{owner}/{repo}/pulls/{pull_number}/comments
+          auth: {}
+          servers:
+          - https://api.github.com/
+          parameters:
+            path:{0}:
+              name: owner
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            path:{1}:
+              name: repo
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            path:{2}:
+              name: pull_number
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            query:direction:
+              name: direction
+              required: false
+              schema: sha256:e1310d11aae8390a8943cae87ad498857f927c09ec767c5e08a77c852e19fa01
+            query:page:
+              name: page
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            query:per_page:
+              name: per_page
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            query:since:
+              name: since
+              required: false
+              schema: sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347
+            query:sort:
+              name: sort
+              required: false
+              schema: sha256:d34ac699be2c4ce1a197e5601d5a7cc132a1c41ca65df4c94e090f8922e76957
+          request_body: null
+          responses:
+            '200':
+              application/json: sha256:32802677801a289973e0bee33b6fe44067fc6046429afb31f695a451a847fb30
+      schemas:
+        sha256:03dc522e18da21de00f569a25c3f7317e2c7a1138e03e7ec982c7064eff1ba96:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            _links:
+              required: true
+              schema: sha256:06387bc92e77de4ca460ae39155ebd1f3b261dc1efc38148752f4015938d6a1b
+            author_association:
+              required: true
+              schema: sha256:2b559741aefeaae1b950cbcd4f12b6e9dc28a09f5595178ba52f5414d3b196f0
+            body:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            body_html:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            body_text:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            commit_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            created_at:
+              required: true
+              schema: sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347
+            diff_hunk:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:3aef979d69bac01cc461cd812124f5081b4ec9153c2129c2b0964cb91f48cb4d
+            in_reply_to_id:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            line:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            original_commit_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            original_line:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            original_position:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            original_start_line:
+              required: false
+              schema: sha256:e365cd446452cec3d0d22f958703a317cbf3b43a19cbf0493684e4c40410786d
+            path:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            position:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            pull_request_review_id:
+              required: true
+              schema: sha256:4ebec343071dfb4fe8a9ec60f16e860a8a0e7f5621b6489d7ef559a5bdb5b5f6
+            pull_request_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            reactions:
+              required: false
+              schema: sha256:111971f885cf7822c9e6db4a0b79f242832c73019f3928e2f17ed470816b2805
+            side:
+              required: false
+              schema: sha256:9fa06927eb818f4b48e7c90ee028003a4b1b4e9d951e79c8de85893666623cca
+            start_line:
+              required: false
+              schema: sha256:e365cd446452cec3d0d22f958703a317cbf3b43a19cbf0493684e4c40410786d
+            start_side:
+              required: false
+              schema: sha256:313067d9202509ebe977324086bd7c73c54d90e59091ffa1fd78ac109f5dee11
+            subject_type:
+              required: false
+              schema: sha256:c852fc399fa7fe007f6aa2b68cbdbd1578b5814571f27cce720ab2174e3b39d6
+            updated_at:
+              required: true
+              schema: sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347
+            url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            user:
+              required: true
+              schema: sha256:a1900ec7dbbdc1a66b3999d5fae11fd92882a7de2a15af65859124d95e769b96
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:06387bc92e77de4ca460ae39155ebd1f3b261dc1efc38148752f4015938d6a1b:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            html:
+              required: true
+              schema: sha256:24577474e6a130355114207ab67af376e3eb1b8283efb870756351761307ecc1
+            pull_request:
+              required: true
+              schema: sha256:24577474e6a130355114207ab67af376e3eb1b8283efb870756351761307ecc1
+            self:
+              required: true
+              schema: sha256:24577474e6a130355114207ab67af376e3eb1b8283efb870756351761307ecc1
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:08db5b77ef95c465a4bf4ff05ab32d75d5d15e56ae7dc1a1fae047e2c8e09de5:
+          kind: oneOf
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches:
+          - sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+          - sha256:477ceba40e58975067e996fed131acef6b153a8c2082610c3ccf63a861616566
+          - sha256:e365cd446452cec3d0d22f958703a317cbf3b43a19cbf0493684e4c40410786d
+        sha256:0c6ebe10189be19ed179e2ebc32ef160c6c7bc66946f8dab34dd230e27e347ea:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            comments:
+              required: true
+              schema: sha256:ab7ef08a374249ed7096ff804a8c9fc81b921e4a81751f9d97a00a04800acc64
+            commits:
+              required: true
+              schema: sha256:ab7ef08a374249ed7096ff804a8c9fc81b921e4a81751f9d97a00a04800acc64
+            html:
+              required: true
+              schema: sha256:ab7ef08a374249ed7096ff804a8c9fc81b921e4a81751f9d97a00a04800acc64
+            issue:
+              required: true
+              schema: sha256:ab7ef08a374249ed7096ff804a8c9fc81b921e4a81751f9d97a00a04800acc64
+            review_comment:
+              required: true
+              schema: sha256:ab7ef08a374249ed7096ff804a8c9fc81b921e4a81751f9d97a00a04800acc64
+            review_comments:
+              required: true
+              schema: sha256:ab7ef08a374249ed7096ff804a8c9fc81b921e4a81751f9d97a00a04800acc64
+            self:
+              required: true
+              schema: sha256:ab7ef08a374249ed7096ff804a8c9fc81b921e4a81751f9d97a00a04800acc64
+            statuses:
+              required: true
+              schema: sha256:ab7ef08a374249ed7096ff804a8c9fc81b921e4a81751f9d97a00a04800acc64
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:0e2c0636b73796100c4a248b964358efb36ead194c688df23ed7cade6db9b94a:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - enterprise
+          - organization
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:111971f885cf7822c9e6db4a0b79f242832c73019f3928e2f17ed470816b2805:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            '+1':
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            '-1':
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            confused:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            eyes:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            heart:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            hooray:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            laugh:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            rocket:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            total_count:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:127f96617b80f5a7ec4ef45f97b32c827e115d987eb3aa9c1dc354a92c28f5fb:
+          kind: boolean
+          nullable: true
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a:
+          kind: boolean
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:1291abb6916df48bac704744607246a10c51f4d18ee233fd0e34e9286dbdcba2:
+          kind: object
+          nullable: true
+          format: null
+          enum_values: []
+          properties:
+            html_url:
+              required: false
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            key:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            name:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            spdx_id:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            url:
+              required: true
+              schema: sha256:9250f1871f4e7d4851b4c8f804a79cabcc1cef2b0632439fa40666c45d181a9e
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:14399f8fa157ad3a3b0136902d40ab31fb8fe756e8702e83371cdce157e5cb63:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - MERGE_MESSAGE
+          - PR_TITLE
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:1522be448e64482046bf606986adddc35dd8382aee0dab123330e797a83d9037:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:37bbc15a09c955e12ad8e9ab6eb5156a202ff4ac61dde15120a2efe9791d4bc7
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:19ba8f7c56d7b4f52a299f1bf1159fa406ee573ae41b9af9d3ac8a4563aa807e:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            _links:
+              required: true
+              schema: sha256:0c6ebe10189be19ed179e2ebc32ef160c6c7bc66946f8dab34dd230e27e347ea
+            active_lock_reason:
+              required: false
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            additions:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            assignee:
+              required: true
+              schema: sha256:a1900ec7dbbdc1a66b3999d5fae11fd92882a7de2a15af65859124d95e769b96
+            assignees:
+              required: false
+              schema: sha256:1522be448e64482046bf606986adddc35dd8382aee0dab123330e797a83d9037
+            author_association:
+              required: true
+              schema: sha256:2b559741aefeaae1b950cbcd4f12b6e9dc28a09f5595178ba52f5414d3b196f0
+            auto_merge:
+              required: true
+              schema: sha256:3468f1a15746804c6d6817563f10f55ede907d722329d315677326e9dd78416b
+            base:
+              required: true
+              schema: sha256:d0f5797528b5ceef56bfcd94413182f7f781f09970cf521a325ac2bb67648d1d
+            body:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            changed_files:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            closed_at:
+              required: true
+              schema: sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214
+            comments:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            comments_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            commits:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            commits_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            created_at:
+              required: true
+              schema: sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347
+            deletions:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            diff_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            draft:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            head:
+              required: true
+              schema: sha256:d0f5797528b5ceef56bfcd94413182f7f781f09970cf521a325ac2bb67648d1d
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:3aef979d69bac01cc461cd812124f5081b4ec9153c2129c2b0964cb91f48cb4d
+            issue_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            labels:
+              required: true
+              schema: sha256:fae0d3479befa9806455b7361a0f820aa4638269918e1b0c1bfa74e710a9332f
+            locked:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            maintainer_can_modify:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            merge_commit_sha:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            mergeable:
+              required: true
+              schema: sha256:127f96617b80f5a7ec4ef45f97b32c827e115d987eb3aa9c1dc354a92c28f5fb
+            mergeable_state:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            merged:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            merged_at:
+              required: true
+              schema: sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214
+            merged_by:
+              required: true
+              schema: sha256:a1900ec7dbbdc1a66b3999d5fae11fd92882a7de2a15af65859124d95e769b96
+            milestone:
+              required: true
+              schema: sha256:4abdbd6a55f1f93d23b5217661f245c195f0a46bbced427c6325cffdfe22f278
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            number:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            patch_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            rebaseable:
+              required: false
+              schema: sha256:127f96617b80f5a7ec4ef45f97b32c827e115d987eb3aa9c1dc354a92c28f5fb
+            requested_reviewers:
+              required: false
+              schema: sha256:1522be448e64482046bf606986adddc35dd8382aee0dab123330e797a83d9037
+            requested_teams:
+              required: false
+              schema: sha256:f9c75b347bbad29a1ae43fc6c4579477a15e014670ceaf061b6fec8a894b3025
+            review_comment_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            review_comments:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            review_comments_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            stack:
+              required: false
+              schema: sha256:2c53d9e65b3fe8b87cb2824267b7f0ffa19f31710f3d5e4ac067ed0779c37822
+            state:
+              required: true
+              schema: sha256:67c84c279b9fc30f11395e07b5c580c6a337d0179eff5341436bce43fc69c078
+            statuses_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            title:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            updated_at:
+              required: true
+              schema: sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            user:
+              required: true
+              schema: sha256:37bbc15a09c955e12ad8e9ab6eb5156a202ff4ac61dde15120a2efe9791d4bc7
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:237de74fad9b995448ad746b28855cd81fa48e32eddbdb8d6b099efe522e3a14:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            ref:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            sha:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:24577474e6a130355114207ab67af376e3eb1b8283efb870756351761307ecc1:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            href:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:2b559741aefeaae1b950cbcd4f12b6e9dc28a09f5595178ba52f5414d3b196f0:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - COLLABORATOR
+          - CONTRIBUTOR
+          - FIRST_TIMER
+          - FIRST_TIME_CONTRIBUTOR
+          - MANNEQUIN
+          - MEMBER
+          - NONE
+          - OWNER
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:2c15138d98dc0b7adc046377d178f63e855e6962fce4cb50da23dc74d5274c81:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            access_source:
+              required: false
+              schema: sha256:4a49004cd55964af16964a4062a4e9ed2d7ddf585f0dbeda2ae2b2494e3496a9
+            description:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            enterprise_id:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            members_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            name:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            notification_setting:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            organization_id:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            parent:
+              required: true
+              schema: sha256:5351b05c8462676a420aeb69fe2294656254c8f7ca8581b22a6ad0fdd0d4e921
+            permission:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            permissions:
+              required: false
+              schema: sha256:324447e28fd1e5254822e0c45576ede183abbcc04c244c14eaaaf58a0e09bf78
+            privacy:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            repositories_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            slug:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            type:
+              required: true
+              schema: sha256:0e2c0636b73796100c4a248b964358efb36ead194c688df23ed7cade6db9b94a
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:2c53d9e65b3fe8b87cb2824267b7f0ffa19f31710f3d5e4ac067ed0779c37822:
+          kind: object
+          nullable: true
+          format: null
+          enum_values: []
+          properties:
+            base:
+              required: true
+              schema: sha256:237de74fad9b995448ad746b28855cd81fa48e32eddbdb8d6b099efe522e3a14
+            id:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            number:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            position:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            size:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:313067d9202509ebe977324086bd7c73c54d90e59091ffa1fd78ac109f5dee11:
+          kind: string
+          nullable: true
+          format: null
+          enum_values:
+          - LEFT
+          - RIGHT
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:324447e28fd1e5254822e0c45576ede183abbcc04c244c14eaaaf58a0e09bf78:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            admin:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            maintain:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            pull:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            push:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            triage:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:32802677801a289973e0bee33b6fe44067fc6046429afb31f695a451a847fb30:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:03dc522e18da21de00f569a25c3f7317e2c7a1138e03e7ec982c7064eff1ba96
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:3468f1a15746804c6d6817563f10f55ede907d722329d315677326e9dd78416b:
+          kind: object
+          nullable: true
+          format: null
+          enum_values: []
+          properties:
+            commit_message:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            commit_title:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            enabled_by:
+              required: true
+              schema: sha256:37bbc15a09c955e12ad8e9ab6eb5156a202ff4ac61dde15120a2efe9791d4bc7
+            merge_method:
+              required: true
+              schema: sha256:f96feb614ed7c21acab04d68eaed8971fa2b59495f0c7bf90e745b8d21237b09
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:37bbc15a09c955e12ad8e9ab6eb5156a202ff4ac61dde15120a2efe9791d4bc7:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            avatar_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            email:
+              required: false
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            events_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            followers_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            following_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            gists_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            gravatar_id:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:3aef979d69bac01cc461cd812124f5081b4ec9153c2129c2b0964cb91f48cb4d
+            login:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            name:
+              required: false
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            organizations_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            received_events_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            repos_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            site_admin:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            starred_at:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            starred_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            subscriptions_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            type:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            user_view_type:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:3aef979d69bac01cc461cd812124f5081b4ec9153c2129c2b0964cb91f48cb4d:
+          kind: integer
+          nullable: false
+          format: int64
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada:
+          kind: string
+          nullable: true
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:477ceba40e58975067e996fed131acef6b153a8c2082610c3ccf63a861616566:
+          kind: array
+          nullable: true
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:4a49004cd55964af16964a4062a4e9ed2d7ddf585f0dbeda2ae2b2494e3496a9:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - direct
+          - enterprise
+          - organization
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:4abdbd6a55f1f93d23b5217661f245c195f0a46bbced427c6325cffdfe22f278:
+          kind: object
+          nullable: true
+          format: null
+          enum_values: []
+          properties:
+            closed_at:
+              required: true
+              schema: sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214
+            closed_issues:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            created_at:
+              required: true
+              schema: sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347
+            creator:
+              required: true
+              schema: sha256:a1900ec7dbbdc1a66b3999d5fae11fd92882a7de2a15af65859124d95e769b96
+            description:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            due_on:
+              required: true
+              schema: sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            labels_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            number:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            open_issues:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            state:
+              required: true
+              schema: sha256:67c84c279b9fc30f11395e07b5c580c6a337d0179eff5341436bce43fc69c078
+            title:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            updated_at:
+              required: true
+              schema: sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214:
+          kind: string
+          nullable: true
+          format: date-time
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:4ebec343071dfb4fe8a9ec60f16e860a8a0e7f5621b6489d7ef559a5bdb5b5f6:
+          kind: integer
+          nullable: true
+          format: int64
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:5062015df4cc140dfc10a7cab590cab6f90d1fb7901ffb69817925094c6917d3:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            color:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            default:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            description:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            id:
+              required: true
+              schema: sha256:3aef979d69bac01cc461cd812124f5081b4ec9153c2129c2b0964cb91f48cb4d
+            name:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:5351b05c8462676a420aeb69fe2294656254c8f7ca8581b22a6ad0fdd0d4e921:
+          kind: object
+          nullable: true
+          format: null
+          enum_values: []
+          properties:
+            description:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            enterprise_id:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            ldap_dn:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            members_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            name:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            notification_setting:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            organization_id:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            permission:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            privacy:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            repositories_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            slug:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            type:
+              required: true
+              schema: sha256:0e2c0636b73796100c4a248b964358efb36ead194c688df23ed7cade6db9b94a
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:545cb5f8795249fe2ffcb045ad894a26a1ec5d7e4a36185491a94c4ffcdf09b4:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            code:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            field:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            index:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            message:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            resource:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            value:
+              required: false
+              schema: sha256:08db5b77ef95c465a4bf4ff05ab32d75d5d15e56ae7dc1a1fae047e2c8e09de5
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:574e0ee145d310041b631ad4a5c2b8ef84bd32b00e4f2e0d55cd114814de20bc:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            admin:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            maintain:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            pull:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            push:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            triage:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:5f3934fff1e456454bcff5f9117dab62951ba2a1c2229d2d26547b0f84193ad1:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - created
+          - long-running
+          - popularity
+          - updated
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:67c84c279b9fc30f11395e07b5c580c6a337d0179eff5341436bce43fc69c078:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - closed
+          - open
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:6cd8e0a6cbe5b420abf08d5dfc1402d632cf1cb345662bffba1ef05aa350e22c:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:5062015df4cc140dfc10a7cab590cab6f90d1fb7901ffb69817925094c6917d3
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714:
+          kind: string
+          nullable: false
+          format: uri
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:77b9e35fe40fe9ac6d69d096f9ebd9d8ce68a50284128cc4717ea74ebac2c554:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - BLANK
+          - COMMIT_MESSAGES
+          - PR_BODY
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:7c4ee9af655caf3eab8e9256d1c2248887802752d44d10c09514fe8dff66b575:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            label:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            ref:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            repo:
+              required: true
+              schema: sha256:ea1d29052260f492cb150a722e95c7432a8d14340524f5cc36f0edcfa3e25d03
+            sha:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            user:
+              required: true
+              schema: sha256:a1900ec7dbbdc1a66b3999d5fae11fd92882a7de2a15af65859124d95e769b96
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90:
+          kind: string
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:896f545c4e5f92422ca48aaec1ac50f51a817937d01579943f2c793c8adfb09a:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            documentation_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            errors:
+              required: false
+              schema: sha256:9a0ed6008e56dc07dd4e8827b0a93e98de95c72b2f388edd2f626bcf25a34af0
+            message:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347:
+          kind: string
+          nullable: false
+          format: date-time
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:9250f1871f4e7d4851b4c8f804a79cabcc1cef2b0632439fa40666c45d181a9e:
+          kind: string
+          nullable: true
+          format: uri
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:961134eb2f5d663f39f62a217256a9e52b8502692fa453261c8de17907053cb5:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            description:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            enterprise_id:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            ldap_dn:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            members_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            name:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            notification_setting:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            organization_id:
+              required: false
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            permission:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            privacy:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            repositories_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            slug:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            type:
+              required: true
+              schema: sha256:0e2c0636b73796100c4a248b964358efb36ead194c688df23ed7cade6db9b94a
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:96e5173eb242e514767f6e3f0b9d4713580b2951379e8eef17b4e07d473befaf:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            color:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            default:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            description:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            id:
+              required: true
+              schema: sha256:3aef979d69bac01cc461cd812124f5081b4ec9153c2129c2b0964cb91f48cb4d
+            name:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:9a0ed6008e56dc07dd4e8827b0a93e98de95c72b2f388edd2f626bcf25a34af0:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:545cb5f8795249fe2ffcb045ad894a26a1ec5d7e4a36185491a94c4ffcdf09b4
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:9fa06927eb818f4b48e7c90ee028003a4b1b4e9d951e79c8de85893666623cca:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - LEFT
+          - RIGHT
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:a1900ec7dbbdc1a66b3999d5fae11fd92882a7de2a15af65859124d95e769b96:
+          kind: object
+          nullable: true
+          format: null
+          enum_values: []
+          properties:
+            avatar_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            email:
+              required: false
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            events_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            followers_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            following_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            gists_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            gravatar_id:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:3aef979d69bac01cc461cd812124f5081b4ec9153c2129c2b0964cb91f48cb4d
+            login:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            name:
+              required: false
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            organizations_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            received_events_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            repos_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            site_admin:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            starred_at:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            starred_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            subscriptions_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            type:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            user_view_type:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:a9ed01d042328fce603bf63eb8fdf8fa4aaaf66fa3ad1d40055ea4edb3cd9b54:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:2c15138d98dc0b7adc046377d178f63e855e6962fce4cb50da23dc74d5274c81
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:ab481fe0f8a5932576be15ff60637b6be5987979554493cbe5f311fb12304292:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - all
+          - closed
+          - open
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:ab7ef08a374249ed7096ff804a8c9fc81b921e4a81751f9d97a00a04800acc64:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            href:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b:
+          kind: integer
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:c29666e113e82cbb0214b1c4acba424293fffa4fbf1b207cc5c5ff2141610c4c:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:c852fc399fa7fe007f6aa2b68cbdbd1578b5814571f27cce720ab2174e3b39d6:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - file
+          - line
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:c94324baaf686cdbf15f65b72809c3418f6cdae3d29e2bf588fe35c8c630f041:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            documentation_url:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            message:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            status:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            url:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:d0f5797528b5ceef56bfcd94413182f7f781f09970cf521a325ac2bb67648d1d:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            label:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            ref:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            repo:
+              required: true
+              schema: sha256:ea1d29052260f492cb150a722e95c7432a8d14340524f5cc36f0edcfa3e25d03
+            sha:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            user:
+              required: true
+              schema: sha256:37bbc15a09c955e12ad8e9ab6eb5156a202ff4ac61dde15120a2efe9791d4bc7
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:d34ac699be2c4ce1a197e5601d5a7cc132a1c41ca65df4c94e090f8922e76957:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - created
+          - updated
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:d4aded5191f759334c488cb4afb7d9596c63c2b2d2891dcbf3268a1f08768f9e:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - BLANK
+          - PR_BODY
+          - PR_TITLE
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:d58ec9d77aba88848dd849b6ac222b64b57938906e687720516a4d04f914438b:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            lexical_commit_sha:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            lexical_search_ok:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:d8275b396c104262e9e6b484b1ff84978e20ac726fbce73cf45f4387b9855632:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:f80fe43d92bf716b536859742e603ef50117aa21cdce52bcca015ddf17d7fedf
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:e1310d11aae8390a8943cae87ad498857f927c09ec767c5e08a77c852e19fa01:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - asc
+          - desc
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:e27a7e515bb3f9c5c7632a861f6a59bb43d2bbec9ebaf7610b1c058096f50989:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - COMMIT_OR_PR_TITLE
+          - PR_TITLE
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:e365cd446452cec3d0d22f958703a317cbf3b43a19cbf0493684e4c40410786d:
+          kind: integer
+          nullable: true
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:ea1d29052260f492cb150a722e95c7432a8d14340524f5cc36f0edcfa3e25d03:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            allow_auto_merge:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            allow_forking:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            allow_merge_commit:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            allow_rebase_merge:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            allow_squash_merge:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            allow_update_branch:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            anonymous_access_enabled:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            archive_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            archived:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            assignees_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            blobs_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            branches_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            clone_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            code_search_index_status:
+              required: false
+              schema: sha256:d58ec9d77aba88848dd849b6ac222b64b57938906e687720516a4d04f914438b
+            collaborators_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            comments_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            commits_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            compare_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            contents_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            contributors_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            created_at:
+              required: true
+              schema: sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214
+            default_branch:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            delete_branch_on_merge:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            deployments_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            description:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            disabled:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            downloads_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            events_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            fork:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            forks:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            forks_count:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            forks_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            full_name:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            git_commits_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            git_refs_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            git_tags_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            git_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            has_discussions:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            has_downloads:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            has_issues:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            has_pages:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            has_projects:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            has_pull_requests:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            has_wiki:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            homepage:
+              required: true
+              schema: sha256:9250f1871f4e7d4851b4c8f804a79cabcc1cef2b0632439fa40666c45d181a9e
+            hooks_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:3aef979d69bac01cc461cd812124f5081b4ec9153c2129c2b0964cb91f48cb4d
+            is_template:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            issue_comment_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            issue_events_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            issues_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            keys_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            labels_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            language:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            languages_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            license:
+              required: true
+              schema: sha256:1291abb6916df48bac704744607246a10c51f4d18ee233fd0e34e9286dbdcba2
+            master_branch:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            merge_commit_message:
+              required: false
+              schema: sha256:d4aded5191f759334c488cb4afb7d9596c63c2b2d2891dcbf3268a1f08768f9e
+            merge_commit_title:
+              required: false
+              schema: sha256:14399f8fa157ad3a3b0136902d40ab31fb8fe756e8702e83371cdce157e5cb63
+            merges_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            milestones_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            mirror_url:
+              required: true
+              schema: sha256:9250f1871f4e7d4851b4c8f804a79cabcc1cef2b0632439fa40666c45d181a9e
+            name:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            notifications_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            open_issues:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            open_issues_count:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            owner:
+              required: true
+              schema: sha256:37bbc15a09c955e12ad8e9ab6eb5156a202ff4ac61dde15120a2efe9791d4bc7
+            permissions:
+              required: false
+              schema: sha256:574e0ee145d310041b631ad4a5c2b8ef84bd32b00e4f2e0d55cd114814de20bc
+            private:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            pull_request_creation_policy:
+              required: false
+              schema: sha256:f81867f82dd9759824e958d648a1759b92f6238fd88f530c0220047510bf15b5
+            pulls_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            pushed_at:
+              required: true
+              schema: sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214
+            releases_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            size:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            squash_merge_commit_message:
+              required: false
+              schema: sha256:77b9e35fe40fe9ac6d69d096f9ebd9d8ce68a50284128cc4717ea74ebac2c554
+            squash_merge_commit_title:
+              required: false
+              schema: sha256:e27a7e515bb3f9c5c7632a861f6a59bb43d2bbec9ebaf7610b1c058096f50989
+            ssh_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            stargazers_count:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            stargazers_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            starred_at:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            statuses_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            subscribers_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            subscription_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            svn_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            tags_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            teams_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            temp_clone_token:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            topics:
+              required: false
+              schema: sha256:c29666e113e82cbb0214b1c4acba424293fffa4fbf1b207cc5c5ff2141610c4c
+            trees_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            updated_at:
+              required: true
+              schema: sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            use_squash_pr_title_as_default:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            visibility:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            watchers:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            watchers_count:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            web_commit_signoff_required:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:f80fe43d92bf716b536859742e603ef50117aa21cdce52bcca015ddf17d7fedf:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            _links:
+              required: true
+              schema: sha256:0c6ebe10189be19ed179e2ebc32ef160c6c7bc66946f8dab34dd230e27e347ea
+            active_lock_reason:
+              required: false
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            assignee:
+              required: true
+              schema: sha256:a1900ec7dbbdc1a66b3999d5fae11fd92882a7de2a15af65859124d95e769b96
+            assignees:
+              required: false
+              schema: sha256:1522be448e64482046bf606986adddc35dd8382aee0dab123330e797a83d9037
+            author_association:
+              required: true
+              schema: sha256:2b559741aefeaae1b950cbcd4f12b6e9dc28a09f5595178ba52f5414d3b196f0
+            auto_merge:
+              required: true
+              schema: sha256:3468f1a15746804c6d6817563f10f55ede907d722329d315677326e9dd78416b
+            base:
+              required: true
+              schema: sha256:7c4ee9af655caf3eab8e9256d1c2248887802752d44d10c09514fe8dff66b575
+            body:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            closed_at:
+              required: true
+              schema: sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214
+            comments_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            commits_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            created_at:
+              required: true
+              schema: sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347
+            diff_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            draft:
+              required: false
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            head:
+              required: true
+              schema: sha256:7c4ee9af655caf3eab8e9256d1c2248887802752d44d10c09514fe8dff66b575
+            html_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            id:
+              required: true
+              schema: sha256:3aef979d69bac01cc461cd812124f5081b4ec9153c2129c2b0964cb91f48cb4d
+            issue_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            labels:
+              required: true
+              schema: sha256:6cd8e0a6cbe5b420abf08d5dfc1402d632cf1cb345662bffba1ef05aa350e22c
+            locked:
+              required: true
+              schema: sha256:1281b5390d7566ab58e11962af6da124ffca10d2ddb3610932086a2087c6335a
+            merge_commit_sha:
+              required: true
+              schema: sha256:3e81de0141002ffca897ada5727e500108986e1ea4ba75fb8be22fdecd103ada
+            merged_at:
+              required: true
+              schema: sha256:4b6c1c99e717b2fdee6e0c34a38ff1a5f84707d8e638efdee256cdf5c0874214
+            milestone:
+              required: true
+              schema: sha256:4abdbd6a55f1f93d23b5217661f245c195f0a46bbced427c6325cffdfe22f278
+            node_id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            number:
+              required: true
+              schema: sha256:b939e812ba3c06d16e5bfa274689e6505d7cfe03700cde0f13e8c381f3a1d60b
+            patch_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            requested_reviewers:
+              required: false
+              schema: sha256:1522be448e64482046bf606986adddc35dd8382aee0dab123330e797a83d9037
+            requested_teams:
+              required: false
+              schema: sha256:a9ed01d042328fce603bf63eb8fdf8fa4aaaf66fa3ad1d40055ea4edb3cd9b54
+            review_comment_url:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            review_comments_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            stack:
+              required: false
+              schema: sha256:2c53d9e65b3fe8b87cb2824267b7f0ffa19f31710f3d5e4ac067ed0779c37822
+            state:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            statuses_url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            title:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            updated_at:
+              required: true
+              schema: sha256:8afee85b88877aff41449a38247e4193129f413d7e2da8aa99673dea1b8b2347
+            url:
+              required: true
+              schema: sha256:75bba67f2530a4dee34952b99168614d216b63aff1a14d3b87daf90277595714
+            user:
+              required: true
+              schema: sha256:a1900ec7dbbdc1a66b3999d5fae11fd92882a7de2a15af65859124d95e769b96
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:f81867f82dd9759824e958d648a1759b92f6238fd88f530c0220047510bf15b5:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - all
+          - collaborators_only
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:f96feb614ed7c21acab04d68eaed8971fa2b59495f0c7bf90e745b8d21237b09:
+          kind: string
+          nullable: false
+          format: null
+          enum_values:
+          - merge
+          - rebase
+          - squash
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:f9c75b347bbad29a1ae43fc6c4579477a15e014670ceaf061b6fec8a894b3025:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:961134eb2f5d663f39f62a217256a9e52b8502692fa453261c8de17907053cb5
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:f9e7e49323d22a20351b5ab164b5d4f01b24e5e58492073ea9f2810246719340:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            code:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            documentation_url:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            message:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:fae0d3479befa9806455b7361a0f820aa4638269918e1b0c1bfa74e710a9332f:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:96e5173eb242e514767f6e3f0b9d4713580b2951379e8eef17b4e07d473befaf
+          additional_properties:
+            kind: forbidden
+          branches: []
