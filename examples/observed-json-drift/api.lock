@@ -1,0 +1,27 @@
+version: 2
+apis:
+  payments:
+    provenance: observed
+    shape:
+      kind: object
+      observations: 1
+      properties:
+        amount:
+          observations: 1
+          shape:
+            kind: number
+        currency:
+          observations: 1
+          shape:
+            kind: string
+        id:
+          observations: 1
+          shape:
+            kind: string
+        status:
+          observations: 1
+          shape:
+            kind: string
+    threshold: 1.0
+    first_seen: 2026-08-07T17:03:00Z
+    last_seen: 2026-08-07T17:03:00Z

@@ -1,0 +1,6 @@
+{
+  "id": "pay_123",
+  "amount": 42.50,
+  "currency": "USD",
+  "status": "complete"
+}

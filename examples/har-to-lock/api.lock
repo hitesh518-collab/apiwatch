@@ -1,0 +1,68 @@
+version: 2
+apis:
+  GET /v1/orders:
+    provenance: observed
+    shape:
+      kind: array
+      items:
+        kind: object
+        observations: 2
+        properties:
+          items:
+            observations: 2
+            shape:
+              kind: array
+              items:
+                kind: object
+                observations: 2
+                properties:
+                  product_id:
+                    observations: 2
+                    shape:
+                      kind: string
+                  quantity:
+                    observations: 2
+                    shape:
+                      kind: number
+          order_id:
+            observations: 2
+            shape:
+              kind: string
+          status:
+            observations: 2
+            shape:
+              kind: string
+          total:
+            observations: 2
+            shape:
+              kind: number
+    threshold: 1.0
+    first_seen: 2026-08-07T17:03:00Z
+    last_seen: 2026-08-07T17:03:00Z
+  GET /v1/products:
+    provenance: observed
+    shape:
+      kind: array
+      items:
+        kind: object
+        observations: 2
+        properties:
+          id:
+            observations: 2
+            shape:
+              kind: string
+          in_stock:
+            observations: 2
+            shape:
+              kind: boolean
+          name:
+            observations: 2
+            shape:
+              kind: string
+          price:
+            observations: 2
+            shape:
+              kind: number
+    threshold: 1.0
+    first_seen: 2026-08-07T17:03:00Z
+    last_seen: 2026-08-07T17:03:00Z

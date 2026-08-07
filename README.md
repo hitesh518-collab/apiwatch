@@ -1,9 +1,9 @@
 # apiwatch
 
-API lockfiles for external services.
+**Catch third-party API changes before they break your app.**
 
-`apiwatch` is a CLI-first open-source tool for locking, diffing, and verifying
-the APIs your applications depend on but do not control.
+APIWatch records or locks the API contract your application relies on, stores
+value-free evidence in Git, and fails CI when that external dependency drifts.
 
 ```text
 package-lock.json : packages
@@ -12,163 +12,119 @@ api.lock          : external APIs
 
 `oasdiff` diffs specs you own. **APIWatch locks APIs you don't.**
 
-APIWatch uses declared contracts when a provider publishes a usable OpenAPI
-document. When a specification is absent, incomplete, or unreliable, it can
-record a value-free observed response shape instead. Both paths aim to make
-external API expectations reviewable in Git and enforceable in CI.
+When a provider publishes a usable OpenAPI document, APIWatch normalizes it
+into a deterministic declared contract. When a specification is absent,
+incomplete, or unreliable, APIWatch infers a value-free observed response shape
+from samples. Both paths produce reviewable, CI-verifiable evidence of what your
+code expects from an API you do not control.
 
-## Status
+---
 
-APIWatch v1.0.2 is the current stable release. It bundles declared and observed
-contract verification, the complete Phase 2 comparison model, lockfile v4,
-JSON and SARIF output, a reusable GitHub Action, release binaries, a container
-image, crates.io publication, and source-building Homebrew and Scoop
-definitions.
+## 60-second demo
 
-Current v4 declared locks contain the complete Phase 2 normalized contract.
-Declared `verify` uses the same semantic comparison engine as `diff`, covering
-operations, schemas, parameters, authentication, servers, content types,
-composition, and responses. Version 3 remains readable with partial coverage
-and requires re-locking from the original OpenAPI source for full Phase 2
-coverage. Versions 1 and 2 remain readable as route-only legacy formats.
-
-See [docs/migration.md](docs/migration.md) for lockfile version upgrade instructions.
-
-## CLI
+Record the shape of a payment API response once, then catch when it drifts:
 
 ```bash
-apiwatch diff old.openapi.yaml new.openapi.yaml
-apiwatch lock openapi.yaml --name users --output api.lock
-apiwatch lock openapi.yaml --name users --output api.lock --update
-apiwatch lock openapi.yaml --name users --output api.lock \
-  --include-operation "GET /users/{id}" \
-  --max-lock-bytes 5242880
+# Record the expected structure (stores types and paths, never values)
+apiwatch record --from-json testdata/observed/demo-baseline.json  --name payments --output api.lock
+
+# Verify the same structure — passes
+apiwatch verify testdata/observed/demo-baseline.json --name payments --lock api.lock
+# Verified payments (observed) — exit 0
+
+# Verify a breaking change — `amount` changed from number to string
+apiwatch verify testdata/observed/demo-breaking.json --name payments --lock api.lock
+```
+
+```
+Drift detected in payments (observed)
+BREAKING $.amount: expected number, found string — exit 1
+```
+
+The lockfile stores only the fact that `$.amount` is a `number`. It never
+captures `42.50`, `pay_123`, or any payment data.
+
+All demo fixtures are committed in `testdata/observed/`. No network, no
+credentials, no live API required.
+
+---
+
+## How it works
+
+**1. Record what the API looks like.**
+Point APIWatch at a JSON response, a HAR capture, or an OpenAPI document. It
+normalizes the structure into a deterministic, value-free contract entry.
+
+**2. Commit the evidence.**
+`api.lock` is a reviewable lockfile you commit to your repository. It records
+types, paths, requiredness, and observation counts — never captured values,
+credentials, or dynamic keys.
+
+**3. Verify in CI.**
+`apiwatch verify` checks a live or local response against the recorded contract.
+It exits `0` when the structure matches, `1` when it breaks, and `2` on invalid
+input. Add it to your workflow and catch provider-side changes before they reach
+production.
+
+---
+
+## Declared OpenAPI contracts
+
+When a usable OpenAPI specification exists, APIWatch locks the declared
+contract:
+
+```bash
+apiwatch lock  openapi.yaml --name users --output api.lock
+apiwatch diff  old.openapi.yaml new.openapi.yaml
 apiwatch verify openapi.yaml --name users --lock api.lock
-apiwatch verify https://api.example.com/openapi.yaml --name users --lock api.lock
 ```
 
-The declared-contract path supports OpenAPI 3.0 and 3.1 YAML and JSON.
-`apiwatch diff` normalizes two documents and reports semantic changes.
-`apiwatch lock` creates a deterministic v4 full-contract entry and refuses to
-overwrite an existing file. Use `--update` for deliberate atomic replacement.
-Repeatable `--include-operation` options scope large APIs; the default
-per-entry payload ceiling is 5,242,880 bytes.
+Declared contracts support OpenAPI 3.0 and 3.1 YAML and JSON with local and
+external `$ref` resolution. `apiwatch lock` creates deterministic v4 lock
+entries. `apiwatch diff` normalizes two documents and reports semantic changes.
+`apiwatch verify` reconstructs the locked contract and runs the same comparison
+engine used by `diff`.
 
-`apiwatch verify` reconstructs a v4 declared contract and runs the same
-`diff_contracts` path used by `diff`. Warning-only and non-breaking changes
-exit `0`; breaking changes exit `1`. Updating a v1, v2, or v3 lock requires the
-original OpenAPI source and is refused when other older declared entries would
-be left partially migrated. Version 3 Verify reports partial Phase 2 coverage;
-v1/v2 Verify remains route-only. Each limitation is reported in text, JSON,
-and SARIF.
-
-`apiwatch diff` and `apiwatch verify` accept `--header NAME:${ENV_VAR}` for
-authenticated remote fetches and `--config .apiwatch.yaml` for
-per-project configuration (ignore rules, severity overrides, fail thresholds).
-Use `--ref-root <PATH>` when the spec is in a different directory than its
-`$ref` targets.
-
-`apiwatch coverage --lock api.lock` reports endpoint and field coverage for observed
-entries.
-
-Remote verification uses a 10-second timeout and a 10 MiB response limit.
-Custom headers can be supplied via `--header` or `.apiwatch.yaml` configuration.
-
-## Observed JSON Contracts
-
-When an OpenAPI specification is absent or incomplete, record the shape of a
-local JSON response, then verify future local JSON responses against it:
+Scoping, configuration, and remote features:
 
 ```bash
-apiwatch record --from-json body.json --name portfolio --output api.lock
-apiwatch record --from-json updated.json --name portfolio --output api.lock --merge
-apiwatch record --from-url https://api.example.com/data --name portfolio --output api.lock
-apiwatch verify body.json --name portfolio --lock api.lock
-```
-
-APIWatch records JSON structure, never captured values. `record` is an
-explicit learning command that updates a lock; `verify` only checks it.
-Observed entries accept local JSON files, HAR captures, and live URL recording.
-
-An observed contract represents the samples supplied to it. It does not prove
-that every endpoint, response variant, conditional field, or error shape has
-been observed. Current v2 observed locks retain observation counts, timestamps,
-requiredness thresholds, and coverage reporting; content-addressed observed
-entries are planned for APIWatch v2.0.0.
-
-## Quickstart
-
-```bash
-# 1. Record from browser traffic (export HAR from DevTools)
-apiwatch record --from-har traffic.har --output api.lock
-# Try it with our example: apiwatch record --from-har testdata/har/example-quickstart.har --output api.lock
-
-# 2. Verify all observed entries against a live API
-apiwatch verify --all --lock api.lock --source-url https://api.example.com
-
-# 3. Scaffold CI
-apiwatch init --output api.lock
-git add api.lock .github/workflows/
-git commit -m "add apiwatch contract evidence"
-```
-
-### Observed JSON Maps
-
-When object keys are dynamic data rather than API fields, mark the object
-explicitly with repeatable `--map-at` annotations:
-
-```bash
-apiwatch record --from-json portfolio.json --name portfolio --output api.lock --map-at $.by_broker --map-at $.state.by_region
-```
-
-Each annotation accepts only `$` or named property segments such as
-`$.by_broker`. Map keys may be added, removed, or renamed without drift, while
-every map value is still verified structurally.
-
-APIWatch never infers maps automatically. An annotation is required because
-choosing map semantics changes compatibility. Stored locks and Verify
-diagnostics contain field names, JSON paths, and shape names only—never
-dynamic map keys or captured scalar values. Bracket notation, arrays,
-wildcards, filters, and scripts are not currently supported.
-
-When a dynamic map value is incompatible, diagnostics use the stable redacted
-segment `<map-value>`—for example,
-`$.by_broker.<map-value>.pnl_pct`. Text, JSON, SARIF messages, and SARIF
-fingerprints therefore never expose the actual dynamic key.
-
-## Output and Exit Codes
-
-```bash
-apiwatch diff old.openapi.yaml new.openapi.yaml --format json
+apiwatch lock openapi.yaml --name users --output api.lock \
+  --include-operation "GET /users/{id}" --max-lock-bytes 5242880
+apiwatch verify https://api.example.com/openapi.yaml --name users --lock api.lock \
+  --header "Authorization:${AUTH_TOKEN}" --config .apiwatch.yaml
 apiwatch verify openapi.yaml --name users --lock api.lock --format json
-apiwatch diff old.openapi.yaml new.openapi.yaml --format sarif
 apiwatch verify openapi.yaml --name users --lock api.lock --format sarif
 ```
 
-`apiwatch diff` and `apiwatch verify` support
-`--format text|json|sarif`; text is the default. JSON output is a versioned,
-deterministic result document written to stdout. SARIF 2.1.0 output is intended
-for GitHub Code Scanning.
+Remote verification uses a 10-second timeout and a 10 MiB response limit.
 
-`apiwatch verify <INPUT> --name <NAME> --lock <PATH>` selects declared or
-observed verification from the named lock entry's provenance. It exits `0`
-when no breaking finding is present, `1` for breaking drift, and `2` for
-invalid input or operational failure. Declared Verify JSON version 2 includes
-`coverage: full|routes` and structured limitations.
+---
 
 ## Installation
 
-APIWatch is published on [crates.io](https://crates.io/crates/apiwatch) and
-requires Rust 1.88 or newer. APIWatch declares and checks this minimum in CI
-so dependency changes cannot raise it silently.
+### Prebuilt binaries (recommended)
 
-### cargo install (recommended)
+Download the latest binary from the
+[releases page](https://github.com/hitesh518-collab/apiwatch/releases/latest):
+
+| Platform | Asset |
+|----------|-------|
+| Linux x86_64 | `apiwatch-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux x86_64 (musl) | `apiwatch-x86_64-unknown-linux-musl.tar.gz` |
+| Linux aarch64 | `apiwatch-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS x86_64 | `apiwatch-x86_64-apple-darwin.tar.gz` |
+| macOS arm64 | `apiwatch-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 | `apiwatch-x86_64-pc-windows-msvc.zip` |
+
+Extract the archive and place the binary on your `PATH`.
+
+### cargo install
 
 ```bash
 cargo install apiwatch
 ```
 
-This is the fastest way to get started and pulls the latest published version.
+Requires Rust 1.88 or newer.
 
 ### Source build
 
@@ -178,12 +134,7 @@ cd apiwatch
 cargo build --release
 ```
 
-The binary is then available at `target/release/apiwatch`.
-
-### Homebrew
-
-The repository includes a source-building Homebrew formula for the v1.0.2
-tagged release:
+### Homebrew (source build)
 
 ```bash
 git clone https://github.com/hitesh518-collab/apiwatch.git
@@ -191,13 +142,7 @@ cd apiwatch
 brew install --build-from-source ./Formula/apiwatch.rb
 ```
 
-This formula is not yet a Homebrew tap, so `brew install apiwatch` is not
-available.
-
-### Scoop
-
-The repository includes a source-building Scoop manifest for the v1.0.2
-tagged release:
+### Scoop (source build)
 
 ```powershell
 git clone https://github.com/hitesh518-collab/apiwatch.git
@@ -205,18 +150,12 @@ cd apiwatch
 scoop install ./Scoop/apiwatch.json
 ```
 
-Scoop installs Rust automatically. Rust source builds on Windows also require
-Microsoft C++ Build Tools and a Windows SDK. This manifest is not yet in a
-Scoop bucket.
+Homebrew and Scoop are source-build integrations; no published tap or bucket
+exists yet.
 
-Prebuilt binaries, a Homebrew tap, a Scoop bucket, and automated release
-updates are part of the
-[continuous distribution track](ROADMAP.md#continuous-distribution-track).
+---
 
 ## GitHub Action
-
-Use the reusable action from an Ubuntu workflow after checking out the
-consumer repository:
 
 ```yaml
 permissions:
@@ -233,62 +172,162 @@ steps:
       sarif-file: apiwatch.sarif
 ```
 
-The `openapi` and `name` inputs are required. `lock` defaults to `api.lock`,
-and `working-directory` defaults to `.`. `sarif-file` is relative to
-`working-directory`; when set, it enables Code Scanning upload and requires
-`security-events: write`. A Verify drift report uploads before the action
-returns exit `1`.
+Pin the action to a commit SHA or release tag. The action downloads a matching
+release binary and falls back to building from source with Cargo. It propagates
+Verify's exit codes and supports Code Scanning upload via `sarif-file`.
 
-Pin the action to a commit SHA or release tag. The action downloads the
-matching release binary when available and falls back to building APIWatch from
-source with Cargo. It propagates Verify's `0`/`1`/`2` exit codes and supports
-the `working-directory` input. It does not yet verify `SHA256SUMS` or expose
-custom header and configuration-file inputs.
+---
 
-### Known Limitations
+## What APIWatch catches
 
-Current v4 locks cover the completed Phase 2 audit classes;
-older locks retain the coverage limitations shown below.
+When an API response changes, APIWatch detects:
 
-| Area | Current limitation | Tracked work |
-|---|---|---|
-| Request bodies (D-01) | Resolved for presence and requiredness in current v4 locks. | [Phase 2](ROADMAP.md#phase-2--make-the-comparison-engine-trustworthy) |
-| Content types (D-02) | Resolved for canonical request and response media types. | Phase 2 |
-| Response requiredness (D-03) | Resolved with directional request/response rules. | Phase 2 |
-| Dictionary schemas (D-04) | Resolved for forbidden, unconstrained, and schema-valued `additionalProperties`. | Phase 2 |
-| Schema formats (D-05) | Resolved as deterministic warnings. | Phase 2 |
-| Servers (D-06) | Resolved for effective, privacy-safe server-template identity. | Phase 2 |
-| Path templates (D-07) | Resolved through positional template identity while retaining display paths. | Phase 2 |
-| Security identity (D-08) | Resolved through normalized wire identity. | Phase 2 |
-| Composition (D-09) | Resolved through `allOf` intersection and order-independent `oneOf`/`anyOf` comparison. | Phase 2 |
-| Array model (D-10) | Resolved with first-class array items. | Phase 2 |
-| Enum severity (D-11) | Resolved with directional request/response enum policy. | Phase 2 |
-| OpenAPI 3.1 (D-12) | Resolved: OpenAPI 3.1 nullable type arrays are supported. | Completed |
-| Strict metadata parsing (D-13) | Resolved: metadata strictness relaxed for real-world specs like DigitalOcean. | Completed |
-| Recursive schemas (D-14) | Resolved: cycle detection and schema expansion budget handles recursive and densely-shared schemas. | Completed |
-| External references (D-15) | Resolved: external `$ref` targets with `components:`-wrapped fragments are supported. | Completed |
-| Legacy declared locks (D-16) | Versions 1 and 2 are route-only; v3 is partial for Phase 2. All require re-locking from original sources for full v4 coverage. | [Phase 1](ROADMAP.md#phase-1--make-verify-meaningful) |
-| Null observations (D-17) | Resolved with observation-floor hardening and lenient null at verify time. | [Phase 4](ROADMAP.md#phase-4--trustworthy-observed-contracts) |
-| Observed requiredness (D-18) | Resolved with configurable `--required-threshold` and confidence metadata. | Phase 4 |
-| Observed recording (D-19) | HAR import and live URL recording implemented; passive proxy is post-v1. | [Phase 5](ROADMAP.md#phase-5--frictionless-recording-and-ci-adoption) |
-| Distribution | The Action downloads release binaries with a source-build fallback; Homebrew and Scoop remain source-build integrations without published taps or buckets. | [Continuous distribution](ROADMAP.md#continuous-distribution-track) |
-| Observed lock format | Observed entries remain v2 through v1.x; content-addressed observed entries are planned for v2.0.0. | [Migration guide](docs/migration.md) |
-| Swagger 2.0 | Not supported; the pinned `deutsche-bahn` corpus entry remains known-failing. | [Post-v1 queue](ROADMAP.md#post-v1-delivery-queue) |
+- **Missing required fields** — a field present in the recorded contract disappears
+- **Type changes** — a `number` becomes a `string`, an `object` becomes an array
+- **Nullability changes** — a field goes from nullable to non-nullable (or vice versa)
+- **Object shape changes** — nested fields added, removed, or retyped
+- **Array item changes** — items inside an array change structure
 
-Repeated phase names in the table refer to the linked phase in the first row
-for that group. See [ROADMAP.md](ROADMAP.md) for exit criteria.
+For declared OpenAPI contracts, it also catches:
 
-## Product Direction
+- Endpoint and operation removal, authentication changes, parameter
+  addition/removal/type changes, schema requiredness, enum value changes,
+  content-type changes, server changes, and composition branch differences.
 
-APIWatch is focused on deterministic REST contract evidence for APIs a
-consumer does not control. Declared and observed contracts share one
-lock-and-verify product model, while preserving the difference between
-provider declarations and sampled evidence.
+See [docs/change-rules.md](docs/change-rules.md) for the complete semantic rule
+catalog.
 
-The correctness-first sequence, phase exit criteria, distribution work, and
-v1 boundaries live in [ROADMAP.md](ROADMAP.md).
+---
 
-## Non-Goals
+## What APIWatch does not guarantee
+
+- **Observed contracts prove sampled structure, not complete coverage.**
+  Endpoints, response variants, conditional fields, and error shapes that
+  were never recorded are not verified.
+
+- **It does not inspect captured values.**
+  APIWatch stores types and structure. It cannot detect semantic changes such
+  as "the `status` field now returns `rejected` instead of `declined`" — both
+  are valid strings.
+
+- **It is not a functional API test.**
+  APIWatch verifies structure compatibility, not business-logic correctness.
+  Use integration tests for behavioral assertions.
+
+- **It is not an uptime monitor.**
+  APIWatch checks whether the response shape still matches. It does not poll
+  for availability or latency.
+
+- **It does not replace contract testing for APIs you own.**
+  If you control the API, versioned specs and generated clients may be
+  sufficient. APIWatch is for APIs you depend on but do not control.
+
+---
+
+## Output and exit codes
+
+```bash
+apiwatch diff   old.yaml new.yaml --format text|json|sarif
+apiwatch verify openapi.yaml --name users --lock api.lock --format text|json|sarif
+```
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Clean — no breaking change detected |
+| `1` | Drift — breaking change found |
+| `2` | Invalid input or operational failure |
+
+Text output is human-readable. JSON output is a versioned, deterministic result
+document. SARIF 2.1.0 output works with GitHub Code Scanning.
+
+---
+
+## Observed JSON maps
+
+When object keys are dynamic data rather than API fields, mark the object with
+`--map-at`:
+
+```bash
+apiwatch record --from-json response.json --name portfolio --output api.lock \
+  --map-at $.by_broker --map-at $.state.by_region
+```
+
+Map keys may be added, removed, or renamed without triggering drift. Each map
+value is still verified structurally. APIWatch never infers maps silently —
+choosing map semantics changes compatibility, so an explicit annotation is
+required.
+
+Diagnostics use a stable `<map-value>` segment in place of dynamic keys (e.g.
+`$.by_broker.<map-value>.pnl_pct`). Text, JSON, and SARIF output never expose
+the actual dynamic key.
+
+---
+
+## Comparison: when to use APIWatch
+
+### APIWatch is a fit when
+
+- your application depends on third-party REST APIs,
+- API breakage can reach production before you notice,
+- provider specs are missing, incomplete, or unreliable,
+- you want contract evidence in Git and CI,
+- you maintain multiple integrations or connectors.
+
+### APIWatch is probably not needed when
+
+- the API is entirely controlled within one repo or team and existing contract
+  testing already solves the problem,
+- the provider has strong versioned specs plus generated clients and your risk
+  is low,
+- you need request/response functional testing rather than structural
+  compatibility evidence,
+- you primarily need GraphQL, gRPC, or AsyncAPI support.
+
+---
+
+## Lockfile versions
+
+| Version | Declared coverage | Status |
+|---------|-------------------|--------|
+| 4 | Full Phase 2 contract | Current |
+| 3 | Partial Phase 2 | Readable (requires re-lock for full coverage) |
+| 1–2 | Routes only | Readable (requires re-lock from original source) |
+
+Observed entries are v2 and will migrate to a content-addressed format in v2.0.0.
+
+See [docs/migration.md](docs/migration.md) and [docs/lockfile-spec.md](docs/lockfile-spec.md).
+
+---
+
+## Known limitations
+
+| Area | Limitation |
+|------|-----------|
+| Swagger 2.0 | Not supported |
+| Path-level `$ref` | Not supported (Paystack corpus entry is known-failing) |
+| Schema expansion | Some densely-shared schema graphs exceed the resolution budget (Stripe) |
+| Distribution | Action does not yet verify release checksums; Homebrew/Scoop are source-build only |
+| Observed format | Content-addressed observed entries planned for v2.0.0 |
+| Passive capture | Post-v1 exploration |
+
+The compatibility corpus tracks 20 real-world specs (14 passing, 6 known-failing).
+See [docs/compat-corpus.md](docs/compat-corpus.md).
+
+---
+
+## Product direction
+
+APIWatch is focused on deterministic REST contract evidence for APIs a consumer
+does not control. Declared and observed contracts share one lock-and-verify
+product model, while preserving the difference between provider declarations and
+sampled evidence.
+
+The roadmap, phase exit criteria, and v1 boundaries live in
+[ROADMAP.md](ROADMAP.md).
+
+---
+
+## Non-goals
 
 - Dashboards, web interfaces, or hosted services
 - User accounts, billing, or a cloud backend
@@ -298,12 +337,8 @@ v1 boundaries live in [ROADMAP.md](ROADMAP.md).
 - AI-powered contract decisions
 - Replacing mature tools as a general-purpose OpenAPI differ
 
-Proxy or passive runtime capture is a post-v1 exploration, not current scope.
+---
 
 ## License
 
-Apache-2.0
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md).
+Apache-2.0. See [CHANGELOG.md](CHANGELOG.md) for release history.

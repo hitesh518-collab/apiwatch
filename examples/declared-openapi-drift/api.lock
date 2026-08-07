@@ -1,0 +1,71 @@
+version: 4
+apis:
+  widgets:
+    provenance: declared
+    source: openapi
+    scope: all
+    max_lock_bytes: 5242880
+    contract_bytes: 1775
+    contract_digest: sha256:27fef9bfbc23ea5530196280c46d7ae6a4e7a94430174b38f01a97541e90db8e
+    contract:
+      operations:
+        GET /widgets:
+          display_path: /widgets
+          auth: {}
+          servers:
+          - /
+          parameters: {}
+          request_body: null
+          responses:
+            '200':
+              application/json: sha256:84bc5ac2d84a78a6e7f259e52053a04292c7739a5c154621b8a108163986fb10
+      schemas:
+        sha256:574ff34ec9664aecab23451533246352fb2864b64397db26ad23591b5228343c:
+          kind: object
+          nullable: false
+          format: null
+          enum_values: []
+          properties:
+            description:
+              required: false
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            id:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            name:
+              required: true
+              schema: sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90
+            price:
+              required: true
+              schema: sha256:e543771795f503919249e3bfbf0cca8fd2ac1308eafc1768e883cbe01915d55f
+          additional_properties:
+            kind: any
+          branches: []
+        sha256:7d849bbc37aedc445ec03977b861c134baec76f6491eeb74648dfca04dff9b90:
+          kind: string
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:84bc5ac2d84a78a6e7f259e52053a04292c7739a5c154621b8a108163986fb10:
+          kind: array
+          nullable: false
+          format: null
+          enum_values: []
+          properties: {}
+          items: sha256:574ff34ec9664aecab23451533246352fb2864b64397db26ad23591b5228343c
+          additional_properties:
+            kind: forbidden
+          branches: []
+        sha256:e543771795f503919249e3bfbf0cca8fd2ac1308eafc1768e883cbe01915d55f:
+          kind: number
+          nullable: false
+          format: float
+          enum_values: []
+          properties: {}
+          additional_properties:
+            kind: forbidden
+          branches: []
